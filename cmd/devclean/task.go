@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
@@ -156,6 +157,9 @@ func newTaskRmCmd() *cobra.Command {
 				return err
 			}
 			if err := task.Remove(config.TasksDir(root), id); err != nil {
+				return err
+			}
+			if err := state.Remove(root, id); err != nil {
 				return err
 			}
 			if err := out.Data(map[string]string{"eliminada": id}); err != nil {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/gate"
+	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
@@ -55,11 +56,26 @@ func runCheck(id string) error {
 		return err
 	}
 
+	// el chequeo de cruce solo mira tareas activas (§6.3)
+	var activas []task.Task
+	for _, o := range todas {
+		if o.ID == id {
+			continue
+		}
+		s, err := state.Get(root, o.ID)
+		if err != nil {
+			return err
+		}
+		if s.Estado == state.EnCurso {
+			activas = append(activas, o)
+		}
+	}
+
 	timeout := gate.DefaultTimeout
 	if cfg.TimeoutEsclusa > 0 {
 		timeout = time.Duration(cfg.TimeoutEsclusa) * time.Second
 	}
-	res := gate.Run(context.Background(), root, cfg, t, todas, timeout)
+	res := gate.Run(context.Background(), root, cfg, t, activas, timeout)
 	if err := out.Data(res); err != nil {
 		return err
 	}

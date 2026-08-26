@@ -134,9 +134,8 @@ func checkFallaHoy(ctx context.Context, root, listoCuando string, timeout time.D
 	return Check{"falla hoy", false, fmt.Sprintf("no se pudo ejecutar listo_cuando: %v", err)}
 }
 
-// checkSinCruce: tocar_solo must not overlap with any other task's.
-// In this phase every task on disk counts; rooms and states arrive
-// with the execution engine.
+// checkSinCruce: tocar_solo must not overlap with any other active
+// task's. The caller passes only tasks in state en_curso (§6.3).
 func checkSinCruce(t task.Task, otras []task.Task) Check {
 	for _, o := range otras {
 		if o.ID == t.ID {
