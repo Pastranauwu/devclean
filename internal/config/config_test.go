@@ -86,6 +86,21 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 	}
 }
 
+func TestParseTimeoutEsclusa(t *testing.T) {
+	cfg, err := Parse([]byte("timeout_esclusa: 120\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.TimeoutEsclusa != 120 {
+		t.Errorf("TimeoutEsclusa = %d, quiero 120", cfg.TimeoutEsclusa)
+	}
+	for _, bad := range []string{"0", "-5", "mucho"} {
+		if _, err := Parse([]byte("timeout_esclusa: " + bad + "\n")); err == nil {
+			t.Errorf("Parse debió rechazar timeout_esclusa: %s", bad)
+		}
+	}
+}
+
 func TestLoadMissing(t *testing.T) {
 	_, err := Load(t.TempDir())
 	if err == nil {
