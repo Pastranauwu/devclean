@@ -23,6 +23,7 @@ func newTaskCmd() *cobra.Command {
 		newTaskEditCmd(),
 		newTaskRmCmd(),
 		newTaskListCmd(),
+		newTaskCheckCmd(),
 	)
 	return cmd
 }
