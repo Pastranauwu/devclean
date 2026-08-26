@@ -23,6 +23,7 @@ type Config struct {
 	Base            string   `json:"base"`
 	Pruebas         string   `json:"pruebas"`
 	ZonasProhibidas []string `json:"zonas_prohibidas"`
+	TimeoutEsclusa  int      `json:"timeout_esclusa"` // segundos para el chequeo "falla hoy"
 }
 
 // DefaultForbiddenZones implements §6.3: lockfiles, migrations, CI and
@@ -79,6 +80,9 @@ func (c Config) Save(root string) error {
 	fmt.Fprintf(&b, "base: %s\n", c.Base)
 	fmt.Fprintf(&b, "pruebas: %s\n", c.Pruebas)
 	fmt.Fprintf(&b, "zonas_prohibidas: [%s]\n", strings.Join(quoted, ", "))
+	if c.TimeoutEsclusa > 0 {
+		fmt.Fprintf(&b, "timeout_esclusa: %d\n", c.TimeoutEsclusa)
+	}
 	return os.WriteFile(Path(root), []byte(b.String()), 0o644)
 }
 
@@ -106,6 +110,12 @@ func Parse(data []byte) (Config, error) {
 				return cfg, fmt.Errorf("config.yml: línea %d · %s", n+1, err)
 			}
 			cfg.ZonasProhibidas = list
+		case "timeout_esclusa":
+			seg, err := strconv.Atoi(value)
+			if err != nil || seg < 1 {
+				return cfg, fmt.Errorf("config.yml: línea %d · timeout_esclusa inválido: %s · segundos, mínimo 1", n+1, value)
+			}
+			cfg.TimeoutEsclusa = seg
 		}
 	}
 	return cfg, nil

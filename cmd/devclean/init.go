@@ -3,10 +3,12 @@ package main
 import (
 	"errors"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/gate"
 )
 
 type initResult struct {
@@ -49,6 +51,7 @@ func runInit(cwd string) error {
 		Base:            base,
 		Pruebas:         pruebas,
 		ZonasProhibidas: config.DefaultForbiddenZones(),
+		TimeoutEsclusa:  int(gate.DefaultTimeout / time.Second),
 	}
 	if err := cfg.Save(root); err != nil {
 		return err
