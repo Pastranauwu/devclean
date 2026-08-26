@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -45,6 +46,11 @@ func runInit(cwd string) error {
 	pruebas, pruebasOK := config.DetectTestCommand(root)
 
 	if err := os.MkdirAll(config.TasksDir(root), 0o755); err != nil {
+		return err
+	}
+	// los cuartos son worktrees: nunca deben versionarse
+	gitignore := filepath.Join(config.Dir(root), ".gitignore")
+	if err := os.WriteFile(gitignore, []byte("rooms/\n"), 0o644); err != nil {
 		return err
 	}
 	cfg := config.Config{
