@@ -32,6 +32,8 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().BoolVar(&plain, "plain", false, "salida en texto plano, una línea por evento")
 	root.PersistentFlags().BoolVar(&jsonOut, "json", false, "salida estructurada en JSON")
 
+	root.AddCommand(newInitCmd())
+
 	return root
 }
 

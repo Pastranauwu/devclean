@@ -1,0 +1,136 @@
+package config
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+)
+
+func git(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func TestRepoRootOutsideGit(t *testing.T) {
+	_, err := RepoRoot(t.TempDir())
+	if err == nil {
+		t.Fatal("RepoRoot debió fallar fuera de un repo git")
+	}
+}
+
+func TestRepoRootFindsTopLevel(t *testing.T) {
+	root := t.TempDir()
+	git(t, root, "init", "-b", "main")
+	sub := filepath.Join(root, "a", "b")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := RepoRoot(sub)
+	if err != nil {
+		t.Fatalf("RepoRoot: %v", err)
+	}
+	// git puede resolver symlinks (p. ej. /tmp en macOS); compara resueltos
+	want, _ := filepath.EvalSymlinks(root)
+	gotEval, _ := filepath.EvalSymlinks(got)
+	if gotEval != want {
+		t.Errorf("RepoRoot = %q, quiero %q", got, root)
+	}
+}
+
+func TestDetectBaseBranchUnbornHead(t *testing.T) {
+	root := t.TempDir()
+	git(t, root, "init", "-b", "main")
+	if got := DetectBaseBranch(root); got != "main" {
+		t.Errorf("DetectBaseBranch = %q, quiero %q", got, "main")
+	}
+}
+
+func TestDetectBaseBranchPrefersMain(t *testing.T) {
+	root := t.TempDir()
+	git(t, root, "init", "-b", "dev")
+	git(t, root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init")
+	git(t, root, "branch", "main")
+	git(t, root, "branch", "master")
+	if got := DetectBaseBranch(root); got != "main" {
+		t.Errorf("DetectBaseBranch = %q, quiero %q", got, "main")
+	}
+}
+
+func TestDetectBaseBranchFallsBackToCurrent(t *testing.T) {
+	root := t.TempDir()
+	git(t, root, "init", "-b", "desarrollo")
+	git(t, root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init")
+	if got := DetectBaseBranch(root); got != "desarrollo" {
+		t.Errorf("DetectBaseBranch = %q, quiero %q", got, "desarrollo")
+	}
+}
+
+func TestDetectTestCommand(t *testing.T) {
+	cases := []struct {
+		name  string
+		files map[string]string
+		want  string
+		ok    bool
+	}{
+		{
+			name:  "package.json con script test",
+			files: map[string]string{"package.json": `{"scripts":{"test":"vitest"}}`},
+			want:  "npm test",
+			ok:    true,
+		},
+		{
+			name: "package.json sin test cae a Makefile",
+			files: map[string]string{
+				"package.json": `{"scripts":{"build":"tsc"}}`,
+				"Makefile":     "build:\n\techo build\n\ntest:\n\techo test\n",
+			},
+			want: "make test",
+			ok:   true,
+		},
+		{
+			name:  "go.mod",
+			files: map[string]string{"go.mod": "module x\n\ngo 1.22\n"},
+			want:  "go test ./...",
+			ok:    true,
+		},
+		{
+			name:  "pyproject.toml",
+			files: map[string]string{"pyproject.toml": "[project]\nname = \"x\"\n"},
+			want:  "pytest",
+			ok:    true,
+		},
+		{
+			name: "Makefile sin target test no detecta",
+			files: map[string]string{
+				"Makefile": "build:\n\techo build\n",
+			},
+			want: "",
+			ok:   false,
+		},
+		{
+			name:  "sin manifiestos",
+			files: map[string]string{"README.md": "hola\n"},
+			want:  "",
+			ok:    false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for name, content := range tc.files {
+				if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, ok := DetectTestCommand(root)
+			if got != tc.want || ok != tc.ok {
+				t.Errorf("DetectTestCommand = (%q, %v), quiero (%q, %v)", got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
