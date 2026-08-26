@@ -1,0 +1,117 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+)
+
+func TestParseFull(t *testing.T) {
+	data := []byte(`
+# config de ejemplo
+base: main
+pruebas: npm test # corre en CI
+zonas_prohibidas: ["package-lock.json", "migrations/**"]
+unknown_key: se ignora
+`)
+	cfg, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.Base != "main" {
+		t.Errorf("Base = %q, quiero %q", cfg.Base, "main")
+	}
+	if cfg.Pruebas != "npm test" {
+		t.Errorf("Pruebas = %q, quiero %q", cfg.Pruebas, "npm test")
+	}
+	want := []string{"package-lock.json", "migrations/**"}
+	if !reflect.DeepEqual(cfg.ZonasProhibidas, want) {
+		t.Errorf("ZonasProhibidas = %v, quiero %v", cfg.ZonasProhibidas, want)
+	}
+}
+
+func TestParseBadLine(t *testing.T) {
+	_, err := Parse([]byte("esto no es clave valor\n"))
+	if err == nil {
+		t.Fatal("Parse debió fallar con una línea sin dos puntos")
+	}
+}
+
+func TestParseListErrors(t *testing.T) {
+	for _, v := range []string{
+		`package-lock.json`,
+		`["a", "b"`,
+		`[a, "b"]`,
+	} {
+		if _, err := parseList(v); err == nil {
+			t.Errorf("parseList(%q) debió fallar", v)
+		}
+	}
+}
+
+func TestStripComment(t *testing.T) {
+	cases := map[string]string{
+		`npm test # comentario`:  `npm test `,
+		`grep "^#x" file # otro`: `grep "^#x" file `,
+		`sin comentario`:         `sin comentario`,
+		`make test#sin espacio`:  `make test#sin espacio`,
+	}
+	for in, want := range cases {
+		if got := stripComment(in); got != want {
+			t.Errorf("stripComment(%q) = %q, quiero %q", in, got, want)
+		}
+	}
+}
+
+func TestSaveLoadRoundtrip(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		Base:            "main",
+		Pruebas:         "go test ./...",
+		ZonasProhibidas: DefaultForbiddenZones(),
+	}
+	if err := cfg.Save(root); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(cfg, loaded) {
+		t.Errorf("roundtrip = %+v, quiero %+v", loaded, cfg)
+	}
+}
+
+func TestLoadMissing(t *testing.T) {
+	_, err := Load(t.TempDir())
+	if err == nil {
+		t.Fatal("Load debió fallar sin config.yml")
+	}
+}
+
+func TestExists(t *testing.T) {
+	root := t.TempDir()
+	if Exists(root) {
+		t.Fatal("Exists = true sin .devclean")
+	}
+	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !Exists(root) {
+		t.Fatal("Exists = false con .devclean creado")
+	}
+}
+
+func TestPathsStayUnderRoot(t *testing.T) {
+	root := "/proyecto"
+	if Path(root) != filepath.Join(root, ".devclean", "config.yml") {
+		t.Errorf("Path inesperado: %s", Path(root))
+	}
+	if TasksDir(root) != filepath.Join(root, ".devclean", "tasks") {
+		t.Errorf("TasksDir inesperado: %s", TasksDir(root))
+	}
+}
