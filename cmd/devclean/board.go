@@ -8,6 +8,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
+	"github.com/Pastranauwu/devclean/internal/tui"
 )
 
 type boardRow struct {
@@ -32,6 +33,10 @@ func runBoard() error {
 	if err != nil {
 		return err
 	}
+	if esTUI() {
+		return tui.CorrerBoard(root)
+	}
+
 	tasks, err := task.List(config.TasksDir(root))
 	if err != nil {
 		return err
