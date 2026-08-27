@@ -102,8 +102,8 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 - `scripts/demo.sh` (demo reproducible con agente falso, se autocompila) y
   `docs/demo.tape` para grabar el GIF con `vhs`. **El GIF (`docs/demo.gif`)
   ya está grabado.**
-- Etiquetado **`v0.1.0`**. Falta: el `push` y publicar el release en GitHub
-  (no hay `gh` en la máquina; se hace desde la web o instalando `gh`).
+- Etiquetado y pusheado **`v0.1.0`** (`main` + tag). Falta publicar el release
+  en GitHub (no hay `gh`; se hace desde la web o instalando `gh`).
 
 ---
 
@@ -111,7 +111,8 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 
 **El v0.1 está funcionalmente completo y el GIF grabado.** Pendiente:
 
-- **Publicar**: `git push origin main --tags` y crear el release en GitHub.
+- **Publicar el release**: `main` y `v0.1.0` ya están en `origin`. Solo falta
+  crear el release en la web de GitHub (o con `gh release create v0.1.0`).
 - **TUI de `run`** (streaming en vivo de N tareas; el texto plano ya funciona).
 - **Flecha de tendencia** en `report` (persistir historial y comparar).
 - **Config anidado `proveedores`** (§8.1); hoy se usa `--modelo`/`--ejecutor`.
