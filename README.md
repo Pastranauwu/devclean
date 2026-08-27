@@ -248,7 +248,7 @@ v0.2: examinador ciego y suite oculta, detección de solapamiento funcional,
 duplicación entre ramas, reglas de dependencia y constitución del proyecto.
 
 > El GIF (`docs/demo.gif`) se graba con `vhs docs/demo.tape`; el tape usa
-> `scripts/demo.sh`, un agente falso para no gastar tokens.
+> `scripts/demo-env.sh` (agente falso para no gastar tokens) y muestra la TUI.
 
 ## Límite honesto
 
