@@ -36,22 +36,27 @@ func Tablero(root string) ([]Fila, error) {
 	return filas, nil
 }
 
-// renderBoard dibuja el tablero en texto plano, por columnas de estado.
+// renderBoard dibuja el tablero con la paleta y el logotipo.
 func renderBoard(filas []Fila, width int) string {
+	var b strings.Builder
+	b.WriteString(Logo(width))
+	b.WriteString("\n")
+
 	if len(filas) == 0 {
-		return "sin tareas · empieza con devclean plan \"lo que necesitas\"\n"
+		b.WriteString("  " + estiloApagado.Render("sin tareas · empieza con devclean plan \"lo que necesitas\"") + "\n")
+		return b.String()
 	}
+
 	orden := []struct {
 		nombre string
 		estado string
 		glifo  string
 	}{
-		{"LISTO PARA ENTREGAR", state.Lista, "✓"},
-		{"EN CURSO", state.EnCurso, "◐"},
-		{"DETENIDO", state.Detenida, "⏸"},
-		{"PENDIENTE", state.Pendiente, "·"},
+		{"LISTO PARA ENTREGAR", state.Lista, estiloPresion.Render("✓")},
+		{"EN CURSO", state.EnCurso, estiloEspera.Render("◐")},
+		{"DETENIDO", state.Detenida, estiloAlerta.Render("⏸")},
+		{"PENDIENTE", state.Pendiente, estiloApagado.Render("·")},
 	}
-	var b strings.Builder
 	for _, col := range orden {
 		var suyos []Fila
 		for _, f := range filas {
@@ -59,14 +64,13 @@ func renderBoard(filas []Fila, width int) string {
 				suyos = append(suyos, f)
 			}
 		}
+		b.WriteString("  " + col.glifo + " " + estiloBold.Render(col.nombre) + "\n")
 		if len(suyos) == 0 {
-			b.WriteString(col.glifo + " " + col.nombre + "\n")
-			b.WriteString("  —\n\n")
+			b.WriteString("    " + estiloApagado.Render("—") + "\n\n")
 			continue
 		}
-		b.WriteString(col.glifo + " " + col.nombre + "\n")
 		for _, f := range suyos {
-			b.WriteString("  " + f.ID + "  " + f.Titulo + "\n")
+			b.WriteString("    " + estiloTinta.Render(f.ID) + "  " + f.Titulo + "\n")
 		}
 		b.WriteString("\n")
 	}

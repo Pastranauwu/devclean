@@ -1,12 +1,14 @@
 // Package tui es el modo interactivo de devclean (§16): la compuerta
-// animada de la esclusa de salida. Cuando la salida es una terminal y no
-// hay --plain ni --json, los comandos cambian a esta vista; si no, usan
-// el texto plano de internal/ui.
+// animada de la esclusa de salida, el tablero y la corrida en vivo. Cuando
+// la salida es una terminal y no hay --plain ni --json, los comandos usan
+// esta vista; si no, el texto plano de internal/ui.
 package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -21,15 +23,6 @@ var NombresPasos = []string{"base", "historial", "ruido", "secretos", "presupues
 // nombresCortos son las abreviaturas que se pintan bajo los glifos; el
 // nombre completo vive en ship.Paso.Nombre y en el JSON.
 var nombresCortos = []string{"base", "hist", "ruido", "secr", "presu", "bisec", "hand", "pr"}
-
-// paleta del cuarto limpio industrial (§16.2)
-var (
-	presion = lipgloss.Color("#4FB3A2")
-	alerta  = lipgloss.Color("#D96C4A")
-	espera  = lipgloss.Color("#C9A227")
-	apagado = lipgloss.Color("#6B6F72")
-	tinta   = lipgloss.Color("#E6E6E1")
-)
 
 // estadoPaso es el estado de un paso en la compuerta.
 type estadoPaso int
@@ -65,58 +58,69 @@ func clasificar(pasos []ship.Paso, terminado bool) [8]estadoPaso {
 	return e
 }
 
-func glifo(s estadoPaso) string {
-	switch s {
+func renderGlifo(e estadoPaso, tick int) string {
+	switch e {
 	case verde:
-		return "✓"
+		return estiloPresion.Render("✓")
 	case rojo:
-		return "✗"
+		return estiloAlerta.Render("✗")
 	case trabajando:
-		return "◐"
+		return estiloEspera.Render(spinnerFrames[tick%len(spinnerFrames)])
 	default:
-		return "·"
+		return estiloApagado.Render("·")
 	}
 }
 
-// renderGate dibuja la compuerta en texto plano: los glifos de arriba,
-// los nombres debajo y el detalle del último paso. Sin colores, para
-// poder probarla; el modelo le pone color encima.
-func renderGate(id string, pasos []ship.Paso, terminado bool, width int) string {
+func renderNombre(e estadoPaso, nombre string) string {
+	switch e {
+	case verde:
+		return estiloPresion.Render(nombre)
+	case rojo:
+		return estiloAlerta.Render(nombre)
+	case trabajando:
+		return estiloEspera.Render(nombre)
+	default:
+		return estiloApagado.Render(nombre)
+	}
+}
+
+// renderGate dibuja la compuerta con colores, spinner y barra de progreso.
+func renderGate(id string, pasos []ship.Paso, terminado bool, tick, width int) string {
 	e := clasificar(pasos, terminado)
 	if width <= 0 {
 		width = 80
 	}
 	ancho := width - 4
-	if ancho < 20 {
-		ancho = 20
-	}
 
 	var b strings.Builder
-	titulo := "  ESCLUSA DE SALIDA · " + id
-	b.WriteString("  ╭" + strings.Repeat("─", ancho) + "╮\n")
-	b.WriteString("  │ " + titulo + strings.Repeat(" ", ancho-1-len(titulo)) + "│\n")
-	b.WriteString("  ╰" + strings.Repeat("─", ancho) + "╯\n\n")
+	b.WriteString(Logo(width))
+	b.WriteString("\n  ")
+	b.WriteString(estiloBold.Render("ESCLUSA DE SALIDA · " + id))
+	b.WriteString("\n\n")
 
 	var glifos, nombres strings.Builder
 	for i := 0; i < len(e); i++ {
-		glifos.WriteString(acomodar(glifo(e[i]), 8))
-		nombres.WriteString(acomodar(nombresCortos[i], 8))
+		glifos.WriteString(acomodar(renderGlifo(e[i], tick), 8))
+		nombres.WriteString(acomodar(renderNombre(e[i], nombresCortos[i]), 8))
 	}
 	b.WriteString("   " + strings.TrimRight(glifos.String(), " ") + "\n")
 	b.WriteString("   " + strings.TrimRight(nombres.String(), " ") + "\n")
 
+	b.WriteString("\n  " + barra(len(pasos), 8, ancho) + " " + estiloApagado.Render(strconv.Itoa(len(pasos))+"/8") + "\n")
+
 	if len(pasos) > 0 {
-		b.WriteString("\n  " + pasos[len(pasos)-1].Detalle + "\n")
+		b.WriteString("\n  " + estiloApagado.Render(pasos[len(pasos)-1].Detalle) + "\n")
 	}
 	return b.String()
 }
 
-// acomodar rellena s con espacios hasta el ancho n (en celdas).
+// acomodar rellena s con espacios hasta el ancho visible n (celdas).
 func acomodar(s string, n int) string {
-	if len(s) >= n {
+	w := lipgloss.Width(s)
+	if w >= n {
 		return s
 	}
-	return s + strings.Repeat(" ", n-len(s))
+	return s + strings.Repeat(" ", n-w)
 }
 
 // CorrerGate corre la esclusa de salida dentro de la compuerta animada y
@@ -145,16 +149,23 @@ type gateMsg struct {
 	res  ship.Resultado
 }
 
+type tickMsg struct{}
+
 type gateModel struct {
 	opciones  ship.Opciones
 	ch        chan gateMsg
 	pasos     []ship.Paso
 	terminado bool
 	resultado ship.Resultado
+	tick      int
 }
 
 func (m gateModel) Init() tea.Cmd {
-	return m.escuchar()
+	return tea.Batch(m.escuchar(), tickCmd())
+}
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
 func (m gateModel) escuchar() tea.Cmd {
@@ -169,6 +180,12 @@ func (m gateModel) escuchar() tea.Cmd {
 
 func (m gateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tickMsg:
+		if m.terminado {
+			return m, nil
+		}
+		m.tick++
+		return m, tickCmd()
 	case tea.KeyMsg:
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -177,7 +194,8 @@ func (m gateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.fin {
 			m.terminado = true
 			m.resultado = msg.res
-			return m, tea.Quit
+			// deja ver la compuerta en verde un instante antes de salir
+			return m, tea.Tick(800*time.Millisecond, func(time.Time) tea.Msg { return tea.Quit() })
 		}
 		m.pasos = append(m.pasos, msg.paso)
 		return m, m.escuchar()
@@ -186,29 +204,5 @@ func (m gateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m gateModel) View() string {
-	s := renderGate(m.opciones.Task.ID, m.pasos, m.terminado, 80)
-	return conColor(m.pasos, m.terminado, s)
-}
-
-// conColor aplica la paleta §16.2 a la vista en texto plano.
-func conColor(pasos []ship.Paso, terminado bool, s string) string {
-	e := clasificar(pasos, terminado)
-	colores := map[string]lipgloss.Style{}
-	colores["·"] = lipgloss.NewStyle().Foreground(apagado)
-	colores["◐"] = lipgloss.NewStyle().Foreground(espera)
-	colores["✓"] = lipgloss.NewStyle().Foreground(presion)
-	colores["✗"] = lipgloss.NewStyle().Foreground(alerta)
-
-	var b strings.Builder
-	for _, r := range s {
-		ch := string(r)
-		if st, ok := colores[ch]; ok {
-			b.WriteString(st.Render(ch))
-		} else {
-			b.WriteString(ch)
-		}
-	}
-	_ = e
-	_ = tinta
-	return b.String()
+	return renderGate(m.opciones.Task.ID, m.pasos, m.terminado, m.tick, 80)
 }

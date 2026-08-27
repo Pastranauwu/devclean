@@ -39,9 +39,9 @@ func TestRenderGate(t *testing.T) {
 		{Nombre: "base", OK: true},
 		{Nombre: "historial", OK: true, Detalle: "47 guardados → 1 commit"},
 	}
-	vista := renderGate("T-003", pasos, false, 80)
+	vista := renderGate("T-003", pasos, false, 0, 80)
 
-	for _, want := range []string{"ESCLUSA DE SALIDA · T-003", "base", "hist", "ruido", "secr", "presu", "bisec", "hand", "pr", "✓", "◐", "·"} {
+	for _, want := range []string{"devclean", "ESCLUSA DE SALIDA · T-003", "base", "hist", "ruido", "secr", "presu", "bisec", "hand", "pr", "✓", "·", "2/8"} {
 		if !strings.Contains(vista, want) {
 			t.Errorf("la vista no contiene %q:\n%s", want, vista)
 		}
@@ -53,11 +53,29 @@ func TestRenderGate(t *testing.T) {
 
 func TestRenderGateFreno(t *testing.T) {
 	pasos := []ship.Paso{{Nombre: "base", OK: false, Detalle: "rebase en conflicto"}}
-	vista := renderGate("T-003", pasos, true, 80)
+	vista := renderGate("T-003", pasos, true, 0, 80)
 	if !strings.Contains(vista, "✗") {
 		t.Errorf("un paso fallado debió pintarse con ✗:\n%s", vista)
 	}
 	if !strings.Contains(vista, "rebase en conflicto") {
 		t.Errorf("falta el motivo del freno:\n%s", vista)
+	}
+}
+
+func TestLogo(t *testing.T) {
+	l := Logo(80)
+	for _, want := range []string{"▄", "▀", "devclean", "dirige agentes"} {
+		if !strings.Contains(l, want) {
+			t.Errorf("logo sin %q:\n%s", want, l)
+		}
+	}
+}
+
+func TestBarra(t *testing.T) {
+	if !strings.Contains(barra(4, 8, 10), "████") {
+		t.Error("la barra a medias debió llenar la mitad")
+	}
+	if !strings.Contains(barra(0, 8, 10), "░░") {
+		t.Error("la barra vacía debió quedar en gris")
 	}
 }
