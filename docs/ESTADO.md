@@ -1,7 +1,7 @@
 # Estado del proyecto — traspaso entre sesiones
 
-Última actualización: 27 agosto 2026. El MVP v0.1 está completo: las cinco
-fases cerradas.
+Última actualización: 27 agosto 2026. El MVP v0.1 está completo y etiquetado
+`v0.1.0`. Fases 1–5 cerradas; falta publicar el release y un par de pulidos.
 
 **Orden de lectura para quien llegue nuevo:**
 1. `docs/PRD-devclean.md` — la especificación.
@@ -58,7 +58,7 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
   squash produce un solo commit (dentro de los 1–5 del criterio de
   aceptación); el split en varios es mejora de v0.2.
 
-**Fase 4 — en marcha**
+**Fase 4 — hecha**
 - `internal/metrics`: las cinco métricas de §9 derivadas de los artefactos
   (`attempts.jsonl`, estados y un registro de entrega que `ship` deja en
   `.devclean/runs/<id>/entrega.json`). `friccion` queda en null: necesita el
@@ -66,9 +66,10 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
 - `devclean doctor`: verifica git, repo, configuración, ejecutores y keys.
 - `devclean board`: tablero por estado (listo, en curso, detenido, pendiente).
 - `devclean logs <id>`: los intentos de una tarea, uno por línea.
-- `internal/tui`: la compuerta animada de `ship` (§16.3), con la paleta del
-  cuarto limpio (§16.2). `ship` la usa cuando la salida es terminal y no hay
-  `--plain` ni `--json`; si no, texto plano.
+- `internal/tui`: la compuerta animada de `ship` (§16.3) y el tablero
+  interactivo de `board`, con la paleta del cuarto limpio (§16.2). Ambos se
+  usan cuando la salida es terminal y no hay `--plain` ni `--json`; si no,
+  texto plano.
 - `internal/plan` + `devclean plan "<texto>"`: el planificador (§5, §8.2)
   parte una petición en contratos. El texto lo produce un modelo (vía el
   ejecutor, cuyo `Result.Text` ahora trae la respuesta); devclean solo parsea
@@ -98,20 +99,26 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 - `README.md` con manifiesto, instalación, adopción en proyectos reales,
   métricas y el límite honesto.
 - `.goreleaser.yml` (binario estático por plataforma) y `scripts/install.sh`.
-- `scripts/demo.sh` (demo reproducible con agente falso) y `docs/demo.tape`
-  para grabar el GIF con `vhs`.
-- Etiquetado **`v0.1.0`**. Falta grabar el GIF y publicar (push + release).
+- `scripts/demo.sh` (demo reproducible con agente falso, se autocompila) y
+  `docs/demo.tape` para grabar el GIF con `vhs`. **El GIF (`docs/demo.gif`)
+  ya está grabado.**
+- Etiquetado **`v0.1.0`**. Falta: el `push` y publicar el release en GitHub
+  (no hay `gh` en la máquina; se hace desde la web o instalando `gh`).
 
 ---
 
 ## Qué falta
 
-**El v0.1 está funcionalmente completo.** Quedan solo cosas de lanzamiento y
-pulido: grabar el GIF de 20 segundos, el tap de Homebrew, los TUI de `run` y
-`board` (el texto plano ya cubre la función), la flecha de tendencia del
-reporte y el config anidado `proveedores` (hoy `--modelo`/`--ejecutor`).
+**El v0.1 está funcionalmente completo y el GIF grabado.** Pendiente:
 
-**v0.2:** Parte B entera. Ya está especificada, nadie la ha empezado.
+- **Publicar**: `git push origin main --tags` y crear el release en GitHub.
+- **TUI de `run`** (streaming en vivo de N tareas; el texto plano ya funciona).
+- **Flecha de tendencia** en `report` (persistir historial y comparar).
+- **Config anidado `proveedores`** (§8.1); hoy se usa `--modelo`/`--ejecutor`.
+- **Tap de Homebrew** y `go install` funcionando tras publicar la release.
+
+**v0.2:** Parte B entera (examinador ciego, solapamiento funcional, duplicación
+entre ramas, reglas de dependencia, constitución). Ya especificada, sin empezar.
 
 **Deuda conocida, chica**
 - `internal/executor` aparece en el historial de dos commits (`22a48f8`,
