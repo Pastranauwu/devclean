@@ -2,7 +2,6 @@ package tui
 
 import (
 	"sort"
-	"strings"
 
 	"github.com/charmbracelet/bubbletea"
 
@@ -36,24 +35,33 @@ func Tablero(root string) ([]Fila, error) {
 	return filas, nil
 }
 
-// renderBoard dibuja el tablero con la paleta y el logotipo, en tarjeta.
-func renderBoard(filas []Fila, width int) string {
-	var cuerpo strings.Builder
+// lineasTablero arma el contenido del sticker: logo, tagline y columnas.
+func lineasTablero(filas []Fila) []lineaSticker {
+	var ls []lineaSticker
+	alto := len(logoFilas)
+	for i, fila := range logoFilas {
+		c := mezclarRGB([3]int{79, 179, 162}, [3]int{44, 110, 99}, float64(i)/float64(alto-1))
+		ls = append(ls, lineaSticker{texto: fila, color: c})
+	}
+	ls = append(ls, lineaSticker{})
+	ls = append(ls, lineaSticker{texto: "dirige agentes · entrega código limpio", color: rgbApagado})
+	ls = append(ls, lineaSticker{})
 
 	if len(filas) == 0 {
-		cuerpo.WriteString(estiloApagado.Render("sin tareas · empieza con devclean plan \"lo que necesitas\"") + "\n")
-		return Logo(width) + "\n" + caja(cuerpo.String())
+		ls = append(ls, lineaSticker{texto: "sin tareas · empieza con devclean plan \"lo que necesitas\"", color: rgbApagado})
+		return ls
 	}
 
 	orden := []struct {
 		nombre string
 		estado string
 		glifo  string
+		color  [3]int
 	}{
-		{"LISTO PARA ENTREGAR", state.Lista, estiloPresion.Render("✓")},
-		{"EN CURSO", state.EnCurso, estiloEspera.Render("◐")},
-		{"DETENIDO", state.Detenida, estiloAlerta.Render("⏸")},
-		{"PENDIENTE", state.Pendiente, estiloApagado.Render("·")},
+		{"LISTO PARA ENTREGAR", state.Lista, "✓", rgbPresion},
+		{"EN CURSO", state.EnCurso, "◐", rgbEspera},
+		{"DETENIDO", state.Detenida, "⏸", rgbAlerta},
+		{"PENDIENTE", state.Pendiente, "·", rgbApagado},
 	}
 	for _, col := range orden {
 		var suyos []Fila
@@ -62,38 +70,50 @@ func renderBoard(filas []Fila, width int) string {
 				suyos = append(suyos, f)
 			}
 		}
-		cuerpo.WriteString(col.glifo + " " + estiloBold.Render(col.nombre) + "\n")
+		ls = append(ls, lineaSticker{texto: col.glifo + " " + col.nombre, color: col.color})
 		if len(suyos) == 0 {
-			cuerpo.WriteString("  " + estiloApagado.Render("—") + "\n\n")
-			continue
+			ls = append(ls, lineaSticker{texto: "  —", color: rgbApagado})
 		}
 		for _, f := range suyos {
-			cuerpo.WriteString("  " + estiloTinta.Render(f.ID) + "  " + f.Titulo + "\n")
+			ls = append(ls, lineaSticker{texto: "  " + f.ID + "  " + f.Titulo, color: rgbTinta})
 		}
-		cuerpo.WriteString("\n")
+		ls = append(ls, lineaSticker{})
 	}
-	return Logo(width) + "\n" + caja(strings.TrimRight(cuerpo.String(), "\n"))
+	return ls
 }
 
-// CorrerBoard muestra el tablero en modo interactivo; sale con q o esc.
+// CorrerBoard muestra el tablero sobre un plasma animado; sale con q o esc.
 func CorrerBoard(root string) error {
 	filas, err := Tablero(root)
 	if err != nil {
 		return err
 	}
-	m := boardModel{filas: filas}
-	_, err = tea.NewProgram(m).Run()
+	m := boardModel{filas: filas, params: DefaultPlasma()}
+	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
 }
 
 type boardModel struct {
-	filas []Fila
+	filas  []Fila
+	ancho  int
+	alto   int
+	t      float64
+	params PlasmaParams
 }
 
-func (m boardModel) Init() tea.Cmd { return nil }
+func (m boardModel) Init() tea.Cmd {
+	return tickPlasma()
+}
 
 func (m boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.ancho = msg.Width
+		m.alto = msg.Height
+		return m, nil
+	case tickMsg:
+		m.t += 0.05
+		return m, tickPlasma()
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
@@ -104,5 +124,5 @@ func (m boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m boardModel) View() string {
-	return renderBoard(m.filas, 80)
+	return FondoPlasma(m.ancho, m.alto, m.t, m.params, lineasTablero(m.filas), 2)
 }

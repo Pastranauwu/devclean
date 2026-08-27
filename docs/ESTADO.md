@@ -70,9 +70,11 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
   (§16.2): logotipo de píxeles con degradado (fuente unsciithin de `bit`),
   tarjetas con borde, spinner braille y barras de progreso reales. Tres
   vistas — la compuerta animada de `ship` (§16.3), el tablero de `board` y la
-  corrida en vivo de `run` (N tareas, spinner, reloj y barra global). Cada
-  comando usa el TUI cuando la salida es terminal y no hay `--plain` ni
-  `--json`; si no, texto plano.
+  corrida en vivo de `run` (N tareas, spinner, reloj y barra global). El
+  tablero además corre un **plasma truecolor animado** de fondo (suma de
+  cuatro senos, medio bloque ▀, paleta neón verde) con el logo centrado como
+  sticker de margen transparente. Cada comando usa el TUI cuando la salida es
+  terminal y no hay `--plain` ni `--json`; si no, texto plano.
 - `internal/plan` + `devclean plan "<texto>"`: el planificador (§5, §8.2)
   parte una petición en contratos. El texto lo produce un modelo (vía el
   ejecutor, cuyo `Result.Text` ahora trae la respuesta); devclean solo parsea
