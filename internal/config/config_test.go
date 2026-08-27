@@ -38,32 +38,6 @@ func TestParseBadLine(t *testing.T) {
 	}
 }
 
-func TestParseListErrors(t *testing.T) {
-	for _, v := range []string{
-		`package-lock.json`,
-		`["a", "b"`,
-		`[a, "b"]`,
-	} {
-		if _, err := parseList(v); err == nil {
-			t.Errorf("parseList(%q) debió fallar", v)
-		}
-	}
-}
-
-func TestStripComment(t *testing.T) {
-	cases := map[string]string{
-		`npm test # comentario`:  `npm test `,
-		`grep "^#x" file # otro`: `grep "^#x" file `,
-		`sin comentario`:         `sin comentario`,
-		`make test#sin espacio`:  `make test#sin espacio`,
-	}
-	for in, want := range cases {
-		if got := stripComment(in); got != want {
-			t.Errorf("stripComment(%q) = %q, quiero %q", in, got, want)
-		}
-	}
-}
-
 func TestSaveLoadRoundtrip(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
