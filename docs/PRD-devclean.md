@@ -97,6 +97,7 @@ Un archivo por tarea en `.devclean/tasks/T-001.md`. Máximo 8 campos. Si crece, 
 
 ```yaml
 ---
+version: 1
 id: T-001
 titulo: exportar clientes a CSV
 porque: soporte pierde 3h/semana copiando a mano
@@ -109,6 +110,8 @@ riesgos: archivos grandes pueden agotar memoria
 ---
 Notas libres opcionales.
 ```
+
+**`version` es obligatorio** (adenda A.1). El parser rechaza campos desconocidos, salvo que la versión del archivo sea mayor a la que soporta el binario: ahí los ignora y avisa `contrato versión 2, binario soporta 1 · actualiza devclean`. Así un contrato de v0.2 no muere en un binario viejo.
 
 **Regla dura:** si `listo_cuando` no es un comando ejecutable que devuelve 0 o distinto de 0, la tarea se rechaza y no se asigna a ningún agente.
 
