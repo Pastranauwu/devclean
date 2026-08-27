@@ -1,7 +1,7 @@
 # Estado del proyecto — traspaso entre sesiones
 
-Última actualización: 27 agosto 2026. Fase 4 en marcha: métricas, report,
-doctor, board y logs hechos; la compuerta animada de `ship` también.
+Última actualización: 27 agosto 2026. El MVP v0.1 está completo: las cinco
+fases cerradas.
 
 **Orden de lectura para quien llegue nuevo:**
 1. `docs/PRD-devclean.md` — la especificación.
@@ -94,14 +94,19 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
 **Parte B** documentada en el PRD (§6.7 a §6.11), sin implementar, más §6.2b y
 el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 
+**Fase 5 — lanzamiento**
+- `README.md` con manifiesto, instalación, uso, métricas y el límite honesto.
+- `.goreleaser.yml` (binario estático por plataforma) y `scripts/install.sh`.
+- Falta grabar el GIF de 20 segundos y el tap de Homebrew.
+
 ---
 
 ## Qué falta
 
-**Fases 1–3 cerradas, fase 4 casi.** De la fase 4 solo quedan los TUI de
-`run` y `board` (el texto plano ya cubre la función) y la flecha de
-tendencia del reporte. La fase 5 es lanzamiento: GoReleaser, instalador,
-README con el manifiesto, el GIF y la tabla de métricas del propio repo.
+**El v0.1 está funcionalmente completo.** Quedan solo cosas de lanzamiento y
+pulido: grabar el GIF de 20 segundos, el tap de Homebrew, los TUI de `run` y
+`board` (el texto plano ya cubre la función), la flecha de tendencia del
+reporte y el config anidado `proveedores` (hoy `--modelo`/`--ejecutor`).
 
 **v0.2:** Parte B entera. Ya está especificada, nadie la ha empezado.
 
