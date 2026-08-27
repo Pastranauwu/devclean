@@ -59,6 +59,59 @@ func DetectTestCommand(root string) (string, bool) {
 	return "", false
 }
 
+// DetectLanguage infers the project language from well-known manifest
+// files. Returns a short label ("go", "node", "python", "rust") or ""
+// when nothing is detected.
+func DetectLanguage(root string) string {
+	switch {
+	case fileExists(filepath.Join(root, "go.mod")):
+		return "go"
+	case fileExists(filepath.Join(root, "package.json")):
+		return "node"
+	case fileExists(filepath.Join(root, "pyproject.toml")), fileExists(filepath.Join(root, "requirements.txt")):
+		return "python"
+	case fileExists(filepath.Join(root, "Cargo.toml")):
+		return "rust"
+	}
+	return ""
+}
+
+// scaffoldNames are files that exist in a fresh repository and say
+// nothing about the code yet.
+var scaffoldNames = map[string]bool{
+	"README.md":          true,
+	"README":             true,
+	"LICENSE":            true,
+	"LICENSE.md":         true,
+	"CHANGELOG.md":       true,
+	"CONTRIBUTING.md":    true,
+	"CODE_OF_CONDUCT.md": true,
+	".gitignore":         true,
+	".gitattributes":     true,
+	".editorconfig":      true,
+}
+
+// DetectEmpty reports whether the repository has no source code yet:
+// only scaffolding files and hidden directories (.git, .devclean,
+// .github). Used to switch the planner into greenfield mode.
+func DetectEmpty(root string) bool {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		if scaffoldNames[name] {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func gitOut(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir

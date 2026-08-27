@@ -16,10 +16,37 @@ func (g generadorFijo) Generar(_ context.Context, _ string) (string, error) {
 }
 
 func TestPromptPideJSON(t *testing.T) {
-	p := Prompt("exportar clientes")
+	p := Prompt("exportar clientes", Contexto{Lenguaje: "go", Pruebas: "go test ./..."})
 	for _, want := range []string{"exportar clientes", "listo_cuando", "tocar_solo", "array JSON"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt sin %q", want)
+		}
+	}
+}
+
+func TestPromptInyectaLenguaje(t *testing.T) {
+	p := Prompt("exportar", Contexto{Lenguaje: "go", Pruebas: "go test ./..."})
+	for _, want := range []string{"go", "go test ./..."} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt sin lenguaje/pruebas %q:\n%s", want, p)
+		}
+	}
+}
+
+func TestPromptRepoVacio(t *testing.T) {
+	p := Prompt("crear wakeonlan", Contexto{EsVacio: true})
+	for _, want := range []string{"vacío", "stack", "depende_de"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt greenfield sin %q:\n%s", want, p)
+		}
+	}
+}
+
+func TestPromptIncluyeRequisitosYStack(t *testing.T) {
+	p := Prompt("crear wakeonlan", Contexto{EsVacio: true, Stack: "go", Requisitos: "servidor http local"})
+	for _, want := range []string{"go", "servidor http local"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt sin %q:\n%s", want, p)
 		}
 	}
 }
@@ -59,7 +86,7 @@ func TestParseBorradorIncompleto(t *testing.T) {
 
 func TestGenerar(t *testing.T) {
 	g := generadorFijo{texto: `[{"titulo":"a","listo_cuando":"true"}]`}
-	bs, err := Generar(context.Background(), g, "haz a")
+	bs, err := Generar(context.Background(), g, Contexto{}, "haz a")
 	if err != nil || len(bs) != 1 {
 		t.Fatalf("Generar = %v, %v", bs, err)
 	}

@@ -168,6 +168,8 @@ porque: soporte pierde 3h/semana copiando a mano
 listo_cuando: npm test -- export.spec.ts     # OBLIGATORIO, ejecutable
 tocar_solo: ["src/export/**"]
 no_tocar: ["src/auth/**", "migrations/**"]
+depende_de: ["T-000"]                        # opcional: ids que deben estar verdes antes
+peso: liviana                                # opcional: liviana | media | pesada
 limite_intentos: 3
 limite_lineas: 200
 riesgos: archivos grandes pueden agotar memoria
@@ -187,6 +189,11 @@ timeout_esclusa: 300            # segundos para el chequeo "falla hoy"
 proveedores:                    # modelo y key por rol (§8.1)
   planificador: { modelo: claude-sonnet, key_env: ANTHROPIC_API_KEY }
   ejecutor:     { modelo: glm-5.2, key_env: OPENCODE_API_KEY }
+estrategia: equilibrada         # ligera | equilibrada | pesada (peso por defecto)
+modelos:                        # modelo por peso de tarea (Fase 3)
+  liviana: glm-4
+  media: glm-5.2
+  pesada: claude-sonnet
 ```
 
 ---

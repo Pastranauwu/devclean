@@ -35,9 +35,11 @@ type Task struct {
 	ListoCuando    string   `json:"listo_cuando"`
 	TocarSolo      []string `json:"tocar_solo"`
 	NoTocar        []string `json:"no_tocar"`
+	DependeDe      []string `json:"depende_de,omitempty"`
 	LimiteIntentos int      `json:"limite_intentos"`
 	LimiteLineas   int      `json:"limite_lineas"`
 	Riesgos        string   `json:"riesgos"`
+	Peso           string   `json:"peso,omitempty"` // liviana | media | pesada ("" = estrategia global)
 
 	// Notas is the free body after the frontmatter.
 	Notas string `json:"notas,omitempty"`
@@ -107,18 +109,22 @@ func Parse(data []byte) (Task, error) {
 			t.TocarSolo, err = kv.ParseList(p.Value)
 		case "no_tocar":
 			t.NoTocar, err = kv.ParseList(p.Value)
+		case "depende_de":
+			t.DependeDe, err = kv.ParseList(p.Value)
 		case "limite_intentos":
 			t.LimiteIntentos, err = kv.ParseInt(p.Value)
 		case "limite_lineas":
 			t.LimiteLineas, err = kv.ParseInt(p.Value)
 		case "riesgos":
 			t.Riesgos = kv.Unquote(p.Value)
+		case "peso":
+			t.Peso = kv.Unquote(p.Value)
 		default:
 			// campos del futuro: se ignoran solo si el archivo lo es
 			if t.Aviso != "" {
 				continue
 			}
-			return t, fmt.Errorf("campo desconocido: %s · el contrato tiene máximo 8 campos", p.Key)
+			return t, fmt.Errorf("campo desconocido: %s · revisa el contrato", p.Key)
 		}
 		if err != nil {
 			return t, fmt.Errorf("%s: %s", p.Key, err)
@@ -151,6 +157,19 @@ func (t Task) Validate() []error {
 	if t.LimiteLineas < 1 {
 		errs = append(errs, fmt.Errorf("limite_lineas inválido: %d · mínimo 1", t.LimiteLineas))
 	}
+	for _, d := range t.DependeDe {
+		if !ValidID(d) {
+			errs = append(errs, fmt.Errorf("depende_de inválido: %q · usa el formato T-001", d))
+		}
+		if d == t.ID {
+			errs = append(errs, fmt.Errorf("depende_de se refiere a sí misma: %s · quítala", d))
+		}
+	}
+	switch t.Peso {
+	case "", "liviana", "media", "pesada":
+	default:
+		errs = append(errs, fmt.Errorf("peso inválido: %q · usa liviana, media o pesada", t.Peso))
+	}
 	return errs
 }
 
@@ -169,10 +188,16 @@ func (t Task) Marshal() []byte {
 	fmt.Fprintf(&b, "listo_cuando: %s\n", t.ListoCuando)
 	fmt.Fprintf(&b, "tocar_solo: %s\n", kv.MarshalList(t.TocarSolo))
 	fmt.Fprintf(&b, "no_tocar: %s\n", kv.MarshalList(t.NoTocar))
+	if len(t.DependeDe) > 0 {
+		fmt.Fprintf(&b, "depende_de: %s\n", kv.MarshalList(t.DependeDe))
+	}
 	fmt.Fprintf(&b, "limite_intentos: %d\n", t.LimiteIntentos)
 	fmt.Fprintf(&b, "limite_lineas: %d\n", t.LimiteLineas)
 	if t.Riesgos != "" {
 		fmt.Fprintf(&b, "riesgos: %s\n", t.Riesgos)
+	}
+	if t.Peso != "" {
+		fmt.Fprintf(&b, "peso: %s\n", t.Peso)
 	}
 	b.WriteString("---\n")
 	if t.Notas != "" {

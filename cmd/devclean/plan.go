@@ -25,7 +25,9 @@ type propuesta struct {
 	Porque      string   `json:"porque,omitempty"`
 	ListoCuando string   `json:"listo_cuando"`
 	TocarSolo   []string `json:"tocar_solo,omitempty"`
+	DependeDe   []string `json:"depende_de,omitempty"`
 	Riesgos     string   `json:"riesgos,omitempty"`
+	Peso        string   `json:"peso,omitempty"`
 }
 
 func newPlanCmd() *cobra.Command {
@@ -65,7 +67,17 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 		return err
 	}
 
-	borradores, err := plan.Generar(context.Background(), generadorPlan{ex: ex, modelo: modelo, root: root}, frase)
+	esVacio := config.DetectEmpty(root)
+	ctx := plan.Contexto{
+		Lenguaje: config.DetectLanguage(root),
+		EsVacio:  esVacio,
+		Pruebas:  cfg.Pruebas,
+	}
+	if esVacio && !aprobar && isTerminal(os.Stdin) {
+		ctx.Stack, ctx.Requisitos = pedirRequisitos(os.Stdin)
+	}
+
+	borradores, err := plan.Generar(context.Background(), generadorPlan{ex: ex, modelo: modelo, root: root}, ctx, frase)
 	if err != nil {
 		return err
 	}
@@ -82,7 +94,9 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 			Porque:      b.Porque,
 			ListoCuando: b.ListoCuando,
 			TocarSolo:   b.TocarSolo,
+			DependeDe:   b.DependeDe,
 			Riesgos:     b.Riesgos,
+			Peso:        b.Peso,
 		}
 	}
 
@@ -114,7 +128,9 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 			ListoCuando:    b.ListoCuando,
 			TocarSolo:      b.TocarSolo,
 			NoTocar:        b.NoTocar,
+			DependeDe:      b.DependeDe,
 			Riesgos:        b.Riesgos,
+			Peso:           b.Peso,
 			LimiteIntentos: task.DefaultLimiteIntentos,
 			LimiteLineas:   task.DefaultLimiteLineas,
 		}
@@ -149,6 +165,31 @@ func confirmar(in io.Reader) bool {
 	linea, _ := bufio.NewReader(in).ReadString('\n')
 	r := strings.ToLower(strings.TrimSpace(linea))
 	return r == "s" || r == "si" || r == "y" || r == "yes"
+}
+
+// pedirRequisitos reúne el stack y los requisitos extra del humano
+// cuando el repo está vacío (Fase 2): sin esto, el planificador no
+// tiene de dónde agarrarse y alucina un stack.
+func pedirRequisitos(in io.Reader) (stack, requisitos string) {
+	leer := bufio.NewReader(in)
+
+	out.Line("repositorio vacío · define el stack y los requisitos antes de planear")
+	out.Line("stack (go, node, python, rust, ...) · enter para que lo elija el modelo:")
+	if l, _ := leer.ReadString('\n'); strings.TrimSpace(l) != "" {
+		stack = strings.ToLower(strings.TrimSpace(l))
+	}
+
+	var piezas []string
+	for {
+		out.Line("requisito o pieza (una línea, enter para terminar):")
+		l, _ := leer.ReadString('\n')
+		l = strings.TrimSpace(l)
+		if l == "" {
+			break
+		}
+		piezas = append(piezas, l)
+	}
+	return stack, strings.Join(piezas, "; ")
 }
 
 // generadorPlan adapta el ejecutor al generador de texto del planificador.

@@ -28,6 +28,8 @@ type Config struct {
 	TimeoutEsclusa  int                  `json:"timeout_esclusa"` // segundos para el chequeo "falla hoy"
 	PatronesPrueba  []string             `json:"patrones_prueba"` // rutas que ninguna tarea puede editar
 	Proveedores     map[string]Proveedor `json:"proveedores,omitempty"`
+	Estrategia      string               `json:"estrategia,omitempty"` // ligera | equilibrada | pesada
+	Modelos         map[string]string    `json:"modelos,omitempty"`    // peso -> modelo (liviana/media/pesada)
 }
 
 // Proveedor es un rol del motor de agentes (§8.1): qué modelo usa y de
@@ -116,7 +118,26 @@ func (c Config) Save(root string) error {
 			fmt.Fprintf(&b, "  %s: { modelo: %s, key_env: %s }\n", rol, kv.Quote(p.Modelo), kv.Quote(p.KeyEnv))
 		}
 	}
+	if c.Estrategia != "" {
+		fmt.Fprintf(&b, "estrategia: %s\n", c.Estrategia)
+	}
+	if len(c.Modelos) > 0 {
+		fmt.Fprintf(&b, "modelos:\n")
+		for _, peso := range sortedStringKeys(c.Modelos) {
+			fmt.Fprintf(&b, "  %s: %s\n", peso, kv.Quote(c.Modelos[peso]))
+		}
+	}
 	return os.WriteFile(Path(root), []byte(b.String()), 0o644)
+}
+
+// sortedStringKeys devuelve las claves de un mapa en orden estable.
+func sortedStringKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // sortedRoles devuelve los roles en orden estable para un Save
@@ -137,6 +158,28 @@ func ModeloRol(c Config, rol string) string {
 		return ""
 	}
 	return c.Proveedores[rol].Modelo
+}
+
+// PesoPorDefecto devuelve el peso que usa una tarea sin peso explícito,
+// a partir de la estrategia global (Fase 3). Por defecto, media.
+func (c Config) PesoPorDefecto() string {
+	switch c.Estrategia {
+	case "ligera":
+		return "liviana"
+	case "pesada":
+		return "pesada"
+	default:
+		return "media"
+	}
+}
+
+// ModeloPeso devuelve el modelo asociado a un peso (liviana/media/pesada)
+// en la configuración, o "" si no está declarado.
+func (c Config) ModeloPeso(peso string) string {
+	if c.Modelos == nil {
+		return ""
+	}
+	return c.Modelos[peso]
 }
 
 // Parse reads the config yaml subset. Unknown keys are ignored.
@@ -170,6 +213,8 @@ func Parse(data []byte) (Config, error) {
 				return cfg, fmt.Errorf("config.yml: línea %d · timeout_esclusa inválido: %s · segundos, mínimo 1", p.Line, p.Value)
 			}
 			cfg.TimeoutEsclusa = seg
+		case "estrategia":
+			cfg.Estrategia = kv.Unquote(p.Value)
 		}
 	}
 
@@ -178,7 +223,30 @@ func Parse(data []byte) (Config, error) {
 		return cfg, err
 	}
 	cfg.Proveedores = proveedores
+
+	modelos, err := parseModelos(data)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Modelos = modelos
 	return cfg, nil
+}
+
+// parseModelos lee el bloque anidado `modelos:` (Fase 3), con un peso
+// por línea: `liviana: glm-4`.
+func parseModelos(data []byte) (map[string]string, error) {
+	children, err := kv.Nested(strings.Split(string(data), "\n"), "modelos", 1)
+	if err != nil {
+		return nil, fmt.Errorf("config.yml: %s", err)
+	}
+	if len(children) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(children))
+	for _, c := range children {
+		out[c.Key] = kv.Unquote(c.Value)
+	}
+	return out, nil
 }
 
 // parseProveedores lee el bloque anidado `proveedores:` (§8.1), con un
