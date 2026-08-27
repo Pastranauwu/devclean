@@ -95,9 +95,12 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
 el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 
 **Fase 5 — lanzamiento**
-- `README.md` con manifiesto, instalación, uso, métricas y el límite honesto.
+- `README.md` con manifiesto, instalación, adopción en proyectos reales,
+  métricas y el límite honesto.
 - `.goreleaser.yml` (binario estático por plataforma) y `scripts/install.sh`.
-- Falta grabar el GIF de 20 segundos y el tap de Homebrew.
+- `scripts/demo.sh` (demo reproducible con agente falso) y `docs/demo.tape`
+  para grabar el GIF con `vhs`.
+- Etiquetado **`v0.1.0`**. Falta grabar el GIF y publicar (push + release).
 
 ---
 
