@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,7 +22,8 @@ type initResult struct {
 }
 
 func newInitCmd() *cobra.Command {
-	return &cobra.Command{
+	var pruebas string
+	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "detecta el repo y crea .devclean/",
 		Args:  cobra.NoArgs,
@@ -28,12 +32,36 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runInit(cwd)
+			// solo se pregunta si hay alguien para responder
+			var in io.Reader
+			if pruebas == "" && !out.JSON() && isTerminal(os.Stdin) {
+				in = os.Stdin
+			}
+			return runInit(cwd, pruebas, in)
 		},
 	}
+	cmd.Flags().StringVar(&pruebas, "pruebas", "", "comando de pruebas del proyecto, en vez del detectado")
+	return cmd
 }
 
-func runInit(cwd string) error {
+// confirmarPruebas shows the detected test command and takes a
+// correction (adenda C.5): una detección silenciosa equivocada cuesta
+// horas. Enter en blanco acepta lo detectado.
+func confirmarPruebas(in io.Reader, detectado string) string {
+	if detectado == "" {
+		out.Line("· comando de pruebas no detectado · escribe el de este proyecto, o enter para dejarlo vacío")
+	} else {
+		out.Line("· comando de pruebas detectado: %s", detectado)
+		out.Line("  enter para aceptarlo, o escribe el correcto")
+	}
+	linea, _ := bufio.NewReader(in).ReadString('\n')
+	if respuesta := strings.TrimSpace(linea); respuesta != "" {
+		return respuesta
+	}
+	return detectado
+}
+
+func runInit(cwd, pruebasFlag string, in io.Reader) error {
 	root, err := config.RepoRoot(cwd)
 	if err != nil {
 		return err
@@ -44,6 +72,13 @@ func runInit(cwd string) error {
 
 	base := config.DetectBaseBranch(root)
 	pruebas, pruebasOK := config.DetectTestCommand(root)
+	switch {
+	case pruebasFlag != "":
+		pruebas, pruebasOK = pruebasFlag, true
+	case in != nil:
+		pruebas = confirmarPruebas(in, pruebas)
+		pruebasOK = pruebas != ""
+	}
 
 	if err := os.MkdirAll(config.TasksDir(root), 0o755); err != nil {
 		return err
