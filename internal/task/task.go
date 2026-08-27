@@ -7,8 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
+
+	"github.com/Pastranauwu/devclean/internal/kv"
 )
 
 // Defaults for the optional contract fields (§6.1).
@@ -61,42 +62,36 @@ func Parse(data []byte) (Task, error) {
 		return t, errors.New("falta el bloque --- de cierre")
 	}
 
-	for i, raw := range lines[1:closing] {
-		line := strings.TrimSpace(stripComment(raw))
-		if line == "" {
-			continue
-		}
-		key, value, ok := strings.Cut(line, ":")
-		if !ok {
-			return t, fmt.Errorf("línea %d no es clave: valor", i+2)
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
+	pares, err := kv.Pairs(lines[1:closing], 2)
+	if err != nil {
+		return t, err
+	}
+	for _, p := range pares {
 		var err error
-		switch key {
+		switch p.Key {
 		case "id":
-			t.ID = unquote(value)
+			t.ID = kv.Unquote(p.Value)
 		case "titulo":
-			t.Titulo = unquote(value)
+			t.Titulo = kv.Unquote(p.Value)
 		case "porque":
-			t.Porque = unquote(value)
+			t.Porque = kv.Unquote(p.Value)
 		case "listo_cuando":
-			t.ListoCuando = unquote(value)
+			t.ListoCuando = kv.Unquote(p.Value)
 		case "tocar_solo":
-			t.TocarSolo, err = parseList(value)
+			t.TocarSolo, err = kv.ParseList(p.Value)
 		case "no_tocar":
-			t.NoTocar, err = parseList(value)
+			t.NoTocar, err = kv.ParseList(p.Value)
 		case "limite_intentos":
-			t.LimiteIntentos, err = parsePositiveInt(value)
+			t.LimiteIntentos, err = kv.ParseInt(p.Value)
 		case "limite_lineas":
-			t.LimiteLineas, err = parsePositiveInt(value)
+			t.LimiteLineas, err = kv.ParseInt(p.Value)
 		case "riesgos":
-			t.Riesgos = unquote(value)
+			t.Riesgos = kv.Unquote(p.Value)
 		default:
-			return t, fmt.Errorf("campo desconocido: %s · el contrato tiene máximo 8 campos", key)
+			return t, fmt.Errorf("campo desconocido: %s · el contrato tiene máximo 8 campos", p.Key)
 		}
 		if err != nil {
-			return t, fmt.Errorf("%s: %s", key, err)
+			return t, fmt.Errorf("%s: %s", p.Key, err)
 		}
 	}
 
@@ -136,8 +131,8 @@ func (t Task) Marshal() []byte {
 		fmt.Fprintf(&b, "porque: %s\n", t.Porque)
 	}
 	fmt.Fprintf(&b, "listo_cuando: %s\n", t.ListoCuando)
-	writeList(&b, "tocar_solo", t.TocarSolo)
-	writeList(&b, "no_tocar", t.NoTocar)
+	fmt.Fprintf(&b, "tocar_solo: %s\n", kv.MarshalList(t.TocarSolo))
+	fmt.Fprintf(&b, "no_tocar: %s\n", kv.MarshalList(t.NoTocar))
 	fmt.Fprintf(&b, "limite_intentos: %d\n", t.LimiteIntentos)
 	fmt.Fprintf(&b, "limite_lineas: %d\n", t.LimiteLineas)
 	if t.Riesgos != "" {
@@ -148,74 +143,4 @@ func (t Task) Marshal() []byte {
 		fmt.Fprintf(&b, "\n%s\n", t.Notas)
 	}
 	return []byte(b.String())
-}
-
-func writeList(b *strings.Builder, key string, values []string) {
-	quoted := make([]string, len(values))
-	for i, v := range values {
-		quoted[i] = strconv.Quote(v)
-	}
-	fmt.Fprintf(b, "%s: [%s]\n", key, strings.Join(quoted, ", "))
-}
-
-func parsePositiveInt(v string) (int, error) {
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return 0, fmt.Errorf("entero inválido: %s", v)
-	}
-	return n, nil
-}
-
-// stripComment removes a trailing ` #` comment outside double quotes.
-func stripComment(s string) string {
-	inQuote := false
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '"':
-			inQuote = !inQuote
-		case '#':
-			if !inQuote && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t') {
-				return s[:i]
-			}
-		}
-	}
-	return s
-}
-
-// unquote removes surrounding double quotes if present.
-func unquote(v string) string {
-	if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
-		if s, err := strconv.Unquote(v); err == nil {
-			return s
-		}
-	}
-	return v
-}
-
-// parseList parses an inline list of double-quoted strings: ["a", "b"].
-func parseList(v string) ([]string, error) {
-	if v == "" {
-		return nil, nil
-	}
-	if !strings.HasPrefix(v, "[") || !strings.HasSuffix(v, "]") {
-		return nil, fmt.Errorf("lista mal formada: %s", v)
-	}
-	inner := strings.TrimSpace(v[1 : len(v)-1])
-	if inner == "" {
-		return []string{}, nil
-	}
-	parts := strings.Split(inner, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if len(p) < 2 || p[0] != '"' || p[len(p)-1] != '"' {
-			return nil, fmt.Errorf("elemento de lista sin comillas: %s", p)
-		}
-		s, err := strconv.Unquote(p)
-		if err != nil {
-			return nil, fmt.Errorf("elemento de lista mal formado: %s", p)
-		}
-		out = append(out, s)
-	}
-	return out, nil
 }
