@@ -1,7 +1,7 @@
 # Estado del proyecto — traspaso entre sesiones
 
-Última actualización: 27 agosto 2026. Cierra la fase 2: el bucle
-instrumentado y `cmd/run` están hechos.
+Última actualización: 27 agosto 2026. Cierra la fase 3: `devclean ship`,
+la esclusa de salida, está hecho.
 
 **Orden de lectura para quien llegue nuevo:**
 1. `docs/PRD-devclean.md` — la especificación.
@@ -42,6 +42,22 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
   `en_curso → lista | detenida`. El adaptador `executor` → `loop.Agent` vive en
   `cmd/devclean/run.go`; el cuarto no se destruye en `run`, lo libera `ship`.
 
+**Fase 3 — hecha**
+- `internal/ship`: la esclusa de salida (§6.5), ocho pasos en orden. La
+  compuerta se frena en el primero que falla y da la razón exacta.
+  1. `base` (rebase sobre la rama base, conflicto → abortar),
+  2. `historial` (aplanar los `wip:` en un commit Conventional + trailer `Agent:`),
+  3. `ruido` (prints de debug, código comentado, temporales),
+  4. `secretos` (claves de proveedores, privadas, credenciales en claro),
+  5. `presupuesto` (`limite_lineas`, archivos),
+  6. `bisectable` (corre `pruebas` en el commit aplanado),
+  7. `handoff` (qué cambió, qué no, cómo verificar — determinista),
+  8. `pr` (sube la rama, `gh pr create`, libera el cuarto).
+- `devclean ship <id> [--dry-run]`: exige estado `lista`, corre la esclusa y
+  muestra un paso por línea; `--dry-run` hace todo menos abrir el PR. El
+  squash produce un solo commit (dentro de los 1–5 del criterio de
+  aceptación); el split en varios es mejora de v0.2.
+
 **Adenda, Parte A y C**
 - **A.1** `version: 1` obligatoria. Un archivo con versión mayor a la del binario
   se lee igual, ignorando lo desconocido, y avisa: `contrato versión 2, binario
@@ -64,8 +80,9 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 
 ## Qué falta
 
-**Fase 2 cerrada.** Lo siguiente es la esclusa de salida (§6.5), que es la
-fase 3: `devclean ship`. El bucle y `run` ya están.
+**Fases 1–3 cerradas.** Queda la fase 4 (TUI con bubbletea según §16,
+las cinco métricas y `devclean report`, `devclean doctor`) y la fase 5
+(lanzamiento: GoReleaser, instalador, README).
 
 **v0.2:** Parte B entera. Ya está especificada, nadie la ha empezado.
 
