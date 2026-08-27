@@ -1,7 +1,7 @@
 # Estado del proyecto — traspaso entre sesiones
 
-Última actualización: 26 agosto 2026. Escrito al cerrar la Parte A y la Parte C
-de la adenda.
+Última actualización: 27 agosto 2026. Cierra la fase 2: el bucle
+instrumentado y `cmd/run` están hechos.
 
 **Orden de lectura para quien llegue nuevo:**
 1. `docs/PRD-devclean.md` — la especificación.
@@ -26,11 +26,21 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
 - `task check`: esclusa de entrada, ejecuta `listo_cuando` de verdad.
 - `--plain` y `--json` en todos los comandos.
 
-**Fase 2 — parcial, otro agente**
+**Fase 2 — hecha**
 - `internal/state`: estados en `.devclean/state/`, el cruce solo mira `en_curso`.
 - `internal/room`: cuartos aislados con worktree, deps por manifiesto, puerto libre.
-- `internal/executor`: adaptadores opencode y claude. **En disco pero sin
-  commitear** — es trabajo en curso de ese agente, no lo commitees por él.
+- `internal/executor`: adaptadores opencode y claude.
+- `internal/loop`: el bucle de §6.4 con la instrumentación de la adenda
+  A.2. Cada intento escribe una línea en `.devclean/runs/<id>/attempts.jsonl`
+  con `salida_codigo`, tests parseados (null si no se puede), `archivos_tocados`,
+  `lineas_mas/menos`, `simbolos_exportados` (go/ast, null si no hay Go),
+  `revertidos_fuera_de_alcance`, tokens y modelo. Reversión de fuera de
+  alcance y de rutas de prueba (A.3) incluida; puntos de restauración
+  `wip:`. Declara su propia interfaz `Agent` (lado del consumidor).
+- `devclean run [--agentes N] [--ejecutor ...] [--modelo ...]`: esclusa de
+  entrada por tarea, asignación (A.4 + cruce), N tareas en paralelo, estados
+  `en_curso → lista | detenida`. El adaptador `executor` → `loop.Agent` vive en
+  `cmd/devclean/run.go`; el cuarto no se destruye en `run`, lo libera `ship`.
 
 **Adenda, Parte A y C**
 - **A.1** `version: 1` obligatoria. Un archivo con versión mayor a la del binario
@@ -54,23 +64,15 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 
 ## Qué falta
 
-**Crítico, bloquea todo lo demás**
-
-- **A.2 · instrumentación del bucle.** Le toca a quien construya `internal/loop`.
-  El formato exacto de `attempts.jsonl` está en `docs/attempts-jsonl.md`. Sin
-  esto no hay métricas, ni parte de datos (§6.7), ni forma de medir A.5.
-- **`internal/executor` sin commitear.**
-
-**Fase 2, lo que queda:** el bucle (§6.4), `cmd/run`, y la esclusa de salida
-(§6.5) que es fase 3.
+**Fase 2 cerrada.** Lo siguiente es la esclusa de salida (§6.5), que es la
+fase 3: `devclean ship`. El bucle y `run` ya están.
 
 **v0.2:** Parte B entera. Ya está especificada, nadie la ha empezado.
 
 **Deuda conocida, chica**
 - `internal/executor` aparece en el historial de dos commits (`22a48f8`,
   `a781c73`) antes de que lo sacara con `git rm --cached`. Se limpia solo
-  reescribiendo historia; no se hizo porque hay otro agente trabajando en el
-  mismo árbol.
+  reescribiendo historia.
 - `internal/task/store_test.go` construye `Task` sin `Version`. Pasa porque
   `Marshal` omite el cero y es `Validate` quien exige el campo, pero el fixture
   miente sobre el contrato.
@@ -88,8 +90,9 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
   es deliberadamente conservador y `*_test.go` se cruza con *todo*, así que
   aplicarlo tal cual rechazaba `tocar_solo: ["src/export/**"]`, o sea todo
   contrato razonable. Lo que se rechaza es *apuntarle* a las pruebas. De los
-  archivos de prueba que se editen igual se encarga la reversión del bucle, que
-  es lo que dice la segunda frase de A.3 — **y esa reversión todavía no existe**.
+  archivos de prueba que se editen igual se encarga la reversión del bucle,
+  que es lo que dice la segunda frase de A.3 — **y esa reversión ya está
+  implementada en `internal/loop`** (`revertFueraDeAlcance`).
 - **El parser yaml vive en `internal/kv`.** No escribas un tercero.
 - **Lo que genere contratos tiene que poner `version: 1`.**
 - Los mensajes de error siguen §16.6: minúscula, sin punto final, dicen qué pasó
