@@ -1,6 +1,7 @@
 // Package gate implements the entry gate of §6.3: the four checks a
 // task must pass before devclean spends a single token on it.
 //
+//  0. el contrato es válido (version, id, límites)
 //  1. listo_cuando existe y se ejecuta
 //  2. el comando falla hoy (si ya pasa, la tarea no tiene sentido)
 //  3. tocar_solo se declara si hace falta y no se cruza con el de otra
@@ -40,6 +41,7 @@ type Result struct {
 	ID       string  `json:"id"`
 	Aprobada bool    `json:"aprobada"`
 	Chequeos []Check `json:"chequeos"`
+	Aviso    string  `json:"aviso,omitempty"`
 }
 
 // PrimerMotivo returns the reason of the first failed check.
@@ -58,6 +60,12 @@ func (r Result) PrimerMotivo() string {
 // stay empty (adenda A.4).
 func Run(ctx context.Context, root string, cfg config.Config, t task.Task, otras []task.Task, timeout time.Duration) Result {
 	res := Result{ID: t.ID}
+	res.Aviso = t.Aviso
+
+	// el contrato se valida primero: sin version ni id no hay tarea
+	// que evaluar (adenda A.1). Los demás chequeos corren igual, para
+	// que un solo paso liste todo lo que hay que arreglar.
+	res.Chequeos = append(res.Chequeos, checkContrato(t))
 
 	ejecutable := checkEjecutable(root, t)
 	res.Chequeos = append(res.Chequeos, ejecutable)
@@ -82,6 +90,20 @@ func Run(ctx context.Context, root string, cfg config.Config, t task.Task, otras
 		}
 	}
 	return res
+}
+
+// checkContrato: the contract itself must be valid before any of the
+// runtime checks mean anything.
+func checkContrato(t task.Task) Check {
+	errs := t.Validate()
+	if len(errs) == 0 {
+		return Check{"contrato válido", true, ""}
+	}
+	motivos := make([]string, len(errs))
+	for i, e := range errs {
+		motivos[i] = e.Error()
+	}
+	return Check{"contrato válido", false, strings.Join(motivos, " · ")}
 }
 
 // checkEjecutable: listo_cuando exists and names something runnable.

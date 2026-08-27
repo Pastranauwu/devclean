@@ -79,6 +79,9 @@ func runCheck(id string) error {
 	if err := out.Data(res); err != nil {
 		return err
 	}
+	if res.Aviso != "" {
+		out.Line("· %s", res.Aviso)
+	}
 	for _, c := range res.Chequeos {
 		if c.OK {
 			out.Line("✓ %s", c.Nombre)
