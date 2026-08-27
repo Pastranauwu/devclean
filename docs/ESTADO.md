@@ -68,8 +68,13 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
 - `devclean logs <id>`: los intentos de una tarea, uno por línea.
 - `internal/tui`: la compuerta animada de `ship` (§16.3), con la paleta del
   cuarto limpio (§16.2). `ship` la usa cuando la salida es terminal y no hay
-  `--plain` ni `--json`; si no, texto plano. Faltan los TUI de `run` y
-  `board` (el texto plano ya cubre la función) y `devclean plan`.
+  `--plain` ni `--json`; si no, texto plano.
+- `internal/plan` + `devclean plan "<texto>"`: el planificador (§5, §8.2)
+  parte una petición en contratos. El texto lo produce un modelo (vía el
+  ejecutor, cuyo `Result.Text` ahora trae la respuesta); devclean solo parsea
+  el JSON, asigna ids y pide aprobación (`--aprobar` para no preguntar). El
+  rol planificador usa `--modelo`/`--ejecutor` como `run`; la selección
+  "el mejor disponible" y el config anidado `proveedores` quedan para v0.2.
 
 **Adenda, Parte A y C**
 - **A.1** `version: 1` obligatoria. Un archivo con versión mayor a la del binario
@@ -93,9 +98,10 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 
 ## Qué falta
 
-**Fases 1–3 cerradas.** De la fase 4 queda: los TUI de `run` y `board`,
-`devclean plan` (necesita el rol planificador) y el reporte de tendencia.
-La fase 5 es lanzamiento (GoReleaser, instalador, README con el GIF).
+**Fases 1–3 cerradas, fase 4 casi.** De la fase 4 solo quedan los TUI de
+`run` y `board` (el texto plano ya cubre la función) y la flecha de
+tendencia del reporte. La fase 5 es lanzamiento: GoReleaser, instalador,
+README con el manifiesto, el GIF y la tabla de métricas del propio repo.
 
 **v0.2:** Parte B entera. Ya está especificada, nadie la ha empezado.
 
