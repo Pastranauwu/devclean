@@ -1,7 +1,7 @@
 # Estado del proyecto — traspaso entre sesiones
 
-Última actualización: 27 agosto 2026. Cierra la fase 3: `devclean ship`,
-la esclusa de salida, está hecho.
+Última actualización: 27 agosto 2026. Fase 4 en marcha: métricas, report,
+doctor, board y logs hechos; la compuerta animada de `ship` también.
 
 **Orden de lectura para quien llegue nuevo:**
 1. `docs/PRD-devclean.md` — la especificación.
@@ -58,6 +58,19 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
   squash produce un solo commit (dentro de los 1–5 del criterio de
   aceptación); el split en varios es mejora de v0.2.
 
+**Fase 4 — en marcha**
+- `internal/metrics`: las cinco métricas de §9 derivadas de los artefactos
+  (`attempts.jsonl`, estados y un registro de entrega que `ship` deja en
+  `.devclean/runs/<id>/entrega.json`). `friccion` queda en null: necesita el
+  ciclo de revisión del PR, sin fuente en v0.1. `devclean report` las muestra.
+- `devclean doctor`: verifica git, repo, configuración, ejecutores y keys.
+- `devclean board`: tablero por estado (listo, en curso, detenido, pendiente).
+- `devclean logs <id>`: los intentos de una tarea, uno por línea.
+- `internal/tui`: la compuerta animada de `ship` (§16.3), con la paleta del
+  cuarto limpio (§16.2). `ship` la usa cuando la salida es terminal y no hay
+  `--plain` ni `--json`; si no, texto plano. Faltan los TUI de `run` y
+  `board` (el texto plano ya cubre la función) y `devclean plan`.
+
 **Adenda, Parte A y C**
 - **A.1** `version: 1` obligatoria. Un archivo con versión mayor a la del binario
   se lee igual, ignorando lo desconocido, y avisa: `contrato versión 2, binario
@@ -80,9 +93,9 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 
 ## Qué falta
 
-**Fases 1–3 cerradas.** Queda la fase 4 (TUI con bubbletea según §16,
-las cinco métricas y `devclean report`, `devclean doctor`) y la fase 5
-(lanzamiento: GoReleaser, instalador, README).
+**Fases 1–3 cerradas.** De la fase 4 queda: los TUI de `run` y `board`,
+`devclean plan` (necesita el rol planificador) y el reporte de tendencia.
+La fase 5 es lanzamiento (GoReleaser, instalador, README con el GIF).
 
 **v0.2:** Parte B entera. Ya está especificada, nadie la ha empezado.
 
