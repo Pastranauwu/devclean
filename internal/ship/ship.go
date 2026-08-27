@@ -31,6 +31,12 @@ type Resultado struct {
 	Pasos    []Paso `json:"pasos"`
 	Aprobado bool   `json:"aprobado"`
 	PR       string `json:"pr,omitempty"`
+
+	// Resumen para las métricas, aunque la esclusa frene antes.
+	LineasMas   int  `json:"lineas_mas,omitempty"`
+	LineasMenos int  `json:"lineas_menos,omitempty"`
+	Ruido       int  `json:"ruido,omitempty"`
+	Conflicto   bool `json:"conflicto,omitempty"`
 }
 
 // Opciones carries the exit gate's dependencies.
@@ -60,6 +66,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	target, conflictos, err := rebase(ctx, o.Root, o.Room.Path, o.Base, o.Room.Rama)
 	if err != nil {
 		if len(conflictos) > 0 {
+			res.Conflicto = true
 			res.Pasos = append(res.Pasos, Paso{"base", false, "rebase en conflicto · archivos: " + unir(conflictos) + " · resuélvelo a mano"})
 		} else {
 			res.Pasos = append(res.Pasos, Paso{"base", false, "no se pudo rebasear · " + err.Error()})
@@ -83,9 +90,12 @@ func Run(ctx context.Context, o Opciones) Resultado {
 		res.Pasos = append(res.Pasos, Paso{"ruido", false, err.Error()})
 		return res
 	}
+	res.LineasMas = mas
+	res.LineasMenos = menos
 
 	// 3. ruido — prints de debug, temporales, código comentado
 	if h := escanearRuido(diff, archivos); len(h) > 0 {
+		res.Ruido = len(h)
 		res.Pasos = append(res.Pasos, Paso{"ruido", false, resumenHallazgos(h)})
 		return res
 	}
