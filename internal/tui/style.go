@@ -30,6 +30,15 @@ var (
 // spinnerFrames es la animación del trabajo en curso (braille).
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
+// colores de la paleta en RGB, para el sticker del plasma.
+var (
+	rgbTinta   = [3]int{230, 230, 225}
+	rgbPresion = [3]int{79, 179, 162}
+	rgbAlerta  = [3]int{217, 108, 74}
+	rgbEspera  = [3]int{201, 162, 39}
+	rgbApagado = [3]int{107, 111, 114}
+)
+
 // logoFilas es el logotipo de devclean en arte de píxeles (fuente
 // unsciithin de bit), sin colores; el degradado se aplica aquí.
 var logoFilas = []string{
@@ -41,14 +50,23 @@ var logoFilas = []string{
 
 // mezclar interpola dos colores RGB y devuelve su hex.
 func mezclar(a, b [3]int, t float64) string {
+	c := mezclarRGB(a, b, t)
+	return "#" + hex2(c[0]) + hex2(c[1]) + hex2(c[2])
+}
+
+// mezclarRGB interpola dos colores RGB.
+func mezclarRGB(a, b [3]int, t float64) [3]int {
 	if t < 0 {
 		t = 0
 	}
 	if t > 1 {
 		t = 1
 	}
-	f := func(i int) int { return a[i] + int(float64(b[i]-a[i])*t) }
-	return "#" + hex2(f(0)) + hex2(f(1)) + hex2(f(2))
+	return [3]int{
+		a[0] + int(float64(b[0]-a[0])*t),
+		a[1] + int(float64(b[1]-a[1])*t),
+		a[2] + int(float64(b[2]-a[2])*t),
+	}
 }
 
 func hex2(n int) string {
