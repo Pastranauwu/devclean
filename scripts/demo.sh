@@ -5,8 +5,13 @@
 # Para una demo con agentes reales, quita FAKE=1 y usa --ejecutor opencode.
 set -e
 
-bin="${DEVCLEAN_BIN:-$(dirname "$0")/../devclean}"
-[ -x "$bin" ] || { echo "compila primero: go build -o devclean ./cmd/devclean"; exit 1; }
+# ruta absoluta del binario: sobrevive al `cd "$repo"` de más abajo
+raiz="$(cd "$(dirname "$0")/.." && pwd)"
+bin="${DEVCLEAN_BIN:-$raiz/devclean}"
+if [ ! -x "$bin" ]; then
+  echo "compilando devclean..."
+  (cd "$raiz" && go build -o devclean ./cmd/devclean) || exit 1
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
