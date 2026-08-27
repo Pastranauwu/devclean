@@ -132,7 +132,7 @@ Se destruye al terminar.
 Antes de asignar una tarea, devclean valida:
 1. `listo_cuando` existe y se ejecuta.
 2. El comando falla **hoy** (si ya pasa, la tarea no tiene sentido).
-3. `tocar_solo` no se cruza con el de otra tarea activa.
+3. `tocar_solo` no se cruza con el de otra tarea activa. Vacío significa "sin restricción" y solo se permite mientras haya una sola tarea en curso; con dos o más es obligatorio, porque sin alcance declarado no hay cruce que detectar (adenda A.4).
 4. `tocar_solo` no incluye zonas prohibidas globales (lockfiles, migraciones, CI, CHANGELOG).
 5. `tocar_solo` no apunta a rutas de prueba (adenda A.3). Los patrones viven en `patrones_prueba` de `config.yml`, que `init` siembra con `*_test.go`, `test/**`, `spec/**`, `*.spec.ts` y compañía. Un alcance amplio como `src/export/**` sí se acepta: contiene pruebas pero no las declara, y de las que se editen se encarga la reversión del bucle.
 

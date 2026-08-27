@@ -3,7 +3,7 @@
 //
 //  1. listo_cuando existe y se ejecuta
 //  2. el comando falla hoy (si ya pasa, la tarea no tiene sentido)
-//  3. tocar_solo no se cruza con el de otra tarea
+//  3. tocar_solo se declara si hace falta y no se cruza con el de otra
 //  4. tocar_solo no incluye zonas prohibidas globales ni rutas de prueba
 //
 // All checks are pure code: no model is involved in verification.
@@ -52,9 +52,10 @@ func (r Result) PrimerMotivo() string {
 	return ""
 }
 
-// Run executes the four checks in order. Check 2 runs listo_cuando for
-// real, with timeout, in the repository root. An empty tocar_solo
-// declares no scope, so checks 3 and 4 have nothing to evaluate.
+// Run executes the five checks in order. Check 2 runs listo_cuando for
+// real, with timeout, in the repository root. otras carries only the
+// tasks already en_curso, which is what decides whether tocar_solo may
+// stay empty (adenda A.4).
 func Run(ctx context.Context, root string, cfg config.Config, t task.Task, otras []task.Task, timeout time.Duration) Result {
 	res := Result{ID: t.ID}
 
@@ -138,6 +139,16 @@ func checkFallaHoy(ctx context.Context, root, listoCuando string, timeout time.D
 // checkSinCruce: tocar_solo must not overlap with any other active
 // task's. The caller passes only tasks in state en_curso (§6.3).
 func checkSinCruce(t task.Task, otras []task.Task) Check {
+	// A.4: sin alcance declarado no hay cruce que detectar, así que
+	// vacío solo vale mientras esta sea la única tarea en curso
+	if len(t.TocarSolo) == 0 {
+		for _, o := range otras {
+			if o.ID != t.ID {
+				return Check{"sin cruce", false, "tocar_solo obligatorio con más de una tarea activa · declara tus rutas"}
+			}
+		}
+		return Check{"sin cruce", true, ""}
+	}
 	for _, o := range otras {
 		if o.ID == t.ID {
 			continue
