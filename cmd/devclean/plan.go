@@ -63,6 +63,9 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 		modelo = config.ModeloRol(cfg, "planificador")
 	}
 
+	if ejecutor == "" {
+		ejecutor = cfg.Ejecutor
+	}
 	ex, err := elegirEjecutor(ejecutor)
 	if err != nil {
 		return err

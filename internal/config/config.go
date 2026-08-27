@@ -24,6 +24,7 @@ const DirName = ".devclean"
 type Config struct {
 	Base            string               `json:"base"`
 	Pruebas         string               `json:"pruebas"`
+	Ejecutor        string               `json:"ejecutor,omitempty"` // opencode | claude, por defecto ninguno (autodetecta)
 	ZonasProhibidas []string             `json:"zonas_prohibidas"`
 	TimeoutEsclusa  int                  `json:"timeout_esclusa"` // segundos para el chequeo "falla hoy"
 	PatronesPrueba  []string             `json:"patrones_prueba"` // rutas que ninguna tarea puede editar
@@ -104,6 +105,9 @@ func (c Config) Save(root string) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "base: %s\n", c.Base)
 	fmt.Fprintf(&b, "pruebas: %s\n", c.Pruebas)
+	if c.Ejecutor != "" {
+		fmt.Fprintf(&b, "ejecutor: %s\n", c.Ejecutor)
+	}
 	fmt.Fprintf(&b, "zonas_prohibidas: %s\n", kv.MarshalList(c.ZonasProhibidas))
 	if len(c.PatronesPrueba) > 0 {
 		fmt.Fprintf(&b, "patrones_prueba: %s\n", kv.MarshalList(c.PatronesPrueba))
@@ -195,6 +199,8 @@ func Parse(data []byte) (Config, error) {
 			cfg.Base = kv.Unquote(p.Value)
 		case "pruebas":
 			cfg.Pruebas = kv.Unquote(p.Value)
+		case "ejecutor":
+			cfg.Ejecutor = kv.Unquote(p.Value)
 		case "zonas_prohibidas":
 			list, err := kv.ParseList(p.Value)
 			if err != nil {
