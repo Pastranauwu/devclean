@@ -8,6 +8,7 @@ package kv
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -88,12 +89,93 @@ func ParseInt(v string) (int, error) {
 	return n, nil
 }
 
+// ParseInlineMap parses an inline map literal `{ a: b, c: d }` into a
+// map of unquoted strings. Empty braces yield an empty map.
+func ParseInlineMap(v string) (map[string]string, error) {
+	v = strings.TrimSpace(v)
+	if !strings.HasPrefix(v, "{") || !strings.HasSuffix(v, "}") {
+		return nil, fmt.Errorf("mapa mal formado: %s", v)
+	}
+	inner := strings.TrimSpace(v[1 : len(v)-1])
+	if inner == "" {
+		return map[string]string{}, nil
+	}
+	out := map[string]string{}
+	for _, part := range strings.Split(inner, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		k, val, ok := strings.Cut(part, ":")
+		if !ok {
+			return nil, fmt.Errorf("elemento de mapa sin dos puntos: %s", part)
+		}
+		out[strings.TrimSpace(k)] = Unquote(strings.TrimSpace(val))
+	}
+	return out, nil
+}
+
+// MarshalInlineMap renders a map the way ParseInlineMap reads it, keys
+// sorted for a stable output.
+func MarshalInlineMap(m map[string]string) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+": "+Quote(m[k]))
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
+}
+
 // Pair is one `clave: valor` line, with the 1-based line number it came
 // from so callers can point at it in an error.
 type Pair struct {
 	Key   string
 	Value string
 	Line  int
+}
+
+// Nested returns the indented child pairs under a top-level `clave:`
+// heading with an empty value. offset is added to every child line
+// number, like Pairs. If the heading is absent, it returns nil.
+func Nested(lines []string, key string, offset int) ([]Pair, error) {
+	var out []Pair
+	inBlock := false
+	headingIndent := -1
+	for i, raw := range lines {
+		trimmed := strings.TrimSpace(StripComment(raw))
+		if trimmed == "" {
+			continue
+		}
+		indent := len(raw) - len(strings.TrimLeft(raw, " \t"))
+
+		if !inBlock {
+			k, v, ok := strings.Cut(trimmed, ":")
+			if ok && strings.TrimSpace(k) == key && strings.TrimSpace(v) == "" {
+				inBlock = true
+				headingIndent = indent
+			}
+			continue
+		}
+
+		// fin del bloque: línea con indentación menor o igual al heading
+		if indent <= headingIndent {
+			break
+		}
+		k, v, ok := strings.Cut(trimmed, ":")
+		if !ok {
+			return nil, fmt.Errorf("línea %d no es clave: valor", i+offset)
+		}
+		out = append(out, Pair{
+			Key:   strings.TrimSpace(k),
+			Value: strings.TrimSpace(v),
+			Line:  i + offset,
+		})
+	}
+	return out, nil
 }
 
 // Pairs splits a document into its key/value lines, skipping blanks and

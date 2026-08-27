@@ -98,3 +98,60 @@ func TestPairsLineaSinDosPuntos(t *testing.T) {
 		t.Errorf("Pairs error = %v · quiere señalar la línea 1", err)
 	}
 }
+
+func TestParseInlineMap(t *testing.T) {
+	got, err := ParseInlineMap(`{ modelo: claude-sonnet, key_env: ANTHROPIC_API_KEY }`)
+	if err != nil {
+		t.Fatalf("ParseInlineMap: %v", err)
+	}
+	if got["modelo"] != "claude-sonnet" || got["key_env"] != "ANTHROPIC_API_KEY" {
+		t.Errorf("mapa = %v", got)
+	}
+
+	if m, err := ParseInlineMap("{}"); err != nil || len(m) != 0 {
+		t.Errorf("ParseInlineMap(\"{}\") = %v, %v · quiere mapa vacío", m, err)
+	}
+	for _, malo := range []string{"modelo: x", "{modelo}", "{"} {
+		if _, err := ParseInlineMap(malo); err == nil {
+			t.Errorf("ParseInlineMap(%q) aceptó un mapa mal formado", malo)
+		}
+	}
+}
+
+func TestMarshalInlineMapIdaYVuelta(t *testing.T) {
+	quiere := map[string]string{"modelo": "claude-sonnet", "key_env": "ANTHROPIC_API_KEY"}
+	got, err := ParseInlineMap(MarshalInlineMap(quiere))
+	if err != nil {
+		t.Fatalf("ParseInlineMap: %v", err)
+	}
+	if got["modelo"] != quiere["modelo"] || got["key_env"] != quiere["key_env"] {
+		t.Errorf("ida y vuelta = %v, quiere %v", got, quiere)
+	}
+}
+
+func TestNested(t *testing.T) {
+	doc := strings.Split("base: main\n\nproveedores:\n  planificador: { modelo: a }\n  ejecutor: { modelo: b }\nzonas: [\"x\"]\n", "\n")
+	children, err := Nested(doc, "proveedores", 1)
+	if err != nil {
+		t.Fatalf("Nested: %v", err)
+	}
+	if len(children) != 2 {
+		t.Fatalf("Nested = %v · quiere 2 hijos", children)
+	}
+	if children[0].Key != "planificador" || children[0].Value != "{ modelo: a }" || children[0].Line != 4 {
+		t.Errorf("primer hijo = %+v", children[0])
+	}
+	if children[1].Key != "ejecutor" {
+		t.Errorf("segundo hijo = %+v", children[1])
+	}
+}
+
+func TestNestedAusente(t *testing.T) {
+	children, err := Nested([]string{"base: main"}, "proveedores", 1)
+	if err != nil {
+		t.Fatalf("Nested: %v", err)
+	}
+	if children != nil {
+		t.Errorf("Nested sin bloque = %v, quiere nil", children)
+	}
+}

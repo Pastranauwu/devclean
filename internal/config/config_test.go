@@ -122,3 +122,70 @@ func TestPatronesPruebaIdaYVuelta(t *testing.T) {
 		t.Errorf("PatronesPrueba = %v", loaded.PatronesPrueba)
 	}
 }
+
+func TestParseProveedores(t *testing.T) {
+	data := []byte(`
+base: main
+proveedores:
+  planificador: { modelo: claude-sonnet, key_env: ANTHROPIC_API_KEY }
+  ejecutor:     { modelo: glm-5.2, key_env: OPENCODE_API_KEY }
+  revisor:      { modelo: deepseek-v4-flash, key_env: DEEPSEEK_API_KEY }
+zonas_prohibidas: ["go.sum"]
+`)
+	cfg, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(cfg.Proveedores) != 3 {
+		t.Fatalf("Proveedores = %v · quiere 3 roles", cfg.Proveedores)
+	}
+	if cfg.Proveedores["planificador"].Modelo != "claude-sonnet" {
+		t.Errorf("planificador = %+v", cfg.Proveedores["planificador"])
+	}
+	if cfg.Proveedores["ejecutor"].KeyEnv != "OPENCODE_API_KEY" {
+		t.Errorf("ejecutor = %+v", cfg.Proveedores["ejecutor"])
+	}
+	if cfg.Proveedores["revisor"].Modelo != "deepseek-v4-flash" {
+		t.Errorf("revisor = %+v", cfg.Proveedores["revisor"])
+	}
+}
+
+func TestProveedoresIdaYVuelta(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		Base:    "main",
+		Pruebas: "go test ./...",
+		Proveedores: map[string]Proveedor{
+			"planificador": {Modelo: "claude-sonnet", KeyEnv: "ANTHROPIC_API_KEY"},
+			"ejecutor":     {Modelo: "glm-5.2", KeyEnv: "OPENCODE_API_KEY"},
+		},
+	}
+	if err := cfg.Save(root); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(cfg.Proveedores, loaded.Proveedores) {
+		t.Errorf("Proveedores = %+v, quiero %+v", loaded.Proveedores, cfg.Proveedores)
+	}
+}
+
+func TestModeloRol(t *testing.T) {
+	cfg := Config{Proveedores: map[string]Proveedor{
+		"planificador": {Modelo: "claude-sonnet"},
+	}}
+	if got := ModeloRol(cfg, "planificador"); got != "claude-sonnet" {
+		t.Errorf("ModeloRol(planificador) = %q", got)
+	}
+	if got := ModeloRol(cfg, "ejecutor"); got != "" {
+		t.Errorf("ModeloRol(ejecutor) = %q, quiere vacío", got)
+	}
+	if got := ModeloRol(Config{}, "planificador"); got != "" {
+		t.Errorf("ModeloRol sin config = %q, quiere vacío", got)
+	}
+}
