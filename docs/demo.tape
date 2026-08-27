@@ -16,7 +16,7 @@ Set Padding 2
 # compila si hace falta + prepara el agente falso y el repo de demo
 Type "sh scripts/demo-env.sh"
 Enter
-Sleep 8s
+Sleep 3s
 
 Type "cd /tmp/devclean-demo"
 Enter
@@ -29,14 +29,14 @@ Sleep 500ms
 # run: la corrida en vivo (spinner + barra), sale solo
 Type "devclean run --agentes 2 --ejecutor opencode"
 Enter
-Sleep 5s
+Sleep 8s
 
 # board: plasma de fondo + logo, déjalo verse un rato
 Type "devclean board"
 Enter
-Sleep 8s
+Sleep 10s
 Type "q"
-Sleep 1s
+Sleep 3s
 
 # ship: la compuerta animada, sale solo
 Type "devclean ship T-001 --dry-run"
