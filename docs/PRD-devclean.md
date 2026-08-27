@@ -127,6 +127,12 @@ Cada tarea activa recibe:
 
 Se destruye al terminar.
 
+### 6.2b Estado de tarea
+
+El estado de una tarea (`pendiente`, `en_curso`, `lista`, `descartada`) vive en `.devclean/state/`, **fuera del contrato**. El contrato describe qué hay que lograr y no cambia mientras la tarea corre; el estado cambia todo el tiempo. Mezclarlos obligaría a reescribir el contrato en cada transición.
+
+Es además la base del parte de datos (§6.7) y lo que decide qué tareas entran en el chequeo de cruce: solo se comparan las que están `en_curso`.
+
 ### 6.3 Esclusa de entrada
 
 Antes de asignar una tarea, devclean valida:
@@ -174,6 +180,109 @@ Falla cualquier paso → no se abre PR, se reporta la razón exacta.
 ### 6.6 Cola de integración
 
 Paralelo para trabajar, fila india para integrar. Un merge a la vez; cada merge invalida y revalida a los que siguen. Evita que dos PRs verdes por separado rompan la rama principal juntos.
+
+### 6.7 Parte de datos duros
+
+**No implementado. v0.2** (adenda §6.7). Sustituye cualquier idea de reuniones o reportes entre agentes.
+
+**Principio:** un agente nunca reporta su propio avance. Todo se mide del artefacto.
+
+Evidencia que lo justifica, va también en el README:
+- Los agentes se conforman públicamente entre 64% y 94% de las veces pese a oponerse en privado.
+- Los modelos débiles corrigen solo el 3.6% de sus sesgos de postura en un debate; abandonan juicios correctos por alinearse con la mayoría.
+- El debate multi-agente es una martingala: no aporta ganancia esperada sobre el voto independiente.
+
+**Comando:** `devclean standup`, disparado por evento, nunca por reloj. Eventos: un agente toca un símbolo compartido, termina, agota intentos, o supera el presupuesto de diff.
+
+Contenido, todo derivado de `attempts.jsonl` (§6.4, formato en `docs/attempts-jsonl.md`):
+
+```
+PARTE 14:32 · 3 tareas en curso
+
+⚠ COLISIÓN   T-001 cambia la firma de Format(); T-002 la invoca en 3 lugares
+⚠ ATASCO     T-003 sin cambio en el conteo de fallos desde hace 11 min
+⚠ DESVÍO     T-001 agrega caché en memoria; el contrato no lo pide
+             evidencia: src/export/writer.go:88
+✓            T-002 dentro de contrato
+```
+
+Las dos primeras alertas son deterministas y cuestan cero tokens. La tercera es la única que usa un modelo.
+
+**Reglas del juicio con modelo**, solo para DESVÍO:
+1. Modelo distinto al que escribió el código.
+2. Juicio emitido **antes** de ver el de cualquier otro agente.
+3. Toda objeción cita `archivo:línea`. Sin cita, se descarta automáticamente.
+4. Protocolo Disagree-or-Commit: o critica explícitamente, o respalda con evidencia nueva.
+5. Cero rondas de debate. Si hay desacuerdo, escala al humano.
+
+Bitácora inmutable en `.devclean/standups/`.
+
+**Prohibido:** rondas de debate, un agente coordinador que lea los reportes de los demás, y pedir a un agente que califique su avance en porcentaje.
+
+### 6.8 Examinador ciego y suite oculta
+
+**No implementado. v0.2** (adenda §6.8).
+
+**Orden obligatorio:**
+```
+contrato aprobado → examinador escribe la suite → se sella (hash) → arranca el implementador
+```
+
+**Qué ve el examinador:** el contrato y la frontera pública (firmas, endpoints, CLI, esquema de datos).
+**Qué no ve:** el cuerpo de las funciones.
+
+Regla que simplifica todo: las pruebas corren contra el borde del sistema (CLI, HTTP, base de datos), no contra funciones internas. Ahí el contrato **es** la interfaz.
+
+Esto es lo que hace obligatoria la regla de §6.3.5: si el implementador puede editar las pruebas, el examen no vale nada.
+
+**Suite oculta:**
+- El implementador ve el 70% de los casos. Ese es su bucle.
+- El 30% restante corre **una sola vez**, en la esclusa de salida.
+- Si falla el oculto, la tarea vuelve al **examinador** para una suite nueva, no al implementador para otro intento. La suite oculta se quema al usarse.
+
+**Métrica estrella:**
+```
+brecha = % suite visible aprobado − % suite oculta aprobado
+```
+Cercana a cero: resolvió el problema. Grande: ajustó al examen. Se detecta sin leer una línea de código.
+
+**Control del examinador:** mutation testing sobre los archivos del diff (`go-mutesting`). Sin esto, un 100% verde sobre una suite vacía no significa nada.
+
+**Límite honesto, va en el README:** esto no aplica a interfaz gráfica, comportamiento visual ni criterios difusos. devclean sirve para lo que tiene oráculo. Prometer más quema el proyecto.
+
+### 6.9 Detección de solapamiento en tres niveles
+
+**No implementado. Nivel textual y semántico en v0.1, funcional en v0.2** (adenda §6.9).
+
+| Nivel | Método | Costo | Cuándo |
+|---|---|---|---|
+| Textual | `git merge-tree` entre pares de ramas activas | milisegundos | cada evento |
+| Semántico | símbolos exportados modificados en común (de `attempts.jsonl`) | nulo | cada evento |
+| Funcional | merge en seco + correr las suites de ambas ramas sobre el resultado | alto | solo si textual o semántico marcaron sospecha |
+
+El nivel funcional es el que atrapa el fallo clásico: dos ramas verdes por separado que rompen juntas.
+
+El chequeo 3 de la esclusa de entrada (§6.3) es la versión barata y estática de esto: compara `tocar_solo` declarados antes de que exista una sola línea de código.
+
+### 6.10 Integración y acoplamiento
+
+**No implementado. v0.2** (adenda §6.10).
+
+Ataca directamente el hallazgo de GitClear: el código "movido", señal de refactorización, se desplomó de 15.88% a 3.10% mientras subían el añadido y el copiado. Los agentes agregan y duplican; no integran.
+
+- **Duplicación entre ramas:** comparar estructura de funciones nuevas entre ramas activas. Determinista y barato.
+- **Contratos entre tareas:** si T-001 produce una interfaz que T-002 consume, la firma se congela en ambos contratos y se verifica contra los dos diffs.
+- **Reglas de dependencia:** dirección permitida entre módulos declarada en config (`api → dominio → datos`); se verifica el grafo de imports del diff.
+
+### 6.11 Constitución del proyecto
+
+**No implementado. v0.2** (adenda §6.11).
+
+Archivo `.devclean/constitution.md`, inyectado en el contexto de **todos** los agentes: convenciones de estilo, capas, manejo de errores, patrones prohibidos.
+
+Motivo: agentes en paralelo toman decisiones implícitas distintas sobre estilo, casos borde y arquitectura. Dos tareas pueden pasar sus pruebas y aun así elegir abstracciones incompatibles. Ninguna esclusa de las anteriores detecta eso.
+
+Se genera con el agente en modo entrevista la primera vez y se versiona en el repo.
 
 ---
 
@@ -273,6 +382,7 @@ Cada tarea guarda además su costo en tokens y dinero.
 
 ## 10. Requisitos no funcionales
 
+- **La sobrecarga de devclean no debe superar el 10% del tiempo total de la tarea** (adenda A.5). Cuando todo va bien, la salida es una línea por tarea. Cualquier verificación que no quepa en ese presupuesto se corre en segundo plano o se mueve a v0.2. Motivo: el hallazgo de METR fue sobrecarga de validación; una herramienta que agrega fricción visible reproduce el problema que dice resolver. Este requisito debe poder matar features buenas.
 - **Local-first.** Cero servidores, cero puertos escuchando, cero telemetría. Sin excepciones.
 - **Go 1.22+, un solo binario estático**, sin runtime que instalar. Compilación cruzada para linux/darwin/windows en amd64 y arm64.
 - **Instalación de una línea:** script `curl`, Homebrew tap y `go install`. Binarios firmados en GitHub Releases vía GoReleaser.
@@ -306,11 +416,17 @@ Referencia negativa: OpenClaw llegó a 42.000 instancias expuestas en internet y
 
 ### v0.2
 - Cola de integración automática
-- Revisor cruzado entre agentes
+- Examinador ciego y suite oculta, métrica de brecha (§6.8)
+- Mutation score como control del examinador (§6.8)
+- Detección de solapamiento funcional (§6.9)
+- Duplicación entre ramas, contratos entre tareas, reglas de dependencia (§6.10)
+- Constitución del proyecto (§6.11)
 - Segundo y tercer proveedor
 - Modo API directa
 
 ### Fuera de alcance (por ahora)
+- Debate entre agentes y auto-reportes de avance (§6.7: nunca, no "por ahora")
+- Verificación de UX, de rendimiento o de cualquier criterio sin oráculo (§6.8)
 - Interfaz web o dashboard
 - Multiusuario / equipos
 - Integración con Jira, Linear o similares
