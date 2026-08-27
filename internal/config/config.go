@@ -160,6 +160,22 @@ func ModeloRol(c Config, rol string) string {
 	return c.Proveedores[rol].Modelo
 }
 
+// KeyEnvFalta reporta si el rol tiene un key_env declarado y esa variable
+// no está en el entorno. Sin esto, `run`/`plan` llaman al ejecutor, este
+// falla en cada intento por falta de credencial, y el usuario solo ve la
+// tarea pegada en "pendiente" sin ninguna pista (los logs del agente están
+// ocultos por diseño, §16.4). Mejor fallar rápido con el motivo exacto.
+func KeyEnvFalta(c Config, rol string) (keyEnv string, falta bool) {
+	if c.Proveedores == nil {
+		return "", false
+	}
+	keyEnv = c.Proveedores[rol].KeyEnv
+	if keyEnv == "" {
+		return "", false
+	}
+	return keyEnv, os.Getenv(keyEnv) == ""
+}
+
 // PesoPorDefecto devuelve el peso que usa una tarea sin peso explícito,
 // a partir de la estrategia global (Fase 3). Por defecto, media.
 func (c Config) PesoPorDefecto() string {
