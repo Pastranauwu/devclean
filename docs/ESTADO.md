@@ -123,12 +123,14 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 
 ## Qué falta
 
-**El v0.1 está funcionalmente completo y el GIF grabado.** Pendiente:
+**El v0.1 está funcionalmente completo y el GIF grabado.**
 
-- **Publicar el release**: `main` y `v0.1.0` ya están en `origin`. Solo falta
-  crear el release en la web de GitHub (o con `gh release create v0.1.0`).
-- **Tap de Homebrew** funcionando tras publicar la release (el tap se hace
-  con `goreleaser` + un repo `homebrew-*` aparte).
+- **Release `v0.2.0` publicada** en GitHub con binarios estáticos
+  (linux/darwin/windows × amd64/arm64), `install.sh` y `checksums.txt`.
+  `install.sh` y `go install github.com/Pastranauwu/devclean/cmd/devclean@v0.2.0`
+  verificados. `v0.1.0` quedó etiquetada en un commit anterior (sin release).
+- **Tap de Homebrew** pendiente: un repo `homebrew-*` aparte + `goreleaser`
+  con `brews`. Se hace tras publicar la release.
 
 **v0.2:** Parte B entera (examinador ciego, solapamiento funcional, duplicación
 entre ramas, reglas de dependencia, constitución). Ya especificada, sin empezar.
