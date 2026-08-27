@@ -70,6 +70,66 @@ func TestDetectBaseBranchFallsBackToCurrent(t *testing.T) {
 	}
 }
 
+func TestDetectLanguage(t *testing.T) {
+	cases := []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{name: "go.mod", files: map[string]string{"go.mod": "module x\n"}, want: "go"},
+		{name: "package.json", files: map[string]string{"package.json": "{}"}, want: "node"},
+		{name: "pyproject", files: map[string]string{"pyproject.toml": "[project]\n"}, want: "python"},
+		{name: "cargo", files: map[string]string{"Cargo.toml": "[package]\n"}, want: "rust"},
+		{name: "nada", files: map[string]string{"README.md": "hola\n"}, want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for name, content := range tc.files {
+				if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := DetectLanguage(root); got != tc.want {
+				t.Errorf("DetectLanguage = %q, quiero %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDetectEmpty(t *testing.T) {
+	cases := []struct {
+		name  string
+		files map[string]string
+		dirs  []string
+		want  bool
+	}{
+		{name: "solo README", files: map[string]string{"README.md": "hola\n"}, want: true},
+		{name: "README y LICENSE", files: map[string]string{"README.md": "h", "LICENSE": "MIT"}, want: true},
+		{name: "con código", files: map[string]string{"README.md": "h", "main.go": "package main\n"}, want: false},
+		{name: "con carpeta de código", dirs: []string{"src"}, want: false},
+		{name: "con hidden", dirs: []string{".github"}, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for name, content := range tc.files {
+				if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, d := range tc.dirs {
+				if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := DetectEmpty(root); got != tc.want {
+				t.Errorf("DetectEmpty = %v, quiero %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDetectTestCommand(t *testing.T) {
 	cases := []struct {
 		name  string

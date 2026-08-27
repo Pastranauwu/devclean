@@ -31,6 +31,47 @@ func Dir(root string) string {
 // Branch returns the branch name of a task's room.
 func Branch(id string) string { return "devclean/" + id }
 
+// IntegrationBranch es la rama temporal donde se encadenan las oleadas:
+// el trabajo verde de una oleada se mergea aquí y la siguiente oleada
+// crea sus cuartos desde esta rama (Fase 2).
+const IntegrationBranch = "devclean/_integra"
+
+// ResetIntegration borra la rama y el worktree de integración previos y
+// los recrea desde base. Corre al inicio de una corrida por oleadas.
+func ResetIntegration(ctx context.Context, root, base string) error {
+	_ = Destroy(ctx, root, "_integra")
+	if base == "" {
+		base = "HEAD"
+	}
+	if _, err := git(ctx, root, "rev-parse", "--verify", "--quiet", base+"^{commit}"); err != nil {
+		return fmt.Errorf("no hay commits en %s · haz un commit inicial y reintenta", base)
+	}
+	path := filepath.Join(Dir(root), "_integra")
+	if out, err := git(ctx, root, "worktree", "add", path, "-b", IntegrationBranch, base); err != nil {
+		return fmt.Errorf("no se pudo crear la rama de integración · %s", strings.TrimSpace(out))
+	}
+	return nil
+}
+
+// Integrar mergea la rama de una tarea verde en la rama de integración.
+// Devuelve la salida del conflicto (vacía si el merge fue limpio) y un
+// error si hubo conflicto u otro fallo.
+func Integrar(ctx context.Context, root, id string) (string, error) {
+	path := filepath.Join(Dir(root), "_integra")
+	if _, err := os.Stat(path); err != nil {
+		return "", errors.New("no hay rama de integración · vuelve a correr devclean run")
+	}
+	msg := "devclean: integra " + id
+	cmd := exec.CommandContext(ctx, "git", "-c", "user.name=devclean", "-c", "user.email=devclean@local", "merge", "--no-ff", "-m", msg, Branch(id))
+	cmd.Dir = path
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return "", nil
+	}
+	_, _ = git(ctx, path, "merge", "--abort")
+	return strings.TrimSpace(string(out)), err
+}
+
 // Create sets up the room for a task: a worktree on a new branch from
 // base, dependencies installed per manifest, and a free port assigned.
 // On any failure the half-created room is destroyed.

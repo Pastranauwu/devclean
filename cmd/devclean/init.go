@@ -113,6 +113,9 @@ func runInit(cwd, pruebasFlag string, in io.Reader) error {
 	} else {
 		out.Line("· comando de pruebas no detectado · edita .devclean/config.yml")
 	}
+	if config.DetectEmpty(root) {
+		out.Line("· repositorio vacío · devclean plan arrancará desde cero proponiendo un stack")
+	}
 	out.Line("✓ configuración creada en .devclean/")
 	return nil
 }

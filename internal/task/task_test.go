@@ -151,3 +151,48 @@ func TestParseCampoDesconocidoEnVersionActual(t *testing.T) {
 		t.Errorf("Parse = %v · un campo desconocido en la versión soportada se rechaza", err)
 	}
 }
+
+func TestParseDependeDe(t *testing.T) {
+	task, err := Parse([]byte("---\nversion: 1\nid: T-002\ntitulo: x\nlisto_cuando: true\ndepende_de: [\"T-001\"]\n---\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(task.DependeDe) != 1 || task.DependeDe[0] != "T-001" {
+		t.Errorf("DependeDe = %v, quiero [T-001]", task.DependeDe)
+	}
+	if !strings.Contains(string(task.Marshal()), "depende_de: [\"T-001\"]") {
+		t.Errorf("Marshal no escribió depende_de:\n%s", task.Marshal())
+	}
+}
+
+func TestValidateDependeDeInvalida(t *testing.T) {
+	task := Task{Version: Version, ID: "T-001", Titulo: "x", ListoCuando: "true", LimiteIntentos: 3, LimiteLineas: 200, DependeDe: []string{"t-2"}}
+	errs := task.Validate()
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "depende_de inválido") {
+		t.Errorf("Validate depende_de mal formada = %v", errs)
+	}
+
+	ciclo := task
+	ciclo.DependeDe = []string{"T-001"}
+	if errs := ciclo.Validate(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "sí misma") {
+		t.Errorf("Validate dependencia propia = %v", errs)
+	}
+}
+
+func TestPeso(t *testing.T) {
+	task, err := Parse([]byte("---\nversion: 1\nid: T-001\ntitulo: x\nlisto_cuando: true\npeso: pesada\n---\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if task.Peso != "pesada" {
+		t.Errorf("Peso = %q, quiero pesada", task.Peso)
+	}
+	if !strings.Contains(string(task.Marshal()), "peso: pesada") {
+		t.Errorf("Marshal no escribió peso:\n%s", task.Marshal())
+	}
+
+	inv := Task{Version: Version, ID: "T-001", Titulo: "x", ListoCuando: "true", LimiteIntentos: 3, LimiteLineas: 200, Peso: "gigante"}
+	if errs := inv.Validate(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "peso inválido") {
+		t.Errorf("Validate peso inválido = %v", errs)
+	}
+}

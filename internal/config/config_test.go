@@ -189,3 +189,69 @@ func TestModeloRol(t *testing.T) {
 		t.Errorf("ModeloRol sin config = %q, quiere vacío", got)
 	}
 }
+
+func TestParseEstrategiaYModelos(t *testing.T) {
+	data := []byte(`
+estrategia: pesada
+modelos:
+  liviana: glm-4
+  media: glm-5.2
+  pesada: claude-sonnet
+`)
+	cfg, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.Estrategia != "pesada" {
+		t.Errorf("Estrategia = %q", cfg.Estrategia)
+	}
+	if cfg.Modelos["pesada"] != "claude-sonnet" || cfg.Modelos["liviana"] != "glm-4" {
+		t.Errorf("Modelos = %v", cfg.Modelos)
+	}
+}
+
+func TestModelosIdaYVuelta(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		Base:       "main",
+		Pruebas:    "go test ./...",
+		Estrategia: "equilibrada",
+		Modelos:    map[string]string{"liviana": "glm-4", "media": "glm-5.2", "pesada": "claude-sonnet"},
+	}
+	if err := cfg.Save(root); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(cfg.Modelos, loaded.Modelos) || loaded.Estrategia != cfg.Estrategia {
+		t.Errorf("roundtrip = %+v / %q", loaded.Modelos, loaded.Estrategia)
+	}
+}
+
+func TestPesoPorDefecto(t *testing.T) {
+	cases := map[string]string{"ligera": "liviana", "equilibrada": "media", "pesada": "pesada", "": "media"}
+	for estrategia, want := range cases {
+		cfg := Config{Estrategia: estrategia}
+		if got := cfg.PesoPorDefecto(); got != want {
+			t.Errorf("PesoPorDefecto(%q) = %q, quiero %q", estrategia, got, want)
+		}
+	}
+}
+
+func TestModeloPeso(t *testing.T) {
+	cfg := Config{Modelos: map[string]string{"pesada": "claude-sonnet"}}
+	if got := cfg.ModeloPeso("pesada"); got != "claude-sonnet" {
+		t.Errorf("ModeloPeso(pesada) = %q", got)
+	}
+	if got := cfg.ModeloPeso("liviana"); got != "" {
+		t.Errorf("ModeloPeso(liviana) = %q, quiere vacío", got)
+	}
+	if got := (Config{}).ModeloPeso("media"); got != "" {
+		t.Errorf("ModeloPeso sin config = %q, quiere vacío", got)
+	}
+}

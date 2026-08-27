@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,9 +60,6 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 	if err != nil {
 		return err
 	}
-	if modelo == "" {
-		modelo = config.ModeloRol(cfg, "ejecutor")
-	}
 	tareas, err := task.List(config.TasksDir(root))
 	if err != nil {
 		return err
@@ -104,12 +102,7 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 		results = append(results, runResult{ID: t.ID, Titulo: t.Titulo, Estado: "rechazada", Motivo: res.PrimerMotivo()})
 	}
 
-	asignadas, rechazadas := asignar(aprobadas)
-	for _, r := range rechazadas {
-		results = append(results, runResult{ID: r.ID, Titulo: r.Titulo, Estado: "rechazada", Motivo: r.Motivo})
-	}
-
-	if len(asignadas) == 0 {
+	if len(aprobadas) == 0 {
 		sortRunResults(results)
 		_ = emitirResultados(results)
 		return errors.New("ninguna tarea superó la esclusa · corrige los contratos y reintenta")
@@ -121,27 +114,138 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 	}
 
 	if esTUI() {
-		_, err := correrConTUI(context.Background(), root, cfg, ex, modelo, asignadas, agentes)
+		_, err := correrConTUI(context.Background(), root, cfg, ex, modelo, aprobadas, agentes)
 		return err
 	}
 
-	results = append(results, correr(context.Background(), root, cfg, ex, modelo, asignadas, agentes, nil)...)
+	results = append(results, ejecutarOlas(context.Background(), root, cfg, ex, modelo, aprobadas, agentes, nil)...)
 	sortRunResults(results)
 	return emitirResultados(results)
 }
 
 // correrConTUI ejecuta la corrida dentro del tablero en vivo y devuelve
 // los resultados para imprimirlos al final.
-func correrConTUI(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo string, asignadas []task.Task, agentes int) ([]runResult, error) {
-	filas := make([]tui.FilaRun, 0, len(asignadas))
-	for _, t := range asignadas {
+func correrConTUI(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo string, aprobadas []task.Task, agentes int) ([]runResult, error) {
+	filas := make([]tui.FilaRun, 0, len(aprobadas))
+	for _, t := range aprobadas {
 		filas = append(filas, tui.FilaRun{ID: t.ID, Titulo: t.Titulo, Limite: t.LimiteIntentos})
 	}
 	var results []runResult
 	err := tui.CorrerRun(filas, func(emit func(tui.EventoRun)) {
-		results = correr(ctx, root, cfg, ex, modelo, asignadas, agentes, emit)
+		results = ejecutarOlas(ctx, root, cfg, ex, modelo, aprobadas, agentes, emit)
 	})
 	return results, err
+}
+
+// ejecutarOlas corre las tareas por oleadas según depende_de (Fase 2):
+// una ola solo arranca cuando sus dependencias ya están verdes. El
+// trabajo verde de cada ola se integra en una rama temporal y la
+// siguiente ola arranca desde ahí, así la cadena comparte estado.
+func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo string, aprobadas []task.Task, agentes int, emit func(tui.EventoRun)) []runResult {
+	var results []runResult
+	procesadas := map[string]bool{}
+	integrada := map[string]bool{}
+
+	tieneDeps := false
+	for _, t := range aprobadas {
+		if len(t.DependeDe) > 0 {
+			tieneDeps = true
+			break
+		}
+	}
+
+	base := cfg.Base
+	if tieneDeps {
+		if err := room.ResetIntegration(ctx, root, cfg.Base); err != nil {
+			for _, t := range aprobadas {
+				results = append(results, runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()})
+			}
+			return results
+		}
+		base = room.IntegrationBranch
+	}
+
+	for {
+		var ola []task.Task
+		for _, t := range aprobadas {
+			if procesadas[t.ID] {
+				continue
+			}
+			if depsVerdes(t.DependeDe, integrada) {
+				ola = append(ola, t)
+			}
+		}
+
+		if len(ola) == 0 {
+			for _, t := range aprobadas {
+				if procesadas[t.ID] {
+					continue
+				}
+				results = append(results, runResult{
+					ID: t.ID, Titulo: t.Titulo, Estado: "rechazada",
+					Motivo: "bloqueada · depende de " + strings.Join(depsFaltantes(t.DependeDe, integrada), ", ") + " que no salió verde",
+				})
+				procesadas[t.ID] = true
+			}
+			break
+		}
+
+		asignadas, rechazadas := asignar(ola)
+		for _, r := range rechazadas {
+			results = append(results, r)
+			procesadas[r.ID] = true
+		}
+
+		var verdes []runResult
+		if len(asignadas) > 0 {
+			r := correr(ctx, root, cfg, ex, modelo, base, asignadas, agentes, emit)
+			results = append(results, r...)
+			for _, rr := range r {
+				procesadas[rr.ID] = true
+				if rr.Estado == "lista" {
+					verdes = append(verdes, rr)
+				}
+			}
+		}
+
+		if !tieneDeps {
+			continue
+		}
+		sort.Slice(verdes, func(i, j int) bool { return verdes[i].ID < verdes[j].ID })
+		for _, v := range verdes {
+			if salida, err := room.Integrar(ctx, root, v.ID); err != nil {
+				results = append(results, runResult{
+					ID: v.ID, Titulo: v.Titulo, Estado: "detenida",
+					Motivo: "no se pudo integrar con la oleada anterior · " + salida,
+				})
+				continue
+			}
+			integrada[v.ID] = true
+		}
+	}
+	return results
+}
+
+// depsVerdes reporta si todas las dependencias de una tarea ya salieron
+// verdes. Sin dependencias, siempre verde.
+func depsVerdes(deps []string, verde map[string]bool) bool {
+	for _, d := range deps {
+		if !verde[d] {
+			return false
+		}
+	}
+	return true
+}
+
+// depsFaltantes lista las dependencias que no salieron verdes.
+func depsFaltantes(deps []string, verde map[string]bool) []string {
+	var faltantes []string
+	for _, d := range deps {
+		if !verde[d] {
+			faltantes = append(faltantes, d)
+		}
+	}
+	return faltantes
 }
 
 // asignar reparte las tareas aprobadas para correr juntas: aplica A.4 al
@@ -175,6 +279,23 @@ func asignar(aprobadas []task.Task) ([]task.Task, []runResult) {
 		aceptadas = append(aceptadas, t)
 	}
 	return aceptadas, rechazos
+}
+
+// modeloParaTarea resuelve el modelo de una tarea (Fase 3): el flag
+// --modelo gana; si no, el peso de la tarea (o el de la estrategia
+// global) busca en `modelos`; y si no hay, cae al modelo del ejecutor.
+func modeloParaTarea(cfg config.Config, flagModelo string, t task.Task) string {
+	if flagModelo != "" {
+		return flagModelo
+	}
+	peso := t.Peso
+	if peso == "" {
+		peso = cfg.PesoPorDefecto()
+	}
+	if m := cfg.ModeloPeso(peso); m != "" {
+		return m
+	}
+	return config.ModeloRol(cfg, "ejecutor")
 }
 
 // elegirEjecutor devuelve el ejecutor pedido o el primero instalado.
@@ -228,7 +349,7 @@ func (a agenteExecutor) Run(ctx context.Context, req loop.Request) (loop.Result,
 
 // correr lanza las tareas con `agentes` trabajadores en paralelo. onEvent,
 // si no es nil, recibe cada transición para el tablero en vivo.
-func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo string, asignadas []task.Task, agentes int, onEvent func(tui.EventoRun)) []runResult {
+func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, base string, asignadas []task.Task, agentes int, onEvent func(tui.EventoRun)) []runResult {
 	jobs := make(chan task.Task)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -242,7 +363,7 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 				if onEvent != nil {
 					onEvent(tui.EventoRun{ID: t.ID, Estado: "trabajando"})
 				}
-				r := correrUno(ctx, root, cfg, ex, modelo, t)
+				r := correrUno(ctx, root, cfg, ex, modelo, base, t)
 				if onEvent != nil {
 					onEvent(tui.EventoRun{ID: r.ID, Estado: r.Estado, Intentos: r.Intentos, Motivo: r.Motivo})
 				}
@@ -263,8 +384,8 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 // correrUno ejecuta una tarea completa: cuarto, esclusa de estado,
 // bucle, y deja el estado final (lista o detenida). El cuarto no se
 // destruye aquí: ship lo libera al entregar.
-func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo string, t task.Task) runResult {
-	r, err := room.Create(ctx, root, t.ID, cfg.Base)
+func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, base string, t task.Task) runResult {
+	r, err := room.Create(ctx, root, t.ID, base)
 	if err != nil {
 		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
 	}
@@ -279,8 +400,8 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		Root:           root,
 		Room:           r,
 		Task:           t,
-		Model:          modelo,
-		Base:           cfg.Base,
+		Model:          modeloParaTarea(cfg, modelo, t),
+		Base:           base,
 		PatronesPrueba: cfg.PatronesPrueba,
 		Env:            []string{fmt.Sprintf("PORT=%d", r.Puerto)},
 	})
