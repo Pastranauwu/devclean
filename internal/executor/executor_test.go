@@ -125,8 +125,24 @@ func TestAvailableSinBinario(t *testing.T) {
 
 func TestParseOpenCodeEventsIgnoraBasura(t *testing.T) {
 	stdout := "no json\n{\"mal\":true}\n{\"type\":\"x\",\"path\":\"a/b.go\"}\n"
-	files, _ := parseOpenCodeEvents(stdout)
+	files, _, _ := parseOpenCodeEvents(stdout)
 	if fmt.Sprint(files) != "[a/b.go]" {
 		t.Errorf("files = %v", files)
+	}
+}
+
+func TestOpenCodeExtraeTexto(t *testing.T) {
+	stdout := `{"type":"message","part":{"type":"text","text":"hola"}}
+{"type":"message","part":{"type":"text","text":"mundo"}}`
+	_, text, _ := parseOpenCodeEvents(stdout)
+	if text != "hola\nmundo" {
+		t.Errorf("text = %q, quiero hola\\nmundo", text)
+	}
+}
+
+func TestClaudeExtraeTexto(t *testing.T) {
+	stdout := `{"type":"result","result":"[{\"titulo\":\"x\"}]","usage":{"input_tokens":1,"output_tokens":2}}`
+	if got := parseClaudeText(stdout); got != `[{"titulo":"x"}]` {
+		t.Errorf("text = %q", got)
 	}
 }

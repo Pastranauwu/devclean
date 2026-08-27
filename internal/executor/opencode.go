@@ -32,16 +32,18 @@ func (e OpenCode) Run(ctx context.Context, req Request) (Result, error) {
 	}
 	stdout, code, err := run(ctx, req, "opencode", args...)
 	res := Result{Stdout: stdout, ExitCode: code}
-	res.FilesChanged, res.Tokens = parseOpenCodeEvents(stdout)
+	res.FilesChanged, res.Text, res.Tokens = parseOpenCodeEvents(stdout)
 	return res, err
 }
 
 // parseOpenCodeEvents walks the JSONL event stream best-effort:
-// file paths from tool events, tokens from step finish events.
-func parseOpenCodeEvents(stdout string) ([]string, Usage) {
+// file paths from tool events, tokens from step finish events, and the
+// assistant text from text parts.
+func parseOpenCodeEvents(stdout string) ([]string, string, Usage) {
 	seen := map[string]bool{}
 	var files []string
 	var usage Usage
+	var textos []string
 
 	scanner := bufio.NewScanner(strings.NewReader(stdout))
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
@@ -55,12 +57,25 @@ func parseOpenCodeEvents(stdout string) ([]string, Usage) {
 			continue
 		}
 		collectPaths(event, "", 0, seen, &files)
+		collectText(event, &textos)
 		if tokens, ok := event["tokens"].(map[string]any); ok {
 			usage.Input += intValue(tokens, "input")
 			usage.Output += intValue(tokens, "output")
 		}
 	}
-	return files, usage
+	return files, strings.Join(textos, "\n"), usage
+}
+
+// collectText finds every "text" string field in the event, best-effort.
+func collectText(m map[string]any, out *[]string) {
+	if v, ok := m["text"].(string); ok && strings.TrimSpace(v) != "" {
+		*out = append(*out, v)
+	}
+	for _, key := range []string{"part", "message", "state", "input"} {
+		if nested, ok := m[key].(map[string]any); ok {
+			collectText(nested, out)
+		}
+	}
 }
 
 // collectPaths finds file paths under well-known keys, one level deep.
