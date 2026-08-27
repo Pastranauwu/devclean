@@ -67,7 +67,8 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
 - `devclean board`: tablero por estado (listo, en curso, detenido, pendiente).
 - `devclean logs <id>`: los intentos de una tarea, uno por línea.
 - `internal/tui`: el modo interactivo con la paleta del cuarto limpio
-  (§16.2): logotipo ASCII, spinner braille, barras de progreso reales. Tres
+  (§16.2): logotipo de píxeles con degradado (fuente unsciithin de `bit`),
+  tarjetas con borde, spinner braille y barras de progreso reales. Tres
   vistas — la compuerta animada de `ship` (§16.3), el tablero de `board` y la
   corrida en vivo de `run` (N tareas, spinner, reloj y barra global). Cada
   comando usa el TUI cuando la salida es terminal y no hay `--plain` ni

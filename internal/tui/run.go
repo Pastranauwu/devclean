@@ -112,9 +112,7 @@ func (m runModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m runModel) View() string {
-	var b strings.Builder
-	b.WriteString(Logo(80))
-	b.WriteString("\n")
+	var cuerpo strings.Builder
 
 	hechos := 0
 	for _, f := range m.filas {
@@ -126,13 +124,15 @@ func (m runModel) View() string {
 	if total == 0 {
 		total = 1
 	}
-	b.WriteString("  " + barra(hechos, total, 40) + " " +
+	cuerpo.WriteString(estiloTitulo.Render("CORRIDA") + "\n")
+	cuerpo.WriteString(barra(hechos, total, 40) + " " +
 		estiloApagado.Render(strconv.Itoa(hechos)+"/"+strconv.Itoa(len(m.filas))) + "\n\n")
 
 	for _, f := range m.filas {
-		b.WriteString(renderFilaRun(f, m.estado[f.ID], m.inicio[f.ID], m.tick))
+		cuerpo.WriteString(renderFilaRun(f, m.estado[f.ID], m.inicio[f.ID], m.tick))
 	}
-	return b.String()
+
+	return Logo(80) + "\n" + caja(strings.TrimRight(cuerpo.String(), "\n"))
 }
 
 func renderFilaRun(f FilaRun, v *tareaViva, inicio time.Time, tick int) string {

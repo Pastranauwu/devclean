@@ -36,15 +36,13 @@ func Tablero(root string) ([]Fila, error) {
 	return filas, nil
 }
 
-// renderBoard dibuja el tablero con la paleta y el logotipo.
+// renderBoard dibuja el tablero con la paleta y el logotipo, en tarjeta.
 func renderBoard(filas []Fila, width int) string {
-	var b strings.Builder
-	b.WriteString(Logo(width))
-	b.WriteString("\n")
+	var cuerpo strings.Builder
 
 	if len(filas) == 0 {
-		b.WriteString("  " + estiloApagado.Render("sin tareas · empieza con devclean plan \"lo que necesitas\"") + "\n")
-		return b.String()
+		cuerpo.WriteString(estiloApagado.Render("sin tareas · empieza con devclean plan \"lo que necesitas\"") + "\n")
+		return Logo(width) + "\n" + caja(cuerpo.String())
 	}
 
 	orden := []struct {
@@ -64,17 +62,17 @@ func renderBoard(filas []Fila, width int) string {
 				suyos = append(suyos, f)
 			}
 		}
-		b.WriteString("  " + col.glifo + " " + estiloBold.Render(col.nombre) + "\n")
+		cuerpo.WriteString(col.glifo + " " + estiloBold.Render(col.nombre) + "\n")
 		if len(suyos) == 0 {
-			b.WriteString("    " + estiloApagado.Render("—") + "\n\n")
+			cuerpo.WriteString("  " + estiloApagado.Render("—") + "\n\n")
 			continue
 		}
 		for _, f := range suyos {
-			b.WriteString("    " + estiloTinta.Render(f.ID) + "  " + f.Titulo + "\n")
+			cuerpo.WriteString("  " + estiloTinta.Render(f.ID) + "  " + f.Titulo + "\n")
 		}
-		b.WriteString("\n")
+		cuerpo.WriteString("\n")
 	}
-	return b.String()
+	return Logo(width) + "\n" + caja(strings.TrimRight(cuerpo.String(), "\n"))
 }
 
 // CorrerBoard muestra el tablero en modo interactivo; sale con q o esc.
