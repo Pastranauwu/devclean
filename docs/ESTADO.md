@@ -62,7 +62,10 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
 - `internal/metrics`: las cinco métricas de §9 derivadas de los artefactos
   (`attempts.jsonl`, estados y un registro de entrega que `ship` deja en
   `.devclean/runs/<id>/entrega.json`). `friccion` queda en null: necesita el
-  ciclo de revisión del PR, sin fuente en v0.1. `devclean report` las muestra.
+  ciclo de revisión del PR, sin fuente en v0.1. `devclean report` las muestra
+  con su **flecha de tendencia** (§16.4): cada corrida apunta un snapshot en
+  `.devclean/historial.jsonl` y compara contra la anterior (↑ subió, ↓ bajó,
+  · igual o sin dato previo).
 - `devclean doctor`: verifica git, repo, configuración, ejecutores y keys.
 - `devclean board`: tablero por estado (listo, en curso, detenido, pendiente).
 - `devclean logs <id>`: los intentos de una tarea, uno por línea.
@@ -80,7 +83,13 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
   ejecutor, cuyo `Result.Text` ahora trae la respuesta); devclean solo parsea
   el JSON, asigna ids y pide aprobación (`--aprobar` para no preguntar). El
   rol planificador usa `--modelo`/`--ejecutor` como `run`; la selección
-  "el mejor disponible" y el config anidado `proveedores` quedan para v0.2.
+  "el mejor disponible" queda para v0.2.
+- **Config anidado `proveedores`** (§8.1): `config.yml` acepta el bloque
+  `proveedores:` con un rol por línea (`planificador`, `ejecutor`, `revisor`),
+  cada uno `{ modelo: X, key_env: Y }`. `run` y `plan` caen al modelo del rol
+  (`ejecutor` / `planificador`) cuando no hay `--modelo`; `doctor` verifica
+  también las `key_env` declaradas. El parser anidado vive en `internal/kv`
+  (`Nested` + `ParseInlineMap`/`MarshalInlineMap`), no un tercero.
 
 **Adenda, Parte A y C**
 - **A.1** `version: 1` obligatoria. Un archivo con versión mayor a la del binario
@@ -118,9 +127,8 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 
 - **Publicar el release**: `main` y `v0.1.0` ya están en `origin`. Solo falta
   crear el release en la web de GitHub (o con `gh release create v0.1.0`).
-- **Flecha de tendencia** en `report` (persistir historial y comparar).
-- **Config anidado `proveedores`** (§8.1); hoy se usa `--modelo`/`--ejecutor`.
-- **Tap de Homebrew** y `go install` funcionando tras publicar la release.
+- **Tap de Homebrew** funcionando tras publicar la release (el tap se hace
+  con `goreleaser` + un repo `homebrew-*` aparte).
 
 **v0.2:** Parte B entera (examinador ciego, solapamiento funcional, duplicación
 entre ramas, reglas de dependencia, constitución). Ya especificada, sin empezar.

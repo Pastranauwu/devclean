@@ -184,6 +184,9 @@ pruebas: go test ./...          # comando de pruebas del proyecto
 zonas_prohibidas: ["go.sum", "migrations/**", ".github/**"]
 patrones_prueba: ["*_test.go", "test/**", "*.spec.ts"]
 timeout_esclusa: 300            # segundos para el chequeo "falla hoy"
+proveedores:                    # modelo y key por rol (§8.1)
+  planificador: { modelo: claude-sonnet, key_env: ANTHROPIC_API_KEY }
+  ejecutor:     { modelo: glm-5.2, key_env: OPENCODE_API_KEY }
 ```
 
 ---
@@ -219,7 +222,9 @@ interactiva.
 | Fricción | minutos entre PR abierto y aprobado | bajar |
 | Rechazo en entrada | % de tareas rechazadas por mala definición | visible |
 
-Cada tarea guarda su costo en tokens.
+Cada métrica muestra su flecha de tendencia frente a la corrida anterior
+(↑ subió, ↓ bajó, · sin cambio). El historial vive en
+`.devclean/historial.jsonl`. Cada tarea guarda su costo en tokens.
 
 ## Seguridad
 
