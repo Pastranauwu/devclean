@@ -6,7 +6,10 @@ set -e
 
 raiz="$(cd "$(dirname "$0")/.." && pwd)"
 bin="${DEVCLEAN_BIN:-$raiz/devclean}"
-[ -x "$bin" ] || { echo "compila primero: go build -o devclean ./cmd/devclean"; exit 1; }
+if [ ! -x "$bin" ]; then
+  echo "compilando devclean..."
+  (cd "$raiz" && go build -o devclean ./cmd/devclean) || exit 1
+fi
 
 # agente falso
 mkdir -p /tmp/fakebin

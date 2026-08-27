@@ -2,6 +2,8 @@
 #   vhs docs/demo.tape
 # Graba run (corrida en vivo), board (plasma) y ship (compuerta), sin --plain.
 # En vhs, Width y Height son PÍXELES (tamaño de la imagen final).
+# Los Sleep son generosos: vhs no espera el prompt, así que hay que darle
+# tiempo a cada comando (sobre todo a la compilación del primer paso).
 
 Output docs/demo.gif
 
@@ -10,19 +12,15 @@ Set FontSize 22
 Set Width 1200
 Set Height 700
 Set Padding 2
-Set WaitTimeout 30s
 
-Type "go build -o devclean ./cmd/devclean"
-Enter
-Sleep 3s
-
+# compila si hace falta + prepara el agente falso y el repo de demo
 Type "sh scripts/demo-env.sh"
 Enter
-Sleep 3s
+Sleep 15s
 
 Type "cd /tmp/devclean-demo && export PATH=/tmp/fakebin:\$PATH"
 Enter
-Sleep 500ms
+Sleep 1s
 
 # run: la corrida en vivo (spinner + barra), sale solo
 Type "devclean run --agentes 2 --ejecutor opencode"
