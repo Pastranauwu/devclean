@@ -66,6 +66,29 @@ en un cuarto aislado, y **la verificación la hace código, nunca el modelo**.
    historial aplanado, sin ruido, sin secretos, dentro de presupuesto,
    bisectable, handoff, y recién entonces el PR.
 
+## Quién hace qué: plan, tareas y agentes
+
+Tres cosas distintas que se confunden fácil:
+
+- **`devclean plan`** no programa nada. Le pide a un modelo (el rol
+  *planificador*, ver `proveedores` en la config) que convierta tu frase en
+  contratos de tarea (`.devclean/tasks/T-00N.md`). Vos apruebas o editas.
+  Costo: una llamada barata al modelo, cero código escrito todavía.
+- **Las tareas** son los archivos que resultan del plan (o que escribís a
+  mano con `devclean task add`). Son el contrato: qué hay que lograr y con
+  qué comando se sabe que ya está (`listo_cuando`). No corren nada por sí
+  solas.
+- **`devclean run`** es lo que de verdad programa. Toma las tareas
+  pendientes y por cada una lanza un **agente** — un CLI de código que ya
+  tenés instalado (`claude` o `opencode`, rol *ejecutor*) — dentro de un
+  worktree aislado (`.devclean/rooms/T-00N/`). `--agentes N` controla
+  cuántos corren en paralelo. devclean no trae su propio modelo: es un
+  director que reparte el trabajo a los agentes que vos ya pagás y verifica
+  el resultado con código, nunca con el modelo.
+
+En una frase: `plan` decide **qué** hacer, `run` decide **quién** (qué
+agente, en qué cuarto) lo hace y verifica que quedó listo.
+
 ## Manifiesto
 
 1. El historial del agente no es el historial del proyecto.
@@ -91,17 +114,33 @@ en un cuarto aislado, y **la verificación la hace código, nunca el modelo**.
 ## Instalación
 
 ```sh
-# Desde el código fuente
+curl -fsSL https://github.com/Pastranauwu/devclean/releases/latest/download/install.sh | sh
+```
+
+Descarga el binario de la release, lo instala en `~/.local/bin` (o
+`$DEVCLEAN_INSTALL_DIR`) y ya está: `devclean` queda disponible en la
+terminal. Si `~/.local/bin` no está en tu `PATH`, el instalador te avisa —
+agrégalo (`export PATH="$HOME/.local/bin:$PATH"` en tu `.bashrc`/`.zshrc`).
+
+Alternativas:
+
+```sh
+# con go install
+go install github.com/Pastranauwu/devclean/cmd/devclean@latest
+
+# desde el código fuente
 git clone https://github.com/Pastranauwu/devclean
 cd devclean && go build -o devclean ./cmd/devclean
 sudo mv devclean /usr/local/bin/
-
-# Con go install (cuando la release esté publicada)
-go install github.com/Pastranauwu/devclean/cmd/devclean@latest
 ```
 
 Binario estático único (Go), sin runtime que instalar. Compila para
 linux/darwin/windows en amd64 y arm64.
+
+**El binario por sí solo no ejecuta nada.** devclean dirige agentes que ya
+tienes instalados (`claude` o `opencode`); no trae ningún modelo dentro.
+Corre `devclean doctor` justo después de instalar: te dice exactamente qué
+falta (git, un CLI de agente, una API key) antes de que intentes usarlo.
 
 ---
 
