@@ -25,6 +25,10 @@ $ devclean ship T-001
   entregado · https://github.com/tu/repo/pull/142
 ```
 
+![demo](docs/demo.gif)
+
+---
+
 ## El problema
 
 Los datos, no opiniones:
@@ -71,37 +75,89 @@ en un cuarto aislado, y **la verificación la hace código, nunca el modelo**.
 5. Paralelo para trabajar, en fila para entregar.
 6. Si no puedes escribir el comando que dice "ya está", la tarea no existe.
 
+---
+
+## Requisitos
+
+- **git** (obligatorio).
+- Un **CLI de agente**: `opencode` o `claude` (Claude Code).
+- **`gh`** (opcional, solo para abrir PRs con `ship`).
+- Una **API key** del proveedor en el entorno (`OPENCODE_API_KEY`,
+  `ANTHROPIC_API_KEY`, etc.).
+- Un **comando de pruebas** ejecutable en el proyecto (`npm test`, `go test ./...`, …).
+
+`devclean doctor` verifica todo lo anterior.
+
 ## Instalación
 
 ```sh
-# Homebrew
-brew install Pastranauwu/tap/devclean
+# Desde el código fuente
+git clone https://github.com/Pastranauwu/devclean
+cd devclean && go build -o devclean ./cmd/devclean
+sudo mv devclean /usr/local/bin/
 
-# Script de una línea
-curl -fsSL https://github.com/Pastranauwu/devclean/releases/latest/download/install.sh | sh
-
-# Go
+# Con go install (cuando la release esté publicada)
 go install github.com/Pastranauwu/devclean/cmd/devclean@latest
 ```
 
-Binario estático único (Go), sin runtime que instalar. Requiere `git` y al
-menos un CLI de agente (`opencode` o `claude`). `devclean doctor` lo verifica.
+Binario estático único (Go), sin runtime que instalar. Compila para
+linux/darwin/windows en amd64 y arm64.
 
-## Uso
+---
+
+## Primeros pasos
 
 ```sh
-devclean init                        # detecta repo, rama base y comando de pruebas
-devclean plan "lo que necesitas"     # convierte lenguaje natural en contratos
-devclean task add "otra cosa"        # o escribe contratos a mano
-devclean run --agentes 3             # ejecuta en paralelo
-devclean board                       # tablero de estado
-devclean ship T-001                  # esclusa de salida y PR
-devclean logs T-001                  # detalle interno de una tarea
-devclean report                      # métricas
-devclean doctor                      # verifica el entorno
+# 1. dentro de un repo git con al menos un commit
+devclean init
+
+# 2. convierte una petición en tareas (el planificador usa un modelo)
+devclean plan "exportar clientes a CSV y arreglar el login con tildes"
+
+# 3. ejecuta en paralelo
+devclean run --agentes 3
+
+# 4. revisa y entrega
+devclean board
+devclean ship T-001
 ```
 
-El contrato de tarea son 8 campos máximo:
+`init` detecta la rama base y el comando de pruebas; si se equivoca, corrígelo
+con `devclean init --pruebas "mi comando"` o editando `.devclean/config.yml`.
+
+## Adoptarlo en un proyecto real
+
+devclean no exige cambiar tu stack: solo crea una carpeta `.devclean/` y
+trabaja en worktrees aislados. No toca tu rama principal hasta `ship`.
+
+1. **Prepara el terreno.** Asegúrate de que el repo compila y que tienes un
+   comando de pruebas. `devclean doctor` revisa git, configuración, ejecutores
+   y keys.
+
+2. **Inicializa.** `devclean init` detecta la rama base y el comando de
+   pruebas. Si tu comando no se detecta, pásalo con `--pruebas`.
+
+3. **Delimita lo que nadie debe tocar.** En `.devclean/config.yml`, revisa
+   `zonas_prohibidas` (lockfiles, migraciones, CI, changelog). Por defecto ya
+   están los sospechosos habituales.
+
+4. **Define el trabajo.** Con `devclean plan` (modelo) o a mano con
+   `devclean task add` + `devclean task edit`. La regla de oro: `listo_cuando`
+   debe ser un comando que **hoy falla** y que el agente hará pasar.
+
+5. **Acota cada tarea.** `tocar_solo` declara qué rutas puede tocar el
+   agente. Si corres varias tareas a la vez, es obligatorio: sin alcance
+   declarado no hay cruce que detectar.
+
+6. **Ejecuta y revisa.** `devclean run --agentes N`, luego `devclean board`,
+   `devclean logs T-001` y `devclean report`.
+
+7. **Entrega.** `devclean ship T-001 --dry-run` para ver los ocho pasos sin
+   publicar; `devclean ship T-001` para abrir el PR (requiere `gh`).
+
+### El contrato de tarea
+
+Un archivo por tarea en `.devclean/tasks/T-001.md`, máximo 8 campos:
 
 ```yaml
 ---
@@ -118,6 +174,39 @@ riesgos: archivos grandes pueden agotar memoria
 ---
 ```
 
+### Configuración
+
+`.devclean/config.yml`:
+
+```yaml
+base: main                      # rama base del repo
+pruebas: go test ./...          # comando de pruebas del proyecto
+zonas_prohibidas: ["go.sum", "migrations/**", ".github/**"]
+patrones_prueba: ["*_test.go", "test/**", "*.spec.ts"]
+timeout_esclusa: 300            # segundos para el chequeo "falla hoy"
+```
+
+---
+
+## Comandos
+
+| Comando | Qué hace |
+|---|---|
+| `devclean init` | detecta repo, rama base y comando de pruebas; crea `.devclean/` |
+| `devclean plan "<texto>"` | convierte lenguaje natural en contratos de tarea |
+| `devclean task add\|edit\|rm\|list` | manejo manual de tareas |
+| `devclean check <id>` | corre la esclusa de entrada sobre una tarea |
+| `devclean run [--agentes N]` | ejecuta las tareas pendientes en paralelo |
+| `devclean board` | tablero de estado |
+| `devclean ship <id>` | esclusa de salida y PR |
+| `devclean logs <id>` | detalle interno de una tarea |
+| `devclean report` | métricas del proyecto |
+| `devclean doctor` | verifica configuración, keys, permisos y git |
+
+Todos aceptan `--plain` (una línea por evento, para CI) y `--json` (salida
+estructurada). Sin flags, en terminal, algunos comandos usan la interfaz
+interactiva.
+
 ## Métricas
 
 `devclean report` mide del artefacto, no de lo que el agente dice de sí mismo.
@@ -132,6 +221,14 @@ riesgos: archivos grandes pueden agotar memoria
 
 Cada tarea guarda su costo en tokens.
 
+## Seguridad
+
+- Nada escucha en la red. Nunca.
+- El agente solo escribe dentro de su cuarto y dentro de `tocar_solo`.
+- Las keys nunca entran al contexto del modelo ni a logs.
+- Escaneo de secretos obligatorio antes de cualquier PR.
+- `devclean ship --dry-run` muestra todo antes de publicar.
+
 ## Por qué no reuniones entre agentes
 
 Un agente nunca reporta su propio avance; todo se mide del artefacto. La
@@ -143,6 +240,15 @@ evidencia:
   un debate; abandonan juicios correctos por alinearse con la mayoría.
 - El debate multi-agente es una martingala: no aporta ganancia esperada
   sobre el voto independiente.
+
+## Estado
+
+**v0.1 (MVP).** Lo de arriba funciona de punta a punta. Queda pendiente para
+v0.2: examinador ciego y suite oculta, detección de solapamiento funcional,
+duplicación entre ramas, reglas de dependencia y constitución del proyecto.
+
+> El GIF (`docs/demo.gif`) se graba con `vhs docs/demo.tape`; el tape usa
+> `scripts/demo.sh`, un agente falso para no gastar tokens.
 
 ## Límite honesto
 
