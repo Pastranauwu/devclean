@@ -14,6 +14,7 @@ import (
 
 func tareaValida() task.Task {
 	return task.Task{
+		Version:        task.Version,
 		ID:             "T-001",
 		Titulo:         "x",
 		ListoCuando:    "false",
@@ -23,13 +24,26 @@ func tareaValida() task.Task {
 	}
 }
 
+// chequeo busca un chequeo por nombre: el orden de la lista cambia
+// cada vez que la adenda agrega uno.
+func chequeo(t *testing.T, res Result, nombre string) Check {
+	t.Helper()
+	for _, c := range res.Chequeos {
+		if c.Nombre == nombre {
+			return c
+		}
+	}
+	t.Fatalf("no hubo chequeo %q en %+v", nombre, res.Chequeos)
+	return Check{}
+}
+
 func TestGateTodoVerde(t *testing.T) {
 	res := Run(context.Background(), t.TempDir(), config.Config{}, tareaValida(), nil, DefaultTimeout)
 	if !res.Aprobada {
 		t.Fatalf("tarea válida rechazada: %+v", res.Chequeos)
 	}
-	if len(res.Chequeos) != 5 {
-		t.Fatalf("Chequeos = %d, quiero 5", len(res.Chequeos))
+	if len(res.Chequeos) != 6 {
+		t.Fatalf("Chequeos = %d, quiero 6", len(res.Chequeos))
 	}
 }
 
@@ -40,8 +54,8 @@ func TestGateSinListoCuando(t *testing.T) {
 	if res.Aprobada {
 		t.Fatal("tarea sin listo_cuando aprobada")
 	}
-	if res.Chequeos[1].Nombre != "falla hoy" || res.Chequeos[1].OK {
-		t.Errorf("falla hoy debió quedar no evaluado: %+v", res.Chequeos[1])
+	if c := chequeo(t, res, "falla hoy"); c.OK {
+		t.Errorf("falla hoy debió quedar no evaluado: %+v", c)
 	}
 }
 
@@ -84,7 +98,7 @@ func TestGateYaPasa(t *testing.T) {
 	if res.Aprobada {
 		t.Fatal("tarea cuyo listo_cuando ya pasa fue aprobada")
 	}
-	fallaHoy := res.Chequeos[1]
+	fallaHoy := chequeo(t, res, "falla hoy")
 	if fallaHoy.OK || fallaHoy.Motivo == "" {
 		t.Errorf("falla hoy debió rechazar: %+v", fallaHoy)
 	}
@@ -97,7 +111,7 @@ func TestGateTimeout(t *testing.T) {
 	if res.Aprobada {
 		t.Fatal("tarea con timeout aprobada")
 	}
-	fallaHoy := res.Chequeos[1]
+	fallaHoy := chequeo(t, res, "falla hoy")
 	if fallaHoy.OK {
 		t.Error("timeout debió rechazar la tarea")
 	}
@@ -230,5 +244,30 @@ func TestGateTocarSoloVacioConOtraActiva(t *testing.T) {
 	quiere := "tocar_solo obligatorio con más de una tarea activa · declara tus rutas"
 	if res.PrimerMotivo() != quiere {
 		t.Errorf("motivo = %q, quiere %q", res.PrimerMotivo(), quiere)
+	}
+}
+
+func TestGateRechazaContratoSinVersion(t *testing.T) {
+	tarea := tareaValida()
+	tarea.Version = 0
+	res := Run(context.Background(), t.TempDir(), config.Config{}, tarea, nil, DefaultTimeout)
+	if res.Aprobada {
+		t.Fatal("contrato sin version aprobado")
+	}
+	if !strings.Contains(res.PrimerMotivo(), "falta version") {
+		t.Errorf("motivo = %q · quiere señalar la version que falta", res.PrimerMotivo())
+	}
+}
+
+func TestGatePropagaElAvisoDeVersionFutura(t *testing.T) {
+	tarea := tareaValida()
+	tarea.Version = 2
+	tarea.Aviso = "contrato versión 2, binario soporta 1 · actualiza devclean"
+	res := Run(context.Background(), t.TempDir(), config.Config{}, tarea, nil, DefaultTimeout)
+	if !res.Aprobada {
+		t.Fatalf("un contrato de versión futura válido fue rechazado: %s", res.PrimerMotivo())
+	}
+	if res.Aviso != tarea.Aviso {
+		t.Errorf("Aviso = %q · la esclusa debe propagarlo", res.Aviso)
 	}
 }
