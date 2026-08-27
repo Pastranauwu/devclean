@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/loop"
+	"github.com/Pastranauwu/devclean/internal/metrics"
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/ship"
 	"github.com/Pastranauwu/devclean/internal/state"
@@ -68,6 +70,20 @@ func runShip(id string, dryRun bool) error {
 		Base:   cfg.Base,
 		DryRun: dryRun,
 	})
+
+	// la entrega alimenta las métricas de ruido y roce, aunque frene
+	if !dryRun {
+		_ = metrics.GuardarEntrega(root, metrics.Entrega{
+			ID:          id,
+			Fecha:       time.Now().UTC(),
+			LineasMas:   res.LineasMas,
+			LineasMenos: res.LineasMenos,
+			Ruido:       res.Ruido,
+			Conflicto:   res.Conflicto,
+			PR:          res.PR,
+			Aprobado:    res.Aprobado,
+		})
+	}
 
 	if err := out.Data(res); err != nil {
 		return err
