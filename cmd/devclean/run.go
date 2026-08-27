@@ -118,13 +118,8 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 	}
 
 	if esTUI() {
-		rs, err := correrConTUI(context.Background(), root, cfg, ex, modelo, asignadas, agentes)
-		if err != nil {
-			return err
-		}
-		results = append(results, rs...)
-		sortRunResults(results)
-		return emitirResultados(results)
+		_, err := correrConTUI(context.Background(), root, cfg, ex, modelo, asignadas, agentes)
+		return err
 	}
 
 	results = append(results, correr(context.Background(), root, cfg, ex, modelo, asignadas, agentes, nil)...)

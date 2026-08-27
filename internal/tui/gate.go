@@ -84,33 +84,32 @@ func renderNombre(e estadoPaso, nombre string) string {
 	}
 }
 
-// renderGate dibuja la compuerta con colores, spinner y barra de progreso.
+// renderGate dibuja la compuerta con colores, spinner y barra de progreso,
+// dentro de una tarjeta.
 func renderGate(id string, pasos []ship.Paso, terminado bool, tick, width int) string {
 	e := clasificar(pasos, terminado)
-	if width <= 0 {
-		width = 80
-	}
-	ancho := width - 4
 
-	var b strings.Builder
-	b.WriteString(Logo(width))
-	b.WriteString("\n  ")
-	b.WriteString(estiloBold.Render("ESCLUSA DE SALIDA · " + id))
-	b.WriteString("\n\n")
+	var cuerpo strings.Builder
+	cuerpo.WriteString(estiloTitulo.Render("ESCLUSA DE SALIDA · "+id) + "\n\n")
 
 	var glifos, nombres strings.Builder
 	for i := 0; i < len(e); i++ {
 		glifos.WriteString(acomodar(renderGlifo(e[i], tick), 8))
 		nombres.WriteString(acomodar(renderNombre(e[i], nombresCortos[i]), 8))
 	}
-	b.WriteString("   " + strings.TrimRight(glifos.String(), " ") + "\n")
-	b.WriteString("   " + strings.TrimRight(nombres.String(), " ") + "\n")
+	cuerpo.WriteString(strings.TrimRight(glifos.String(), " ") + "\n")
+	cuerpo.WriteString(strings.TrimRight(nombres.String(), " ") + "\n")
 
-	b.WriteString("\n  " + barra(len(pasos), 8, ancho) + " " + estiloApagado.Render(strconv.Itoa(len(pasos))+"/8") + "\n")
+	cuerpo.WriteString("\n" + barra(len(pasos), 8, 40) + " " + estiloApagado.Render(strconv.Itoa(len(pasos))+"/8") + "\n")
 
 	if len(pasos) > 0 {
-		b.WriteString("\n  " + estiloApagado.Render(pasos[len(pasos)-1].Detalle) + "\n")
+		cuerpo.WriteString("\n" + estiloApagado.Render(pasos[len(pasos)-1].Detalle) + "\n")
 	}
+
+	var b strings.Builder
+	b.WriteString(Logo(width))
+	b.WriteString("\n")
+	b.WriteString(caja(cuerpo.String()))
 	return b.String()
 }
 

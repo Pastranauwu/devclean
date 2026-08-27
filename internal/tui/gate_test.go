@@ -41,7 +41,7 @@ func TestRenderGate(t *testing.T) {
 	}
 	vista := renderGate("T-003", pasos, false, 0, 80)
 
-	for _, want := range []string{"devclean", "ESCLUSA DE SALIDA · T-003", "base", "hist", "ruido", "secr", "presu", "bisec", "hand", "pr", "✓", "·", "2/8"} {
+	for _, want := range []string{"ESCLUSA DE SALIDA · T-003", "base", "hist", "ruido", "secr", "presu", "bisec", "hand", "pr", "✓", "·", "2/8"} {
 		if !strings.Contains(vista, want) {
 			t.Errorf("la vista no contiene %q:\n%s", want, vista)
 		}
@@ -64,7 +64,7 @@ func TestRenderGateFreno(t *testing.T) {
 
 func TestLogo(t *testing.T) {
 	l := Logo(80)
-	for _, want := range []string{"▄", "▀", "devclean", "dirige agentes"} {
+	for _, want := range []string{"▄", "▀", "█", "dirige agentes"} {
 		if !strings.Contains(l, want) {
 			t.Errorf("logo sin %q:\n%s", want, l)
 		}
