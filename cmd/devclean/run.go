@@ -60,9 +60,6 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 	if err != nil {
 		return err
 	}
-	if keyEnv, falta := config.KeyEnvFalta(cfg, "ejecutor"); falta {
-		return fmt.Errorf("falta %s en el entorno · el rol ejecutor no puede llamar al modelo · exporta la key o corre devclean doctor", keyEnv)
-	}
 	tareas, err := task.List(config.TasksDir(root))
 	if err != nil {
 		return err
