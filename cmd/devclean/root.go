@@ -12,6 +12,10 @@ import (
 // PersistentPreRun from --plain/--json and the nature of stdout.
 var out *ui.Printer
 
+// plainMode recuerda si se pidió --plain o si stdout no es terminal. Los
+// comandos lo usan para decidir entre TUI y texto plano.
+var plainMode bool
+
 func newRootCmd() *cobra.Command {
 	var jsonOut bool
 	var plain bool
@@ -25,6 +29,7 @@ func newRootCmd() *cobra.Command {
 			if !jsonOut && !plain && !isTerminal(os.Stdout) {
 				plain = true
 			}
+			plainMode = plain
 			out = ui.New(os.Stdout, jsonOut)
 		},
 	}
@@ -35,6 +40,12 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newInitCmd(), newTaskCmd(), newCheckCmd(), newRunCmd(), newShipCmd(), newBoardCmd(), newLogsCmd(), newReportCmd(), newDoctorCmd())
 
 	return root
+}
+
+// esTUI reporta si el comando debe correr en modo interactivo: salida a
+// terminal, sin --plain ni --json.
+func esTUI() bool {
+	return !out.JSON() && !plainMode && isTerminal(os.Stdout)
 }
 
 func isTerminal(f *os.File) bool {

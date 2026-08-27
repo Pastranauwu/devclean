@@ -16,6 +16,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/ship"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
+	"github.com/Pastranauwu/devclean/internal/tui"
 )
 
 func newShipCmd() *cobra.Command {
@@ -61,7 +62,7 @@ func runShip(id string, dryRun bool) error {
 		return fmt.Errorf("no existe el cuarto de %s · la tarea no corrió", id)
 	}
 
-	res := ship.Run(context.Background(), ship.Opciones{
+	opciones := ship.Opciones{
 		Root:   root,
 		Room:   r,
 		Task:   t,
@@ -69,7 +70,17 @@ func runShip(id string, dryRun bool) error {
 		Modelo: ultimoModelo(root, id),
 		Base:   cfg.Base,
 		DryRun: dryRun,
-	})
+	}
+
+	var res ship.Resultado
+	if esTUI() {
+		res, err = tui.CorrerGate(opciones)
+		if err != nil {
+			return err
+		}
+	} else {
+		res = ship.Run(context.Background(), opciones)
+	}
 
 	// la entrega alimenta las métricas de ruido y roce, aunque frene
 	if !dryRun {
@@ -87,6 +98,18 @@ func runShip(id string, dryRun bool) error {
 
 	if err := out.Data(res); err != nil {
 		return err
+	}
+	if esTUI() {
+		// la compuerta ya mostró los pasos; queda solo la línea final
+		if !res.Aprobado {
+			return fmt.Errorf("esclusa frenada · %s", res.PrimerMotivo())
+		}
+		if dryRun {
+			out.Line("entregable · --dry-run, sin PR")
+		} else {
+			out.Line("entregado · %s", res.PR)
+		}
+		return nil
 	}
 	for _, p := range res.Pasos {
 		if p.OK {

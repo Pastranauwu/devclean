@@ -41,14 +41,15 @@ type Resultado struct {
 
 // Opciones carries the exit gate's dependencies.
 type Opciones struct {
-	Root    string
-	Room    room.Room
-	Task    task.Task
-	Config  config.Config
-	Modelo  string        // del último intento, para el trailer Agent:
-	Base    string        // rama base sobre la que rebasear
-	Timeout time.Duration // timeout del paso bisectable
-	DryRun  bool          // corre todo menos abrir el PR
+	Root     string
+	Room     room.Room
+	Task     task.Task
+	Config   config.Config
+	Modelo   string        // del último intento, para el trailer Agent:
+	Base     string        // rama base sobre la que rebasear
+	Timeout  time.Duration // timeout del paso bisectable
+	DryRun   bool          // corre todo menos abrir el PR
+	Progreso func(Paso)    // llamado tras cada paso, para el TUI; nil = silencio
 }
 
 // Run executes the eight steps in order and returns the gate result.
@@ -61,33 +62,39 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	if o.Timeout <= 0 {
 		o.Timeout = DefaultTimeout
 	}
+	apuntar := func(p Paso) {
+		res.Pasos = append(res.Pasos, p)
+		if o.Progreso != nil {
+			o.Progreso(p)
+		}
+	}
 
 	// 1. base — rebase sobre la rama base
 	target, conflictos, err := rebase(ctx, o.Root, o.Room.Path, o.Base, o.Room.Rama)
 	if err != nil {
 		if len(conflictos) > 0 {
 			res.Conflicto = true
-			res.Pasos = append(res.Pasos, Paso{"base", false, "rebase en conflicto · archivos: " + unir(conflictos) + " · resuélvelo a mano"})
+			apuntar(Paso{"base", false, "rebase en conflicto · archivos: " + unir(conflictos) + " · resuélvelo a mano"})
 		} else {
-			res.Pasos = append(res.Pasos, Paso{"base", false, "no se pudo rebasear · " + err.Error()})
+			apuntar(Paso{"base", false, "no se pudo rebasear · " + err.Error()})
 		}
 		return res
 	}
-	res.Pasos = append(res.Pasos, Paso{"base", true, "rebaseado sobre " + target})
+	apuntar(Paso{"base", true, "rebaseado sobre " + target})
 
 	// 2. historial — aplanar los wip en un commit limpio
 	tipo := tipoCommit(o.Task.Titulo)
 	cuenta, _, err := aplanar(ctx, o.Room.Path, target, o.Task.Titulo, tipo, o.Modelo)
 	if err != nil {
-		res.Pasos = append(res.Pasos, Paso{"historial", false, err.Error()})
+		apuntar(Paso{"historial", false, err.Error()})
 		return res
 	}
-	res.Pasos = append(res.Pasos, Paso{"historial", true, itoa(cuenta) + " guardados → 1 commit"})
+	apuntar(Paso{"historial", true, itoa(cuenta) + " guardados → 1 commit"})
 
 	// el diff del commit aplanado alimenta a los escáneres
 	diff, archivos, mas, menos, err := diffAplanado(o.Room.Path, target)
 	if err != nil {
-		res.Pasos = append(res.Pasos, Paso{"ruido", false, err.Error()})
+		apuntar(Paso{"ruido", false, err.Error()})
 		return res
 	}
 	res.LineasMas = mas
@@ -96,50 +103,50 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	// 3. ruido — prints de debug, temporales, código comentado
 	if h := escanearRuido(diff, archivos); len(h) > 0 {
 		res.Ruido = len(h)
-		res.Pasos = append(res.Pasos, Paso{"ruido", false, resumenHallazgos(h)})
+		apuntar(Paso{"ruido", false, resumenHallazgos(h)})
 		return res
 	}
-	res.Pasos = append(res.Pasos, Paso{"ruido", true, "sin ruido"})
+	apuntar(Paso{"ruido", true, "sin ruido"})
 
 	// 4. secretos — en el diff y en el commit
 	if h := escanearSecretos(diff); len(h) > 0 {
-		res.Pasos = append(res.Pasos, Paso{"secretos", false, resumenHallazgos(h)})
+		apuntar(Paso{"secretos", false, resumenHallazgos(h)})
 		return res
 	}
-	res.Pasos = append(res.Pasos, Paso{"secretos", true, "sin secretos"})
+	apuntar(Paso{"secretos", true, "sin secretos"})
 
 	// 5. presupuesto — limite_lineas y archivos tocados
 	if detalle, ok := verificarPresupuesto(mas, menos, len(archivos), o.Task); !ok {
-		res.Pasos = append(res.Pasos, Paso{"presupuesto", false, detalle})
+		apuntar(Paso{"presupuesto", false, detalle})
 		return res
 	} else {
-		res.Pasos = append(res.Pasos, Paso{"presupuesto", true, detalle})
+		apuntar(Paso{"presupuesto", true, detalle})
 	}
 
 	// 6. bisectable — el commit compila y pasa las pruebas
 	if detalle, ok := verificarBisectable(ctx, o.Room.Path, o.Config.Pruebas, o.Timeout); !ok {
-		res.Pasos = append(res.Pasos, Paso{"bisectable", false, detalle})
+		apuntar(Paso{"bisectable", false, detalle})
 		return res
 	} else {
-		res.Pasos = append(res.Pasos, Paso{"bisectable", true, detalle})
+		apuntar(Paso{"bisectable", true, detalle})
 	}
 
 	// 7. handoff — qué cambió, qué no, cómo verificar
 	cuerpo := generarHandoff(o.Task, archivos, mas, menos)
-	res.Pasos = append(res.Pasos, Paso{"handoff", true, ""})
+	apuntar(Paso{"handoff", true, ""})
 
 	// 8. pr — abrir y liberar el cuarto
 	if o.DryRun {
-		res.Pasos = append(res.Pasos, Paso{"pr", true, "dry-run · sin PR"})
+		apuntar(Paso{"pr", true, "dry-run · sin PR"})
 		res.Aprobado = true
 		return res
 	}
 	url, err := abrirPR(ctx, o.Root, o.Room, o.Base, o.Task.Titulo, cuerpo)
 	if err != nil {
-		res.Pasos = append(res.Pasos, Paso{"pr", false, err.Error()})
+		apuntar(Paso{"pr", false, err.Error()})
 		return res
 	}
-	res.Pasos = append(res.Pasos, Paso{"pr", true, url})
+	apuntar(Paso{"pr", true, url})
 	res.PR = url
 	res.Aprobado = true
 	return res
