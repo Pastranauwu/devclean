@@ -17,6 +17,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
+	"github.com/Pastranauwu/devclean/internal/tui"
 )
 
 // runResult es una tarea de la corrida, con su desenlace.
@@ -116,9 +117,33 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 		return err
 	}
 
-	results = append(results, correr(context.Background(), root, cfg, ex, modelo, asignadas, agentes)...)
+	if esTUI() {
+		rs, err := correrConTUI(context.Background(), root, cfg, ex, modelo, asignadas, agentes)
+		if err != nil {
+			return err
+		}
+		results = append(results, rs...)
+		sortRunResults(results)
+		return emitirResultados(results)
+	}
+
+	results = append(results, correr(context.Background(), root, cfg, ex, modelo, asignadas, agentes, nil)...)
 	sortRunResults(results)
 	return emitirResultados(results)
+}
+
+// correrConTUI ejecuta la corrida dentro del tablero en vivo y devuelve
+// los resultados para imprimirlos al final.
+func correrConTUI(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo string, asignadas []task.Task, agentes int) ([]runResult, error) {
+	filas := make([]tui.FilaRun, 0, len(asignadas))
+	for _, t := range asignadas {
+		filas = append(filas, tui.FilaRun{ID: t.ID, Titulo: t.Titulo, Limite: t.LimiteIntentos})
+	}
+	var results []runResult
+	err := tui.CorrerRun(filas, func(emit func(tui.EventoRun)) {
+		results = correr(ctx, root, cfg, ex, modelo, asignadas, agentes, emit)
+	})
+	return results, err
 }
 
 // asignar reparte las tareas aprobadas para correr juntas: aplica A.4 al
@@ -203,8 +228,9 @@ func (a agenteExecutor) Run(ctx context.Context, req loop.Request) (loop.Result,
 	}, err
 }
 
-// correr lanza las tareas con `agentes` trabajadores en paralelo.
-func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo string, asignadas []task.Task, agentes int) []runResult {
+// correr lanza las tareas con `agentes` trabajadores en paralelo. onEvent,
+// si no es nil, recibe cada transición para el tablero en vivo.
+func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo string, asignadas []task.Task, agentes int, onEvent func(tui.EventoRun)) []runResult {
 	jobs := make(chan task.Task)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -215,7 +241,13 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 		go func() {
 			defer wg.Done()
 			for t := range jobs {
+				if onEvent != nil {
+					onEvent(tui.EventoRun{ID: t.ID, Estado: "trabajando"})
+				}
 				r := correrUno(ctx, root, cfg, ex, modelo, t)
+				if onEvent != nil {
+					onEvent(tui.EventoRun{ID: r.ID, Estado: r.Estado, Intentos: r.Intentos, Motivo: r.Motivo})
+				}
 				mu.Lock()
 				results = append(results, r)
 				mu.Unlock()

@@ -66,10 +66,12 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
 - `devclean doctor`: verifica git, repo, configuración, ejecutores y keys.
 - `devclean board`: tablero por estado (listo, en curso, detenido, pendiente).
 - `devclean logs <id>`: los intentos de una tarea, uno por línea.
-- `internal/tui`: la compuerta animada de `ship` (§16.3) y el tablero
-  interactivo de `board`, con la paleta del cuarto limpio (§16.2). Ambos se
-  usan cuando la salida es terminal y no hay `--plain` ni `--json`; si no,
-  texto plano.
+- `internal/tui`: el modo interactivo con la paleta del cuarto limpio
+  (§16.2): logotipo ASCII, spinner braille, barras de progreso reales. Tres
+  vistas — la compuerta animada de `ship` (§16.3), el tablero de `board` y la
+  corrida en vivo de `run` (N tareas, spinner, reloj y barra global). Cada
+  comando usa el TUI cuando la salida es terminal y no hay `--plain` ni
+  `--json`; si no, texto plano.
 - `internal/plan` + `devclean plan "<texto>"`: el planificador (§5, §8.2)
   parte una petición en contratos. El texto lo produce un modelo (vía el
   ejecutor, cuyo `Result.Text` ahora trae la respuesta); devclean solo parsea
@@ -113,7 +115,6 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 
 - **Publicar el release**: `main` y `v0.1.0` ya están en `origin`. Solo falta
   crear el release en la web de GitHub (o con `gh release create v0.1.0`).
-- **TUI de `run`** (streaming en vivo de N tareas; el texto plano ya funciona).
 - **Flecha de tendencia** en `report` (persistir historial y comparar).
 - **Config anidado `proveedores`** (§8.1); hoy se usa `--modelo`/`--ejecutor`.
 - **Tap de Homebrew** y `go install` funcionando tras publicar la release.
