@@ -103,12 +103,15 @@ type lineaSticker struct {
 }
 
 // renderGrid emite la grilla como ANSI, agrupando celdas del mismo color.
+// Sin salto de línea final: bubbletea parpadea si el frame termina en \n.
 func renderGrid(grid [][]celda) string {
 	var b strings.Builder
-	for row := range grid {
+	for i, row := range grid {
+		if i > 0 {
+			b.WriteString("\n")
+		}
 		var cf, cb *[3]int
-		for col := range grid[row] {
-			c := grid[row][col]
+		for _, c := range row {
 			if c.fg != nil {
 				if cf == nil || *cf != *c.fg {
 					fmt.Fprintf(&b, "\x1b[38;2;%d;%d;%dm", c.fg[0], c.fg[1], c.fg[2])
@@ -129,7 +132,7 @@ func renderGrid(grid [][]celda) string {
 			}
 			b.WriteString(c.ch)
 		}
-		b.WriteString("\x1b[0m\n")
+		b.WriteString("\x1b[0m")
 	}
 	return b.String()
 }
@@ -190,7 +193,8 @@ func FondoPlasma(ancho, alto int, t float64, p PlasmaParams, lineas []lineaStick
 	return renderGrid(grid)
 }
 
-// tickPlasma avanza la animación del fondo.
+// tickPlasma avanza la animación del fondo. 100ms (10 fps) basta para un
+// plasma lento y reduce el parpadeo frente a 20 fps.
 func tickPlasma() tea.Cmd {
-	return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
 }
