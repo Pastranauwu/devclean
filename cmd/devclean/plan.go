@@ -16,6 +16,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/executor"
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/task"
+	"github.com/Pastranauwu/devclean/internal/tui"
 )
 
 // propuesta es una tarea del plan, ya con id asignado.
@@ -74,10 +75,20 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 		Pruebas:  cfg.Pruebas,
 	}
 	if esVacio && !aprobar && isTerminal(os.Stdin) {
-		ctx.Stack, ctx.Requisitos = pedirRequisitos(os.Stdin)
+		ctx.Stack, ctx.Requisitos = pedirRequisitos(os.Stdin, esTUI())
 	}
 
-	borradores, err := plan.Generar(context.Background(), generadorPlan{ex: ex, modelo: modelo, root: root}, ctx, frase)
+	var borradores []plan.Borrador
+	generar := func() error {
+		var err error
+		borradores, err = plan.Generar(context.Background(), generadorPlan{ex: ex, modelo: modelo, root: root}, ctx, frase)
+		return err
+	}
+	if esTUI() {
+		err = tui.Esperar("generando plan · "+modelo, generar)
+	} else {
+		err = generar()
+	}
 	if err != nil {
 		return err
 	}
@@ -103,9 +114,18 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 	if err := out.Data(props); err != nil {
 		return err
 	}
-	out.Line("propongo %d tareas:", len(props))
-	for _, p := range props {
-		out.Line("%s  %s  · listo cuando: %s", p.ID, p.Titulo, p.ListoCuando)
+	if esTUI() {
+		var cuerpo strings.Builder
+		cuerpo.WriteString(tui.Titulo(fmt.Sprintf("PROPONGO %d TAREAS", len(props))) + "\n\n")
+		for _, p := range props {
+			cuerpo.WriteString(p.ID + "  " + p.Titulo + "  " + tui.Apagado("· listo cuando: "+p.ListoCuando) + "\n")
+		}
+		out.Line("%s", tui.Caja(strings.TrimRight(cuerpo.String(), "\n")))
+	} else {
+		out.Line("propongo %d tareas:", len(props))
+		for _, p := range props {
+			out.Line("%s  %s  · listo cuando: %s", p.ID, p.Titulo, p.ListoCuando)
+		}
 	}
 
 	if !aprobar {
@@ -170,18 +190,25 @@ func confirmar(in io.Reader) bool {
 // pedirRequisitos reúne el stack y los requisitos extra del humano
 // cuando el repo está vacío (Fase 2): sin esto, el planificador no
 // tiene de dónde agarrarse y alucina un stack.
-func pedirRequisitos(in io.Reader) (stack, requisitos string) {
+func pedirRequisitos(in io.Reader, tuiMode bool) (stack, requisitos string) {
 	leer := bufio.NewReader(in)
 
-	out.Line("repositorio vacío · define el stack y los requisitos antes de planear")
-	out.Line("stack (go, node, python, rust, ...) · enter para que lo elija el modelo:")
+	titulo, etiquetaStack, etiquetaPieza := "repositorio vacío · define el stack y los requisitos antes de planear",
+		"stack (go, node, python, rust, ...) · enter para que lo elija el modelo:",
+		"requisito o pieza (una línea, enter para terminar):"
+	if tuiMode {
+		titulo, etiquetaStack, etiquetaPieza = tui.Titulo(titulo), tui.Apagado(etiquetaStack), tui.Apagado(etiquetaPieza)
+	}
+
+	out.Line("%s", titulo)
+	out.Line("%s", etiquetaStack)
 	if l, _ := leer.ReadString('\n'); strings.TrimSpace(l) != "" {
 		stack = strings.ToLower(strings.TrimSpace(l))
 	}
 
 	var piezas []string
 	for {
-		out.Line("requisito o pieza (una línea, enter para terminar):")
+		out.Line("%s", etiquetaPieza)
 		l, _ := leer.ReadString('\n')
 		l = strings.TrimSpace(l)
 		if l == "" {

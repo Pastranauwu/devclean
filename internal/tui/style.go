@@ -89,6 +89,15 @@ func Logo(width int) string {
 	return b.String()
 }
 
+// Caja envuelve contenido en una tarjeta con borde recto (§16.2), para
+// comandos fuera de internal/tui que quieren la misma tarjeta.
+func Caja(s string) string { return caja(s) }
+
+// Titulo y Apagado exponen los dos estilos de texto más usados fuera de
+// este paquete, sin tener que exportar la paleta entera.
+func Titulo(s string) string  { return estiloTitulo.Render(s) }
+func Apagado(s string) string { return estiloApagado.Render(s) }
+
 // caja envuelve contenido en una tarjeta con borde recto (§16.2).
 func caja(s string) string {
 	return lipgloss.NewStyle().
