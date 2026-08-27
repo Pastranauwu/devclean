@@ -44,6 +44,14 @@ type Result struct {
 	Aviso    string  `json:"aviso,omitempty"`
 }
 
+// Cruce runs only the scope check between tasks (§6.3.3 y A.4):
+// rejects when tocar_solo overlaps another's, or is empty while another
+// task runs. cmd/run uses it at assignment time, where the tasks already
+// passed the full gate, so no test command runs again.
+func Cruce(t task.Task, otras []task.Task) Check {
+	return checkSinCruce(t, otras)
+}
+
 // PrimerMotivo returns the reason of the first failed check.
 func (r Result) PrimerMotivo() string {
 	for _, c := range r.Chequeos {

@@ -37,6 +37,17 @@ func chequeo(t *testing.T, res Result, nombre string) Check {
 	return Check{}
 }
 
+func TestCruceExportado(t *testing.T) {
+	otra := task.Task{ID: "T-002", TocarSolo: []string{"src/**"}}
+	if c := Cruce(tareaValida(), []task.Task{otra}); c.OK {
+		t.Error("Cruce no detectó el solapamiento")
+	}
+	lejana := task.Task{ID: "T-003", TocarSolo: []string{"docs/**"}}
+	if c := Cruce(tareaValida(), []task.Task{lejana}); !c.OK {
+		t.Errorf("Cruce rechazó sin solapamiento: %s", c.Motivo)
+	}
+}
+
 func TestGateTodoVerde(t *testing.T) {
 	res := Run(context.Background(), t.TempDir(), config.Config{}, tareaValida(), nil, DefaultTimeout)
 	if !res.Aprobada {
