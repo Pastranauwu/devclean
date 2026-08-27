@@ -34,6 +34,7 @@ type Result struct {
 	FilesChanged []string `json:"files_changed"`
 	Tokens       Usage    `json:"tokens"`
 	Stdout       string   `json:"stdout"`
+	Text         string   `json:"text"` // la respuesta textual del agente, si el adaptador la saca
 	ExitCode     int      `json:"exit_code"`
 }
 

@@ -33,8 +33,20 @@ func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	}
 	stdout, code, err := run(ctx, req, "claude", args...)
 	res := Result{Stdout: stdout, ExitCode: code}
+	res.Text = parseClaudeText(stdout)
 	res.Tokens = parseClaudeUsage(stdout)
 	return res, err
+}
+
+// parseClaudeText reads the "result" field of --output-format json.
+func parseClaudeText(stdout string) string {
+	var parsed struct {
+		Result string `json:"result"`
+	}
+	if json.Unmarshal([]byte(strings.TrimSpace(stdout)), &parsed) != nil {
+		return ""
+	}
+	return parsed.Result
 }
 
 // parseClaudeUsage reads the final JSON object of --output-format json.
