@@ -28,18 +28,32 @@ func runReport() error {
 	}
 	m := metrics.Calcular(d)
 
-	if err := out.Data(m); err != nil {
+	historial, err := metrics.LeerHistorial(root)
+	if err != nil {
 		return err
 	}
-	out.Line("intentos hasta verde  %.1f   (meta ≤ 2)", m.IntentosHastaVerde)
-	out.Line("ruido                 %.1f%%  (meta < 5%%)", m.Ruido)
-	out.Line("roce                  %.1f por 10 entregas  (meta < 1)", m.Roce)
-	if m.Friccion != nil {
-		out.Line("fricción              %.0f min", *m.Friccion)
-	} else {
-		out.Line("fricción              —  sin datos")
+	var prev *metrics.Metricas
+	if n := len(historial); n > 0 {
+		prev = &historial[n-1].Metricas
 	}
-	out.Line("rechazo en entrada    %.1f%%", m.RechazoEntrada)
+	tendencia := metrics.Comparar(prev, m)
+
+	if err := metrics.GuardarHistorial(root, m); err != nil {
+		return err
+	}
+
+	if err := out.Data(metrics.Reporte{Metricas: m, Tendencia: tendencia}); err != nil {
+		return err
+	}
+	out.Line("intentos hasta verde  %s %.1f   (meta ≤ 2)", tendencia.IntentosHastaVerde, m.IntentosHastaVerde)
+	out.Line("ruido                 %s %.1f%%  (meta < 5%%)", tendencia.Ruido, m.Ruido)
+	out.Line("roce                  %s %.1f por 10 entregas  (meta < 1)", tendencia.Roce, m.Roce)
+	if m.Friccion != nil {
+		out.Line("fricción              %s %.0f min", tendencia.Friccion, *m.Friccion)
+	} else {
+		out.Line("fricción              %s —  sin datos", tendencia.Friccion)
+	}
+	out.Line("rechazo en entrada    %s %.1f%%", tendencia.RechazoEntrada, m.RechazoEntrada)
 	out.Line("tokens                %d", m.Tokens)
 	return nil
 }
