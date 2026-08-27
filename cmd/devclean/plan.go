@@ -62,6 +62,9 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 	if modelo == "" {
 		modelo = config.ModeloRol(cfg, "planificador")
 	}
+	if keyEnv, falta := config.KeyEnvFalta(cfg, "planificador"); falta {
+		return fmt.Errorf("falta %s en el entorno · el rol planificador no puede llamar al modelo · exporta la key o corre devclean doctor", keyEnv)
+	}
 
 	ex, err := elegirEjecutor(ejecutor)
 	if err != nil {
@@ -158,7 +161,7 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 			return err
 		}
 	}
-	out.Line("✓ %s creadas · revisa con devclean check", strings.Join(ids, ", "))
+	out.Line("✓ %s creadas · revisa con devclean check %s", strings.Join(ids, ", "), ids[0])
 	return nil
 }
 
