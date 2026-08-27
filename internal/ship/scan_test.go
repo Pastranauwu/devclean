@@ -58,7 +58,7 @@ func TestEscanearRuidoLimpio(t *testing.T) {
 func TestEscanearSecretos(t *testing.T) {
 	diff := `--- a/x.go
 +++ b/x.go
-+const awsKey = "AKIAIOSFODNN7EXAMPLE"
++const awsKey = "AKIA1234567890ABCDEF"
 +password = "hunter2secret"
 +func normal() {}
 `
