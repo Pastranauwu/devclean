@@ -59,6 +59,9 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 	if err != nil {
 		return err
 	}
+	if modelo == "" {
+		modelo = config.ModeloRol(cfg, "ejecutor")
+	}
 	tareas, err := task.List(config.TasksDir(root))
 	if err != nil {
 		return err

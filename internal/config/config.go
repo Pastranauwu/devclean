@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Pastranauwu/devclean/internal/kv"
@@ -21,11 +22,20 @@ const DirName = ".devclean"
 
 // Config is the content of .devclean/config.yml.
 type Config struct {
-	Base            string   `json:"base"`
-	Pruebas         string   `json:"pruebas"`
-	ZonasProhibidas []string `json:"zonas_prohibidas"`
-	TimeoutEsclusa  int      `json:"timeout_esclusa"` // segundos para el chequeo "falla hoy"
-	PatronesPrueba  []string `json:"patrones_prueba"` // rutas que ninguna tarea puede editar
+	Base            string               `json:"base"`
+	Pruebas         string               `json:"pruebas"`
+	ZonasProhibidas []string             `json:"zonas_prohibidas"`
+	TimeoutEsclusa  int                  `json:"timeout_esclusa"` // segundos para el chequeo "falla hoy"
+	PatronesPrueba  []string             `json:"patrones_prueba"` // rutas que ninguna tarea puede editar
+	Proveedores     map[string]Proveedor `json:"proveedores,omitempty"`
+}
+
+// Proveedor es un rol del motor de agentes (§8.1): qué modelo usa y de
+// qué variable de entorno sale su key. Los roles son planificador,
+// ejecutor y revisor.
+type Proveedor struct {
+	Modelo string `json:"modelo"`
+	KeyEnv string `json:"key_env"`
 }
 
 // DefaultForbiddenZones implements §6.3: lockfiles, migrations, CI and
@@ -99,7 +109,34 @@ func (c Config) Save(root string) error {
 	if c.TimeoutEsclusa > 0 {
 		fmt.Fprintf(&b, "timeout_esclusa: %d\n", c.TimeoutEsclusa)
 	}
+	if len(c.Proveedores) > 0 {
+		fmt.Fprintf(&b, "proveedores:\n")
+		for _, rol := range sortedRoles(c.Proveedores) {
+			p := c.Proveedores[rol]
+			fmt.Fprintf(&b, "  %s: { modelo: %s, key_env: %s }\n", rol, kv.Quote(p.Modelo), kv.Quote(p.KeyEnv))
+		}
+	}
 	return os.WriteFile(Path(root), []byte(b.String()), 0o644)
+}
+
+// sortedRoles devuelve los roles en orden estable para un Save
+// determinista.
+func sortedRoles(m map[string]Proveedor) []string {
+	roles := make([]string, 0, len(m))
+	for r := range m {
+		roles = append(roles, r)
+	}
+	sort.Strings(roles)
+	return roles
+}
+
+// ModeloRol devuelve el modelo declarado para un rol (planificador,
+// ejecutor, revisor) en la configuración, o "" si no está.
+func ModeloRol(c Config, rol string) string {
+	if c.Proveedores == nil {
+		return ""
+	}
+	return c.Proveedores[rol].Modelo
 }
 
 // Parse reads the config yaml subset. Unknown keys are ignored.
@@ -135,5 +172,32 @@ func Parse(data []byte) (Config, error) {
 			cfg.TimeoutEsclusa = seg
 		}
 	}
+
+	proveedores, err := parseProveedores(data)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Proveedores = proveedores
 	return cfg, nil
+}
+
+// parseProveedores lee el bloque anidado `proveedores:` (§8.1), con un
+// rol por línea: `planificador: { modelo: X, key_env: Y }`.
+func parseProveedores(data []byte) (map[string]Proveedor, error) {
+	children, err := kv.Nested(strings.Split(string(data), "\n"), "proveedores", 1)
+	if err != nil {
+		return nil, fmt.Errorf("config.yml: %s", err)
+	}
+	if len(children) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]Proveedor, len(children))
+	for _, c := range children {
+		fields, err := kv.ParseInlineMap(c.Value)
+		if err != nil {
+			return nil, fmt.Errorf("config.yml: línea %d · %s", c.Line, err)
+		}
+		out[c.Key] = Proveedor{Modelo: fields["modelo"], KeyEnv: fields["key_env"]}
+	}
+	return out, nil
 }

@@ -52,6 +52,14 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 	}
 	dir := config.TasksDir(root)
 
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+	if modelo == "" {
+		modelo = config.ModeloRol(cfg, "planificador")
+	}
+
 	ex, err := elegirEjecutor(ejecutor)
 	if err != nil {
 		return err

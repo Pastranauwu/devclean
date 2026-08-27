@@ -79,6 +79,11 @@ func runDoctor() error {
 
 	// keys: al menos una variable de proveedor en el entorno
 	keys := []string{"OPENCODE_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY"}
+	for _, p := range cfg.Proveedores {
+		if p.KeyEnv != "" {
+			keys = append(keys, p.KeyEnv)
+		}
+	}
 	var presentes []string
 	for _, k := range keys {
 		if os.Getenv(k) != "" {
