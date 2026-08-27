@@ -72,6 +72,7 @@ func newTaskAddCmd() *cobra.Command {
 				return err
 			}
 			t := task.Task{
+				Version:        task.Version,
 				ID:             id,
 				Titulo:         titulo,
 				TocarSolo:      []string{},

@@ -7,6 +7,7 @@ import (
 )
 
 const contractEjemplo = `---
+version: 1
 id: T-001
 titulo: exportar clientes a CSV
 porque: soporte pierde 3h/semana copiando a mano
@@ -26,6 +27,7 @@ func TestParseContratoCompleto(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 	want := Task{
+		Version:        1,
 		ID:             "T-001",
 		Titulo:         "exportar clientes a CSV",
 		Porque:         "soporte pierde 3h/semana copiando a mano",
@@ -46,10 +48,10 @@ func TestParseErrores(t *testing.T) {
 	cases := map[string]string{
 		"sin bloque inicial":    "id: T-001\n",
 		"sin bloque de cierre":  "---\nid: T-001\n",
-		"campo desconocido":     "---\nid: T-001\nextra: nope\n---\n",
-		"entero inválido":       "---\nlimite_intentos: tres\n---\n",
-		"lista mal formada":     "---\ntocar_solo: src/**\n---\n",
-		"elemento sin comillas": "---\ntocar_solo: [src/**]\n---\n",
+		"campo desconocido":     "---\nversion: 1\nid: T-001\nextra: nope\n---\n",
+		"entero inválido":       "---\nversion: 1\nlimite_intentos: tres\n---\n",
+		"lista mal formada":     "---\nversion: 1\ntocar_solo: src/**\n---\n",
+		"elemento sin comillas": "---\nversion: 1\ntocar_solo: [src/**]\n---\n",
 	}
 	for name, input := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -62,6 +64,7 @@ func TestParseErrores(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	valida := Task{
+		Version:        Version,
 		ID:             "T-001",
 		Titulo:         "algo",
 		ListoCuando:    "make test",
@@ -80,8 +83,8 @@ func TestValidate(t *testing.T) {
 	}
 
 	varios := Task{}
-	if errs := varios.Validate(); len(errs) != 5 {
-		t.Errorf("contrato vacío: %d errores, quiero 5: %v", len(errs), errs)
+	if errs := varios.Validate(); len(errs) != 6 {
+		t.Errorf("contrato vacío: %d errores, quiero 6: %v", len(errs), errs)
 	}
 }
 
@@ -100,12 +103,51 @@ func TestMarshalRoundtrip(t *testing.T) {
 }
 
 func TestMarshalOmiteVacios(t *testing.T) {
-	task := Task{ID: "T-001", Titulo: "x", ListoCuando: "true", LimiteIntentos: 3, LimiteLineas: 200}
+	task := Task{Version: Version, ID: "T-001", Titulo: "x", ListoCuando: "true", LimiteIntentos: 3, LimiteLineas: 200}
 	out := string(task.Marshal())
 	if strings.Contains(out, "porque") || strings.Contains(out, "riesgos") {
 		t.Errorf("Marshal incluyó campos vacíos:\n%s", out)
 	}
 	if !strings.Contains(out, "tocar_solo: []") {
 		t.Errorf("Marshal debió escribir listas vacías:\n%s", out)
+	}
+}
+
+func TestParseSinVersion(t *testing.T) {
+	task, err := Parse([]byte("---\nid: T-001\ntitulo: x\n---\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	errs := task.Validate()
+	if len(errs) == 0 || !strings.Contains(errs[0].Error(), "falta version") {
+		t.Errorf("Validate sin version = %v · quiere exigir version", errs)
+	}
+}
+
+func TestParseVersionInvalida(t *testing.T) {
+	for _, v := range []string{"cero", "0", "-1"} {
+		if _, err := Parse([]byte("---\nversion: " + v + "\nid: T-001\n---\n")); err == nil {
+			t.Errorf("Parse aceptó version: %s", v)
+		}
+	}
+}
+
+func TestParseVersionFuturaTolera(t *testing.T) {
+	task, err := Parse([]byte("---\nversion: 2\nid: T-001\ntitulo: x\nlisto_cuando: make test\ncampo_del_futuro: algo\n---\n"))
+	if err != nil {
+		t.Fatalf("un contrato de versión futura debió parsear: %v", err)
+	}
+	if task.Aviso != "contrato versión 2, binario soporta 1 · actualiza devclean" {
+		t.Errorf("Aviso = %q", task.Aviso)
+	}
+	if task.Titulo != "x" {
+		t.Errorf("los campos conocidos debieron leerse: %+v", task)
+	}
+}
+
+func TestParseCampoDesconocidoEnVersionActual(t *testing.T) {
+	_, err := Parse([]byte("---\nversion: 1\nid: T-001\ncampo_del_futuro: algo\n---\n"))
+	if err == nil || !strings.Contains(err.Error(), "campo desconocido") {
+		t.Errorf("Parse = %v · un campo desconocido en la versión soportada se rechaza", err)
 	}
 }

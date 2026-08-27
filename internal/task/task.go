@@ -18,12 +18,17 @@ const (
 	DefaultLimiteLineas   = 200
 )
 
+// Version is the contract version this binary understands (adenda A.1).
+// A file declaring a higher one is read tolerantly and reported.
+const Version = 1
+
 // idPattern validates contract IDs: T-001, T-002, ...
 var idPattern = regexp.MustCompile(`^T-\d{3,}$`)
 
 // Task is the task contract. ListoCuando is the only mandatory field
 // beyond id and titulo; the rest carry defaults.
 type Task struct {
+	Version        int      `json:"version"`
 	ID             string   `json:"id"`
 	Titulo         string   `json:"titulo"`
 	Porque         string   `json:"porque"`
@@ -36,6 +41,10 @@ type Task struct {
 
 	// Notas is the free body after the frontmatter.
 	Notas string `json:"notas,omitempty"`
+
+	// Aviso carries the warning of a contract written by a newer
+	// devclean: it parsed, but fields were skipped.
+	Aviso string `json:"aviso,omitempty"`
 }
 
 // ValidID reports whether id has the contract format.
@@ -66,9 +75,26 @@ func Parse(data []byte) (Task, error) {
 	if err != nil {
 		return t, err
 	}
+
+	// la versión se lee primero: decide qué hacer con lo desconocido
+	for _, p := range pares {
+		if p.Key != "version" {
+			continue
+		}
+		n, err := kv.ParseInt(p.Value)
+		if err != nil || n < 1 {
+			return t, fmt.Errorf("version inválida: %s · usa version: %d", p.Value, Version)
+		}
+		t.Version = n
+	}
+	if t.Version > Version {
+		t.Aviso = fmt.Sprintf("contrato versión %d, binario soporta %d · actualiza devclean", t.Version, Version)
+	}
+
 	for _, p := range pares {
 		var err error
 		switch p.Key {
+		case "version":
 		case "id":
 			t.ID = kv.Unquote(p.Value)
 		case "titulo":
@@ -88,6 +114,10 @@ func Parse(data []byte) (Task, error) {
 		case "riesgos":
 			t.Riesgos = kv.Unquote(p.Value)
 		default:
+			// campos del futuro: se ignoran solo si el archivo lo es
+			if t.Aviso != "" {
+				continue
+			}
 			return t, fmt.Errorf("campo desconocido: %s · el contrato tiene máximo 8 campos", p.Key)
 		}
 		if err != nil {
@@ -103,6 +133,9 @@ func Parse(data []byte) (Task, error) {
 // An empty slice means the contract is valid.
 func (t Task) Validate() []error {
 	var errs []error
+	if t.Version < 1 {
+		errs = append(errs, fmt.Errorf("falta version · agrega version: %d al contrato", Version))
+	}
 	if !ValidID(t.ID) {
 		errs = append(errs, fmt.Errorf("id inválido: %q · usa el formato T-001", t.ID))
 	}
@@ -125,6 +158,9 @@ func (t Task) Validate() []error {
 func (t Task) Marshal() []byte {
 	var b strings.Builder
 	b.WriteString("---\n")
+	if t.Version > 0 {
+		fmt.Fprintf(&b, "version: %d\n", t.Version)
+	}
 	fmt.Fprintf(&b, "id: %s\n", t.ID)
 	fmt.Fprintf(&b, "titulo: %s\n", t.Titulo)
 	if t.Porque != "" {
