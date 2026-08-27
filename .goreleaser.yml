@@ -26,12 +26,18 @@ builds:
 
 archives:
   - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         formats: [zip]
 
 checksum:
   name_template: checksums.txt
+
+release:
+  extra_files:
+    - glob: ./scripts/install.sh
+      name_template: "install.sh"
 
 changelog:
   sort: asc
