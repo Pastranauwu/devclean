@@ -208,3 +208,27 @@ func TestGatePatronesDePruebaDeConfig(t *testing.T) {
 		t.Errorf("los patrones de config debieron sustituir a los de por defecto: %s", res.PrimerMotivo())
 	}
 }
+
+func TestGateTocarSoloVacioTareaUnica(t *testing.T) {
+	tarea := tareaValida()
+	tarea.TocarSolo = nil
+	res := Run(context.Background(), t.TempDir(), config.Config{}, tarea, nil, DefaultTimeout)
+	if !res.Aprobada {
+		t.Errorf("tocar_solo vacío rechazado con una sola tarea: %s", res.PrimerMotivo())
+	}
+}
+
+func TestGateTocarSoloVacioConOtraActiva(t *testing.T) {
+	tarea := tareaValida()
+	tarea.TocarSolo = nil
+	otra := tareaValida()
+	otra.ID = "T-002"
+	res := Run(context.Background(), t.TempDir(), config.Config{}, tarea, []task.Task{otra}, DefaultTimeout)
+	if res.Aprobada {
+		t.Fatal("tocar_solo vacío aprobado con otra tarea en curso")
+	}
+	quiere := "tocar_solo obligatorio con más de una tarea activa · declara tus rutas"
+	if res.PrimerMotivo() != quiere {
+		t.Errorf("motivo = %q, quiere %q", res.PrimerMotivo(), quiere)
+	}
+}
