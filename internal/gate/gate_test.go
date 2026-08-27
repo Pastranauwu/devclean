@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,8 +28,8 @@ func TestGateTodoVerde(t *testing.T) {
 	if !res.Aprobada {
 		t.Fatalf("tarea válida rechazada: %+v", res.Chequeos)
 	}
-	if len(res.Chequeos) != 4 {
-		t.Fatalf("Chequeos = %d, quiero 4", len(res.Chequeos))
+	if len(res.Chequeos) != 5 {
+		t.Fatalf("Chequeos = %d, quiero 5", len(res.Chequeos))
 	}
 }
 
@@ -159,5 +160,51 @@ func TestGlobsOverlap(t *testing.T) {
 		if got := globsOverlap(tc.a, tc.b); got != tc.want {
 			t.Errorf("globsOverlap(%q, %q) = %v, quiero %v", tc.a, tc.b, got, tc.want)
 		}
+	}
+}
+
+func TestGateRechazaRutasDePrueba(t *testing.T) {
+	for _, ruta := range []string{
+		"src/export/*_test.go",
+		"test/**",
+		"tests/export/**",
+		"spec/export.spec.ts",
+		"src/export/writer.spec.ts",
+	} {
+		tarea := tareaValida()
+		tarea.TocarSolo = []string{ruta}
+		res := Run(context.Background(), t.TempDir(), config.Config{}, tarea, nil, DefaultTimeout)
+		if res.Aprobada {
+			t.Errorf("tocar_solo con %s fue aprobado", ruta)
+			continue
+		}
+		if !strings.Contains(res.PrimerMotivo(), "rutas de prueba") {
+			t.Errorf("%s rechazado por otro motivo: %s", ruta, res.PrimerMotivo())
+		}
+	}
+}
+
+func TestGateAceptaAlcanceQueContienePruebas(t *testing.T) {
+	// src/export/** contiene archivos _test.go pero no los declara:
+	// rechazarlo rechazaría todo contrato razonable (adenda A.3)
+	tarea := tareaValida()
+	tarea.TocarSolo = []string{"src/export/**", "internal/kv/kv.go"}
+	res := Run(context.Background(), t.TempDir(), config.Config{}, tarea, nil, DefaultTimeout)
+	if !res.Aprobada {
+		t.Errorf("alcance normal rechazado: %s", res.PrimerMotivo())
+	}
+}
+
+func TestGatePatronesDePruebaDeConfig(t *testing.T) {
+	cfg := config.Config{PatronesPrueba: []string{"pruebas/**"}}
+	tarea := tareaValida()
+	tarea.TocarSolo = []string{"pruebas/export/casos.go"}
+	if res := Run(context.Background(), t.TempDir(), cfg, tarea, nil, DefaultTimeout); res.Aprobada {
+		t.Error("los patrones de config no se aplicaron")
+	}
+	// con patrones propios, los de por defecto ya no rigen
+	tarea.TocarSolo = []string{"spec/export.spec.ts"}
+	if res := Run(context.Background(), t.TempDir(), cfg, tarea, nil, DefaultTimeout); !res.Aprobada {
+		t.Errorf("los patrones de config debieron sustituir a los de por defecto: %s", res.PrimerMotivo())
 	}
 }

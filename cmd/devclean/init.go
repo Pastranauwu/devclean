@@ -57,6 +57,7 @@ func runInit(cwd string) error {
 		Base:            base,
 		Pruebas:         pruebas,
 		ZonasProhibidas: config.DefaultForbiddenZones(),
+		PatronesPrueba:  config.DefaultTestPatterns(),
 		TimeoutEsclusa:  int(gate.DefaultTimeout / time.Second),
 	}
 	if err := cfg.Save(root); err != nil {

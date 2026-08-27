@@ -104,3 +104,21 @@ func TestPathsStayUnderRoot(t *testing.T) {
 		t.Errorf("TasksDir inesperado: %s", TasksDir(root))
 	}
 }
+
+func TestPatronesPruebaIdaYVuelta(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Base: "main", Pruebas: "go test ./...", PatronesPrueba: DefaultTestPatterns()}
+	if err := cfg.Save(root); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(loaded.PatronesPrueba, DefaultTestPatterns()) {
+		t.Errorf("PatronesPrueba = %v", loaded.PatronesPrueba)
+	}
+}
