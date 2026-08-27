@@ -60,6 +60,24 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 	}
 }
 
+func TestEjecutorIdaYVuelta(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Base: "main", Pruebas: "go test ./...", Ejecutor: "claude"}
+	if err := cfg.Save(root); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.Ejecutor != "claude" {
+		t.Errorf("Ejecutor = %q, quiero claude", loaded.Ejecutor)
+	}
+}
+
 func TestParseTimeoutEsclusa(t *testing.T) {
 	cfg, err := Parse([]byte("timeout_esclusa: 120\n"))
 	if err != nil {

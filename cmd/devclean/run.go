@@ -108,6 +108,9 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 		return errors.New("ninguna tarea superó la esclusa · corrige los contratos y reintenta")
 	}
 
+	if ejecutor == "" {
+		ejecutor = cfg.Ejecutor
+	}
 	ex, err := elegirEjecutor(ejecutor)
 	if err != nil {
 		return err
