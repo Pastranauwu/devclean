@@ -39,7 +39,23 @@ mkdir -p "$dest"
 install -m 0755 "$tmp/$bin" "$dest/$bin"
 
 echo "instalado en $dest/$bin"
+
 case ":$PATH:" in
   *":$dest:"*) ;;
-  *) echo "agrega $dest a tu PATH" ;;
+  *)
+    linea="export PATH=\"$dest:\$PATH\""
+    case "$(basename "${SHELL:-}")" in
+      fish) rc="$HOME/.config/fish/config.fish"; linea="fish_add_path $dest" ;;
+      zsh)  rc="$HOME/.zshrc" ;;
+      bash) rc="$HOME/.bashrc" ;;
+      *)    rc="$HOME/.profile" ;;
+    esac
+    if [ -f "$rc" ] && grep -qF "$dest" "$rc" 2>/dev/null; then
+      echo "$dest ya está en $rc, abre una terminal nueva"
+    else
+      mkdir -p "$(dirname "$rc")"
+      printf '\n# agregado por el instalador de devclean\n%s\n' "$linea" >> "$rc"
+      echo "agregado $dest a tu PATH en $rc · abre una terminal nueva (o corre: source $rc)"
+    fi
+    ;;
 esac
