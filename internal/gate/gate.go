@@ -4,7 +4,7 @@
 //  1. listo_cuando existe y se ejecuta
 //  2. el comando falla hoy (si ya pasa, la tarea no tiene sentido)
 //  3. tocar_solo no se cruza con el de otra tarea
-//  4. tocar_solo no incluye zonas prohibidas globales
+//  4. tocar_solo no incluye zonas prohibidas globales ni rutas de prueba
 //
 // All checks are pure code: no model is involved in verification.
 package gate
@@ -71,6 +71,7 @@ func Run(ctx context.Context, root string, cfg config.Config, t task.Task, otras
 	}
 	res.Chequeos = append(res.Chequeos, checkSinCruce(t, otras))
 	res.Chequeos = append(res.Chequeos, checkZonasProhibidas(t, cfg.ZonasProhibidas))
+	res.Chequeos = append(res.Chequeos, checkRutasDePrueba(t, cfg.PatronesPrueba))
 
 	res.Aprobada = true
 	for _, c := range res.Chequeos {
@@ -163,6 +164,38 @@ func checkZonasProhibidas(t task.Task, zonas []string) Check {
 		}
 	}
 	return Check{"zonas prohibidas", true, ""}
+}
+
+// checkRutasDePrueba: tocar_solo must never reach the test files
+// (adenda A.3). En v0.2 las escribe un examinador ciego; si el
+// implementador puede editarlas, el examen no vale nada.
+func checkRutasDePrueba(t task.Task, patrones []string) Check {
+	if len(patrones) == 0 {
+		patrones = config.DefaultTestPatterns()
+	}
+	for _, patron := range patrones {
+		for _, p := range t.TocarSolo {
+			if esRutaDePrueba(p, patron) {
+				return Check{"sin rutas de prueba", false, fmt.Sprintf("tocar_solo incluye rutas de prueba (%s casa con %s) · las pruebas no las escribe quien implementa", p, patron)}
+			}
+		}
+	}
+	return Check{"sin rutas de prueba", true, ""}
+}
+
+// esRutaDePrueba reports whether the tocar_solo entry p aims at test
+// files. Deliberately narrower than globsOverlap: `src/export/**`
+// contains test files but does not declare them, and rejecting it would
+// reject every sane contract. Lo que sí se rechaza es apuntarles:
+// `src/export/*_test.go` o cualquier ruta bajo `test/**`.
+func esRutaDePrueba(p, patron string) bool {
+	if dir := dirPrefix(patron); dir != "" {
+		return within(dir, p) || within(dir, path.Base(p))
+	}
+	if ok, _ := path.Match(patron, path.Base(p)); ok {
+		return true
+	}
+	return false
 }
 
 // globsOverlap reports whether two patterns can match the same file.

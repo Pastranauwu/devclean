@@ -25,6 +25,7 @@ type Config struct {
 	Pruebas         string   `json:"pruebas"`
 	ZonasProhibidas []string `json:"zonas_prohibidas"`
 	TimeoutEsclusa  int      `json:"timeout_esclusa"` // segundos para el chequeo "falla hoy"
+	PatronesPrueba  []string `json:"patrones_prueba"` // rutas que ninguna tarea puede editar
 }
 
 // DefaultForbiddenZones implements §6.3: lockfiles, migrations, CI and
@@ -41,6 +42,21 @@ func DefaultForbiddenZones() []string {
 		"migrations/**",
 		".github/**",
 		"CHANGELOG*",
+	}
+}
+
+// DefaultTestPatterns are the test paths no contract may claim (adenda
+// A.3): en v0.2 las escribe un examinador ciego, así que el
+// implementador nunca puede editarlas.
+func DefaultTestPatterns() []string {
+	return []string{
+		"*_test.go",
+		"test/**",
+		"tests/**",
+		"spec/**",
+		"*.spec.ts",
+		"*.test.ts",
+		"test_*.py",
 	}
 }
 
@@ -77,6 +93,9 @@ func (c Config) Save(root string) error {
 	fmt.Fprintf(&b, "base: %s\n", c.Base)
 	fmt.Fprintf(&b, "pruebas: %s\n", c.Pruebas)
 	fmt.Fprintf(&b, "zonas_prohibidas: %s\n", kv.MarshalList(c.ZonasProhibidas))
+	if len(c.PatronesPrueba) > 0 {
+		fmt.Fprintf(&b, "patrones_prueba: %s\n", kv.MarshalList(c.PatronesPrueba))
+	}
 	if c.TimeoutEsclusa > 0 {
 		fmt.Fprintf(&b, "timeout_esclusa: %d\n", c.TimeoutEsclusa)
 	}
@@ -102,6 +121,12 @@ func Parse(data []byte) (Config, error) {
 				return cfg, fmt.Errorf("config.yml: línea %d · %s", p.Line, err)
 			}
 			cfg.ZonasProhibidas = list
+		case "patrones_prueba":
+			list, err := kv.ParseList(p.Value)
+			if err != nil {
+				return cfg, fmt.Errorf("config.yml: línea %d · %s", p.Line, err)
+			}
+			cfg.PatronesPrueba = list
 		case "timeout_esclusa":
 			seg, err := kv.ParseInt(p.Value)
 			if err != nil || seg < 1 {
