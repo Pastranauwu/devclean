@@ -62,9 +62,6 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 	if modelo == "" {
 		modelo = config.ModeloRol(cfg, "planificador")
 	}
-	if keyEnv, falta := config.KeyEnvFalta(cfg, "planificador"); falta {
-		return fmt.Errorf("falta %s en el entorno · el rol planificador no puede llamar al modelo · exporta la key o corre devclean doctor", keyEnv)
-	}
 
 	ex, err := elegirEjecutor(ejecutor)
 	if err != nil {
