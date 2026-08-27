@@ -41,11 +41,11 @@ git -c user.email=t@t -c user.name=t commit --allow-empty -m init -q
 
 run() { echo "\$ $*"; "$@"; echo; sleep 1; }
 
-run "$bin" init --pruebas "true"
-run "$bin" plan "necesito exportar clientes y documentar la API" --aprobar
-run "$bin" board
-run "$bin" run --agentes 2 --ejecutor opencode
-run "$bin" board
-run "$bin" logs T-001
-run "$bin" ship T-001 --dry-run
-run "$bin" report
+run "$bin" init --pruebas "true" --plain
+run "$bin" plan "necesito exportar clientes y documentar la API" --aprobar --plain
+run "$bin" board --plain
+run "$bin" run --agentes 2 --ejecutor opencode --plain
+run "$bin" board --plain
+run "$bin" logs T-001 --plain
+run "$bin" ship T-001 --dry-run --plain
+run "$bin" report --plain
