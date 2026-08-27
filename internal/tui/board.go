@@ -112,7 +112,7 @@ func (m boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.alto = msg.Height
 		return m, nil
 	case tickMsg:
-		m.t += 0.05
+		m.t += 0.1
 		return m, tickPlasma()
 	case tea.KeyMsg:
 		switch msg.String() {
