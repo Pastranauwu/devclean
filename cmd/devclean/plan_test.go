@@ -6,8 +6,25 @@ import (
 	"testing"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
+
+func TestSanearAlcance(t *testing.T) {
+	zonas, patrones := zonasYPatrones(config.Config{})
+	bs := []plan.Borrador{
+		{Titulo: "init go", TocarSolo: []string{"go.mod", "go.sum", "Makefile"}},
+		{Titulo: "wol", TocarSolo: []string{"internal/wol/**"}},
+	}
+	sanearAlcance(bs, zonas, patrones)
+
+	if got := strings.Join(bs[0].TocarSolo, ","); got != "go.mod,Makefile" {
+		t.Errorf("tocar_solo[0] = %q, quiero go.mod,Makefile", got)
+	}
+	if got := strings.Join(bs[1].TocarSolo, ","); got != "internal/wol/**" {
+		t.Errorf("tocar_solo[1] = %q, sin cambios", got)
+	}
+}
 
 func TestIdsCorrelativos(t *testing.T) {
 	root := t.TempDir()

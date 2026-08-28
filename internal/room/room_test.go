@@ -184,6 +184,34 @@ func TestIntegrarConflictoAborta(t *testing.T) {
 	}
 }
 
+// TestCreateTrasBorrarRooms simula el caso real: rooms/ está gitignored
+// y un `git clean -fdx` (o un rm a mano) borró la carpeta sin tocar la
+// registración del worktree ni la rama. Create debe recuperarse solo,
+// no morir con "una rama llamada 'devclean/T-001' ya existe".
+func TestCreateTrasBorrarRooms(t *testing.T) {
+	root := repoConCommit(t)
+	ctx := context.Background()
+
+	if _, err := Create(ctx, root, "T-001", "main"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// borra la carpeta de cuartos entera, como haría git clean
+	if err := os.RemoveAll(Dir(root)); err != nil {
+		t.Fatal(err)
+	}
+	// la rama y el worktree huérfano siguen registrados
+	if out, _ := gitOut(t, root, "branch", "--list", "devclean/T-001"); out == "" {
+		t.Fatal("preparación: la rama debía seguir existiendo")
+	}
+
+	if _, err := Create(ctx, root, "T-001", "main"); err != nil {
+		t.Fatalf("Create tras borrar rooms/ debió recuperarse: %v", err)
+	}
+	if err := Destroy(ctx, root, "T-001"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func gitOut(t *testing.T, dir string, args ...string) (string, error) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
