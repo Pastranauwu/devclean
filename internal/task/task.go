@@ -36,6 +36,15 @@ type Task struct {
 	TocarSolo      []string `json:"tocar_solo"`
 	NoTocar        []string `json:"no_tocar"`
 	DependeDe      []string `json:"depende_de,omitempty"`
+
+	// Expone son las firmas públicas que esta tarea produce y que otras
+	// consumen: "wol.Send(mac, addr string) error", "POST /wake".
+	// Usa son las que consume de sus hermanas (§6.10). Congelarlas en
+	// ambos contratos es lo que deja que dos tareas de la misma oleada,
+	// que corren ciegas en cuartos separados, se encuentren.
+	Expone []string `json:"expone,omitempty"`
+	Usa    []string `json:"usa,omitempty"`
+
 	LimiteIntentos int      `json:"limite_intentos"`
 	LimiteLineas   int      `json:"limite_lineas"`
 	Riesgos        string   `json:"riesgos"`
@@ -51,6 +60,36 @@ type Task struct {
 
 // ValidID reports whether id has the contract format.
 func ValidID(id string) bool { return idPattern.MatchString(id) }
+
+// NombreDeFirma reduce una firma de `expone`/`usa` al identificador que
+// tiene que aparecer sí o sí en el código: "wol.Send(mac string) error"
+// → "Send", "POST /wake" → "/wake".
+//
+// Deliberadamente no compara la firma completa. El lenguaje reescribe los
+// nombres de parámetros y el orden de los tipos, así que exigir el texto
+// literal rechazaría implementaciones correctas. Lo que sí atrapa es el
+// fallo real: que la tarea no haya implementado la pieza, o la haya
+// bautizado distinto de lo que su hermana espera. La verificación por
+// AST completo es v0.2 (§6.8).
+func NombreDeFirma(firma string) string {
+	s := strings.TrimSpace(firma)
+	if i := strings.Index(s, "("); i >= 0 {
+		s = strings.TrimSpace(s[:i])
+	}
+	// ruta HTTP: "POST /wake" → "/wake"
+	if i := strings.Index(s, "/"); i >= 0 {
+		if ruta := strings.TrimSpace(s[i:]); ruta != "/" {
+			return ruta
+		}
+	}
+	if i := strings.LastIndex(s, "."); i >= 0 {
+		s = s[i+1:]
+	}
+	if i := strings.LastIndex(s, " "); i >= 0 {
+		s = s[i+1:]
+	}
+	return strings.TrimSpace(s)
+}
 
 // Parse reads a task file. Unknown keys and malformed values are
 // rejected: the contract is the guardrail, so it is strict.
@@ -111,6 +150,10 @@ func Parse(data []byte) (Task, error) {
 			t.NoTocar, err = kv.ParseList(p.Value)
 		case "depende_de":
 			t.DependeDe, err = kv.ParseList(p.Value)
+		case "expone":
+			t.Expone, err = kv.ParseList(p.Value)
+		case "usa":
+			t.Usa, err = kv.ParseList(p.Value)
 		case "limite_intentos":
 			t.LimiteIntentos, err = kv.ParseInt(p.Value)
 		case "limite_lineas":
@@ -190,6 +233,12 @@ func (t Task) Marshal() []byte {
 	fmt.Fprintf(&b, "no_tocar: %s\n", kv.MarshalList(t.NoTocar))
 	if len(t.DependeDe) > 0 {
 		fmt.Fprintf(&b, "depende_de: %s\n", kv.MarshalList(t.DependeDe))
+	}
+	if len(t.Expone) > 0 {
+		fmt.Fprintf(&b, "expone: %s\n", kv.MarshalList(t.Expone))
+	}
+	if len(t.Usa) > 0 {
+		fmt.Fprintf(&b, "usa: %s\n", kv.MarshalList(t.Usa))
 	}
 	fmt.Fprintf(&b, "limite_intentos: %d\n", t.LimiteIntentos)
 	fmt.Fprintf(&b, "limite_lineas: %d\n", t.LimiteLineas)

@@ -196,3 +196,39 @@ func TestPeso(t *testing.T) {
 		t.Errorf("Validate peso inválido = %v", errs)
 	}
 }
+
+func TestNombreDeFirma(t *testing.T) {
+	casos := map[string]string{
+		"wol.Send(mac, addr string) error": "Send",
+		"POST /wake":                       "/wake",
+		"GET /api/devices":                 "/api/devices",
+		"func Cargar(path string) (*Config, error)": "Cargar",
+		"Enviar":  "Enviar",
+		"":        "",
+		"hue.NewBridge(addr string, l ...*Light) *Bridge": "NewBridge",
+	}
+	for firma, want := range casos {
+		if got := NombreDeFirma(firma); got != want {
+			t.Errorf("NombreDeFirma(%q) = %q, quiero %q", firma, got, want)
+		}
+	}
+}
+
+func TestExponeUsaIdaYVuelta(t *testing.T) {
+	orig := Task{
+		Version: Version, ID: "T-001", Titulo: "wol",
+		ListoCuando: "go test ./...", LimiteIntentos: 3, LimiteLineas: 200,
+		Expone: []string{"wol.Send(mac, addr string) error"},
+		Usa:    []string{"config.Cargar(path string) (*Config, error)"},
+	}
+	got, err := Parse(orig.Marshal())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(got.Expone) != 1 || got.Expone[0] != orig.Expone[0] {
+		t.Errorf("Expone = %v", got.Expone)
+	}
+	if len(got.Usa) != 1 || got.Usa[0] != orig.Usa[0] {
+		t.Errorf("Usa = %v", got.Usa)
+	}
+}

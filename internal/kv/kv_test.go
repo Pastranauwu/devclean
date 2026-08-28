@@ -155,3 +155,14 @@ func TestNestedAusente(t *testing.T) {
 		t.Errorf("Nested sin bloque = %v, quiere nil", children)
 	}
 }
+
+func TestParseListComaDentroDeComillas(t *testing.T) {
+	got, err := ParseList(`["wol.Send(mac, addr string) error", "POST /wake"]`)
+	if err != nil {
+		t.Fatalf("ParseList: %v", err)
+	}
+	want := []string{"wol.Send(mac, addr string) error", "POST /wake"}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("ParseList = %q, quiero %q", got, want)
+	}
+}

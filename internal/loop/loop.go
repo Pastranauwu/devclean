@@ -56,6 +56,12 @@ type Options struct {
 	AgentTimeout   time.Duration // timeout de cada invocación del agente
 	PruebaTimeout  time.Duration // timeout de cada listo_cuando
 	Env            []string      // variables propias del cuarto (PORT, ...)
+
+	// Interfaces son las firmas congeladas de las tareas hermanas que
+	// esta consume (§6.10), ya resueltas por el que llama. Sin esto el
+	// agente inventa la firma: las tareas de una misma oleada corren en
+	// cuartos separados y no pueden leerse entre sí.
+	Interfaces []string
 }
 
 // Outcome es el resultado de correr el bucle sobre una tarea.
@@ -109,7 +115,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 
 		req := Request{
 			RoomPath:     o.Room.Path,
-			Prompt:       promptPara(o.Task, prevErr),
+			Prompt:       promptPara(o.Task, o.Interfaces, prevErr),
 			AllowedGlobs: o.Task.TocarSolo,
 			Model:        o.Model,
 			Timeout:      o.AgentTimeout,
@@ -243,7 +249,7 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration) (
 
 // promptPara arma el prompt de un intento: el contrato y, si lo hay, la
 // salida del intento anterior. El agente nunca decide si terminó.
-func promptPara(t task.Task, prevErr string) string {
+func promptPara(t task.Task, interfaces []string, prevErr string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Tarea %s: %s\n", t.ID, t.Titulo)
 	if t.Porque != "" {
@@ -252,6 +258,15 @@ func promptPara(t task.Task, prevErr string) string {
 	fmt.Fprintf(&b, "Listo cuando: %s\n", t.ListoCuando)
 	if len(t.TocarSolo) > 0 {
 		fmt.Fprintf(&b, "Solo puedes tocar: %s\n", strings.Join(t.TocarSolo, ", "))
+	}
+	// §6.10: lo que esta tarea debe exponer y lo que otras ya le
+	// garantizan. Son contrato, no sugerencia: la esclusa de salida
+	// verifica que `expone` aparezca en el diff.
+	if len(t.Expone) > 0 {
+		fmt.Fprintf(&b, "Debes exponer estas firmas exactas (otras tareas ya las consumen): %s\n", strings.Join(t.Expone, "; "))
+	}
+	if len(interfaces) > 0 {
+		fmt.Fprintf(&b, "Otras tareas exponen esto; úsalo tal cual, no lo redefinas: %s\n", strings.Join(interfaces, "; "))
 	}
 	if t.Riesgos != "" {
 		fmt.Fprintf(&b, "Riesgos: %s\n", t.Riesgos)

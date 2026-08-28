@@ -27,6 +27,8 @@ type propuesta struct {
 	ListoCuando string   `json:"listo_cuando"`
 	TocarSolo   []string `json:"tocar_solo,omitempty"`
 	DependeDe   []string `json:"depende_de,omitempty"`
+	Expone      []string `json:"expone,omitempty"`
+	Usa         []string `json:"usa,omitempty"`
 	Riesgos     string   `json:"riesgos,omitempty"`
 	Peso        string   `json:"peso,omitempty"`
 }
@@ -109,6 +111,8 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 			ListoCuando: b.ListoCuando,
 			TocarSolo:   b.TocarSolo,
 			DependeDe:   b.DependeDe,
+			Expone:      b.Expone,
+			Usa:         b.Usa,
 			Riesgos:     b.Riesgos,
 			Peso:        b.Peso,
 		}
@@ -152,6 +156,8 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 			TocarSolo:      b.TocarSolo,
 			NoTocar:        b.NoTocar,
 			DependeDe:      b.DependeDe,
+			Expone:         b.Expone,
+			Usa:            b.Usa,
 			Riesgos:        b.Riesgos,
 			Peso:           b.Peso,
 			LimiteIntentos: task.DefaultLimiteIntentos,

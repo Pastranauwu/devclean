@@ -21,6 +21,8 @@ type Borrador struct {
 	TocarSolo   []string `json:"tocar_solo"`
 	NoTocar     []string `json:"no_tocar"`
 	DependeDe   []string `json:"depende_de"`
+	Expone      []string `json:"expone"`
+	Usa         []string `json:"usa"`
 	Riesgos     string   `json:"riesgos"`
 	Peso        string   `json:"peso"`
 }
@@ -56,10 +58,14 @@ func Prompt(frase string, c Contexto) string {
 	b.WriteString("- \"listo_cuando\": un comando ejecutable que diga \"ya está\" (obligatorio)\n")
 	b.WriteString("- \"tocar_solo\": array de globs de archivos que la tarea puede tocar\n")
 	b.WriteString("- \"depende_de\": array de ids (ej. \"T-001\") de tareas que deben estar verdes antes que esta; vacío si no depende de ninguna\n")
+	b.WriteString("- \"expone\": array de firmas públicas que esta tarea produce y otra consume (ej. \"wol.Send(mac, addr string) error\", \"POST /wake\"); vacío si no produce ninguna\n")
+	b.WriteString("- \"usa\": array de firmas de OTRAS tareas que esta consume, copiadas palabra por palabra del \"expone\" de aquella; vacío si no consume ninguna\n")
 	b.WriteString("- \"peso\": \"liviana\", \"media\" o \"pesada\" según la complejidad de la tarea (por defecto \"media\")\n")
 	b.WriteString("- \"riesgos\": riesgos o limitaciones, o \"\" si no hay\n\n")
+	b.WriteString("Las tareas corren en paralelo y aisladas: no pueden leerse el código entre sí. Si una produce algo que otra necesita, la firma DEBE aparecer igual en el \"expone\" de la que la produce y en el \"usa\" de la que la consume; si no, cada una inventará la suya y no van a encajar.\n\n")
 	b.WriteString("Ejemplo:\n[\n")
-	b.WriteString("  {\"titulo\": \"exportar clientes a CSV\", \"porque\": \"soporte pierde horas copiando a mano\", \"listo_cuando\": \"npm test -- export\", \"tocar_solo\": [\"src/export/**\"], \"riesgos\": \"\"}\n")
+	b.WriteString("  {\"titulo\": \"enviar magic packet\", \"porque\": \"es la acción central\", \"listo_cuando\": \"go test ./internal/wol/...\", \"tocar_solo\": [\"internal/wol/**\"], \"expone\": [\"wol.Send(mac, addr string) error\"], \"usa\": [], \"riesgos\": \"\"},\n")
+	b.WriteString("  {\"titulo\": \"endpoint http que dispara wol\", \"porque\": \"lo invoca la automatización\", \"listo_cuando\": \"go test ./internal/api/...\", \"tocar_solo\": [\"internal/api/**\"], \"expone\": [\"POST /wake\"], \"usa\": [\"wol.Send(mac, addr string) error\"], \"riesgos\": \"\"}\n")
 	b.WriteString("]")
 	return b.String()
 }

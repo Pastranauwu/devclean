@@ -55,7 +55,7 @@ func ParseList(v string) ([]string, error) {
 	if inner == "" {
 		return []string{}, nil
 	}
-	parts := strings.Split(inner, ",")
+	parts := dividirFuera(inner)
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
@@ -69,6 +69,33 @@ func ParseList(v string) ([]string, error) {
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+// dividirFuera corta por las comas que están fuera de comillas. Una
+// firma de `expone` lleva comas propias ("wol.Send(mac, addr string)
+// error"): partir a lo bruto la rompía en dos elementos sin comillas.
+func dividirFuera(s string) []string {
+	var partes []string
+	var actual strings.Builder
+	dentro := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '\\' && dentro && i+1 < len(s):
+			actual.WriteByte(c)
+			i++
+			actual.WriteByte(s[i])
+			continue
+		case c == '"':
+			dentro = !dentro
+		case c == ',' && !dentro:
+			partes = append(partes, actual.String())
+			actual.Reset()
+			continue
+		}
+		actual.WriteByte(c)
+	}
+	return append(partes, actual.String())
 }
 
 // MarshalList renders a list the way ParseList reads it.

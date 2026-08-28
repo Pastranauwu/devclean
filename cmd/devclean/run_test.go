@@ -125,3 +125,19 @@ func TestModeloParaTarea(t *testing.T) {
 		t.Errorf("peso sin mapeo = %q, quiero default", got)
 	}
 }
+
+func TestRechazarUsaHuerfano(t *testing.T) {
+	productora := task.Task{ID: "T-001", Titulo: "wol", Expone: []string{"wol.Send(mac, addr string) error"}}
+	buena := task.Task{ID: "T-002", Titulo: "api", Usa: []string{"wol.Send(mac, addr string) error"}}
+	huerfana := task.Task{ID: "T-003", Titulo: "cli", Usa: []string{"config.Cargar(p string) error"}}
+
+	todas := []task.Task{productora, buena, huerfana}
+	ok, results := rechazarUsaHuerfano([]task.Task{buena, huerfana}, todas, nil)
+
+	if len(ok) != 1 || ok[0].ID != "T-002" {
+		t.Fatalf("aprobadas = %v, quiero solo T-002", ok)
+	}
+	if len(results) != 1 || results[0].ID != "T-003" || results[0].Estado != "rechazada" {
+		t.Fatalf("results = %+v, quiero T-003 rechazada", results)
+	}
+}

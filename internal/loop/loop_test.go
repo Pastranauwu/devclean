@@ -197,7 +197,7 @@ func TestAttemptsJSONListasVacias(t *testing.T) {
 
 func TestPromptIncluyeContratoYErrorPrevio(t *testing.T) {
 	tk := tareaDePrueba()
-	p := promptPara(tk, "fallo de prueba")
+	p := promptPara(tk, nil, "fallo de prueba")
 	for _, want := range []string{"Tarea T-001", "Listo cuando: test -f src/done.txt", "Solo puedes tocar", "El intento anterior falló", "fallo de prueba"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt sin %q:\n%s", want, p)
