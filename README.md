@@ -222,6 +222,7 @@ riesgos: archivos grandes pueden agotar memoria
 ```yaml
 base: main                      # rama base del repo
 pruebas: go test ./...          # comando de pruebas del proyecto
+cli: claude                     # CLI de agente por defecto: claude | opencode
 zonas_prohibidas: ["go.sum", "migrations/**", ".github/**"]
 patrones_prueba: ["*_test.go", "test/**", "*.spec.ts"]
 timeout_esclusa: 300            # segundos para el chequeo "falla hoy"
@@ -233,6 +234,14 @@ modelos:                        # modelo por peso de tarea (Fase 3)
   liviana: glm-4
   media: glm-5.2
   pesada: claude-sonnet
+```
+
+Sin `cli`, devclean usa el primer CLI que encuentre instalado. Fíjalo
+cuando tengas los dos y quieras uno concreto (por ejemplo, si se te
+acabó la cuota de uno). `--ejecutor` lo pisa por corrida:
+
+```sh
+devclean run --ejecutor claude
 ```
 
 ---

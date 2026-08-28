@@ -20,8 +20,16 @@ func abrirPR(ctx context.Context, root string, r room.Room, base, titulo, cuerpo
 		return "", errors.New("gh no está instalado · instálalo o usa --dry-run")
 	}
 
-	if _, err := gitRun(r.Path, "push", "-u", "origin", r.Rama); err != nil {
-		return "", fmt.Errorf("no se pudo subir la rama · %s", tail(err.Error()))
+	// sin remoto el push falla con un "exit status 128" que no dice nada;
+	// un repo local es un caso normal, no un error del usuario
+	if _, err := gitRun(root, "remote", "get-url", "origin"); err != nil {
+		return "", errors.New("sin remoto origin · agrégalo con git remote add origin <url> o usa --dry-run")
+	}
+
+	// el error de git trae el motivo en su salida, no en err.Error()
+	// (que es solo "exit status N")
+	if out, err := gitRun(r.Path, "push", "-u", "origin", r.Rama); err != nil {
+		return "", fmt.Errorf("no se pudo subir la rama · %s", tail(out))
 	}
 
 	f, err := os.CreateTemp("", "devclean-handoff-*.md")
