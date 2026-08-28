@@ -162,12 +162,17 @@ en pruebas sintéticas, todas corregidas:
   verificados. `v0.1.0` quedó etiquetada en un commit anterior (sin release).
 - **Tap de Homebrew** pendiente: un repo `homebrew-*` aparte + `goreleaser`
   con `brews`. Se hace tras publicar la release.
-- **Limitación conocida, no es bug:** varias tareas que arrancan de la
-  misma base heredan el mismo archivo raíz (un `main.go` placeholder, por
-  ejemplo). Al entregar la segunda, el rebase da conflicto en ese archivo
-  y hay que resolverlo a mano. Es el costo real del paralelo; devclean lo
-  reporta claro (`rebase en conflicto · archivos: main.go`) en vez de
-  mezclar a ciegas.
+- **Gap real (§6.10, v0.2): dentro de una oleada, las tareas paralelas son
+  ciegas entre sí.** `promptPara` (`internal/loop/loop.go`) le pasa al
+  agente solo su propio contrato: nada de qué interfaces producen o
+  consumen sus hermanas. Entre oleadas no se nota, porque la siguiente
+  arranca desde la rama de integración y el agente *lee* el código ya
+  mergeado — así fue como T-004 de `wakeup` acertó la firma de
+  `wol.Send`. Pero dos tareas de la *misma* oleada no pueden verse: si
+  una produce una interfaz que la otra consume, cada una la inventa por
+  su lado. Eso es exactamente lo que §6.10 llama "contratos entre
+  tareas": congelar la firma en ambos contratos y verificarla contra los
+  dos diffs.
 
 **v0.2:** Parte B entera (examinador ciego, solapamiento funcional, duplicación
 entre ramas, reglas de dependencia, constitución). Ya especificada, sin empezar.
