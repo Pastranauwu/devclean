@@ -109,7 +109,7 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 	}
 
 	if ejecutor == "" {
-		ejecutor = cfg.Ejecutor
+		ejecutor = cfg.Cli
 	}
 	ex, err := elegirEjecutor(ejecutor)
 	if err != nil {

@@ -60,12 +60,12 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 	}
 }
 
-func TestEjecutorIdaYVuelta(t *testing.T) {
+func TestCliIdaYVuelta(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{Base: "main", Pruebas: "go test ./...", Ejecutor: "claude"}
+	cfg := Config{Base: "main", Pruebas: "go test ./...", Cli: "claude"}
 	if err := cfg.Save(root); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -73,8 +73,8 @@ func TestEjecutorIdaYVuelta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if loaded.Ejecutor != "claude" {
-		t.Errorf("Ejecutor = %q, quiero claude", loaded.Ejecutor)
+	if loaded.Cli != "claude" {
+		t.Errorf("Cli = %q, quiero claude", loaded.Cli)
 	}
 }
 

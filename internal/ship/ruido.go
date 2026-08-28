@@ -32,8 +32,11 @@ var patronesDebug = []struct {
 	tipo string
 	re   *regexp.Regexp
 }{
+	// log.Print* queda afuera a propósito: es el logger estándar de Go
+	// para producción (servicios de red, CLIs de larga vida), no un
+	// rastro de debug como fmt.Println. Marcarlo como ruido frena
+	// cualquier código que loguee de verdad.
 	{"print de debug", regexp.MustCompile(`fmt\.Print(?:ln|f)?\(`)},
-	{"print de debug", regexp.MustCompile(`log\.Print(?:ln|f)?\(`)},
 	{"print de debug", regexp.MustCompile(`\bprintln\(`)},
 	{"print de debug", regexp.MustCompile(`\bprint\(`)},
 	{"print de debug", regexp.MustCompile(`console\.(?:log|debug|warn|info|error)\(`)},
@@ -71,12 +74,21 @@ func esCodigoComentado(linea string) bool {
 	if sin == "" {
 		return false
 	}
-	if strings.Contains(sin, ";") {
+	// ";" en medio de una oración es narrativa normal ("Defaults to X;
+	// overridable in tests."); código comentado real termina la línea
+	// en el punto y coma, sin nada más después.
+	if strings.HasSuffix(sin, ";") {
 		return true
 	}
-	for _, kw := range []string{"return ", "if ", "for ", "while ", "func ", "def ", "var ", "let ", "const ", "import ", "class ", "type "} {
-		if strings.HasPrefix(sin, kw) {
-			return true
+	// palabra clave al inicio no alcanza: "for", "if", "type" también
+	// arrancan oraciones normales ("for Echo discovery, ..."). Solo
+	// cuenta si además tiene pinta de código (paréntesis, ":=" o llave).
+	tieneFormaDeCodigo := strings.ContainsAny(sin, "({") || strings.Contains(sin, ":=")
+	if tieneFormaDeCodigo {
+		for _, kw := range []string{"return ", "if ", "for ", "while ", "func ", "def ", "var ", "let ", "const ", "import ", "class ", "type "} {
+			if strings.HasPrefix(sin, kw) {
+				return true
+			}
 		}
 	}
 	return false

@@ -43,6 +43,47 @@ func TestEscanearRuidoCodigoComentado(t *testing.T) {
 	}
 }
 
+func TestEscanearRuidoLogNoEsDebug(t *testing.T) {
+	diff := `--- a/x.go
++++ b/x.go
++	log.Printf("servidor en %s", addr)
+`
+	if h := escanearRuido(diff, nil); len(h) != 0 {
+		t.Errorf("log.Printf marcado como ruido: %+v", h)
+	}
+}
+
+func TestEscanearRuidoComentarioConPuntoYComaEnMedio(t *testing.T) {
+	diff := `--- a/x.go
++++ b/x.go
++// Defaults to wol.Send; overridable in tests.
+`
+	if h := escanearRuido(diff, nil); len(h) != 0 {
+		t.Errorf("comentario narrativo marcado como código: %+v", h)
+	}
+}
+
+func TestEscanearRuidoComentarioQueEmpiezaComoPalabraClave(t *testing.T) {
+	diff := `--- a/x.go
++++ b/x.go
++// for Echo discovery; add NOTIFY if some controller never probes.
+`
+	if h := escanearRuido(diff, nil); len(h) != 0 {
+		t.Errorf("comentario narrativo marcado como código: %+v", h)
+	}
+}
+
+func TestEscanearRuidoCodigoComentadoConLlaves(t *testing.T) {
+	diff := `--- a/x.go
++++ b/x.go
++// for i := range xs {
+`
+	h := escanearRuido(diff, nil)
+	if len(h) != 1 || h[0].Tipo != "código comentado" {
+		t.Errorf("hallazgos = %+v, quiero código comentado", h)
+	}
+}
+
 func TestEscanearRuidoLimpio(t *testing.T) {
 	diff := `--- a/x.go
 +++ b/x.go

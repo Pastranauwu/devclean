@@ -64,7 +64,7 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 	}
 
 	if ejecutor == "" {
-		ejecutor = cfg.Ejecutor
+		ejecutor = cfg.Cli
 	}
 	ex, err := elegirEjecutor(ejecutor)
 	if err != nil {
