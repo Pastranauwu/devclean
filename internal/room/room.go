@@ -31,6 +31,15 @@ func Dir(root string) string {
 // Branch returns the branch name of a task's room.
 func Branch(id string) string { return "devclean/" + id }
 
+// RamaExiste reporta si la rama de un cuarto sigue en el repo. El
+// trabajo verde de una corrida anterior vive ahí hasta que `ship` lo
+// entrega, así que una corrida nueva necesita saber si puede apoyarse
+// en él.
+func RamaExiste(ctx context.Context, root, id string) bool {
+	_, err := git(ctx, root, "rev-parse", "--verify", "--quiet", Branch(id)+"^{commit}")
+	return err == nil
+}
+
 // IntegrationBranch es la rama temporal donde se encadenan las oleadas:
 // el trabajo verde de una oleada se mergea aquí y la siguiente oleada
 // crea sus cuartos desde esta rama (Fase 2).

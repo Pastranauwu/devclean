@@ -162,6 +162,14 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 		}
 	}
 	out.Line("✓ %s creadas · revisa con devclean check %s", strings.Join(ids, ", "), ids[0])
+
+	// `pruebas` es lo que corre el paso bisectable de la esclusa de
+	// salida. Si está vacío, ship falla recién al final, cuando el
+	// trabajo ya está hecho; avisar acá cuesta una línea y llega a
+	// tiempo. En greenfield `init` no pudo detectarlo: no había código.
+	if strings.TrimSpace(cfg.Pruebas) == "" {
+		out.Line("· sin comando de pruebas en config.yml · decláralo antes de devclean ship")
+	}
 	return nil
 }
 

@@ -1,7 +1,8 @@
 # Estado del proyecto — traspaso entre sesiones
 
-Última actualización: 27 agosto 2026. El MVP v0.1 está completo y etiquetado
-`v0.1.0`. Fases 1–5 cerradas; falta publicar el release y un par de pulidos.
+Última actualización: 27 agosto 2026. Fases 1–5 cerradas. Última release
+publicada: **v0.2.4**, con binarios para las seis plataformas, `install.sh`
+y `checksums.txt`. Falta el tap de Homebrew y toda la Parte B (v0.2).
 
 **Orden de lectura para quien llegue nuevo:**
 1. `docs/PRD-devclean.md` — la especificación.
@@ -119,6 +120,36 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 - Etiquetado y pusheado **`v0.1.0`** (`main` + tag). Falta publicar el release
   en GitHub (no hay `gh`; se hace desde la web o instalando `gh`).
 
+**Dogfooding en un proyecto real (27 ago 2026)** — se usó devclean para
+construir `wakeup` (servicio Go de wake-on-lan + puente Hue para Alexa)
+desde un repo vacío: `plan` propuso 6 tareas, `run --agentes 3` las sacó
+las 6 en verde al primer intento. Eso destapó cinco fallas que no se ven
+en pruebas sintéticas, todas corregidas:
+
+- **`--version` no existía.** Ahora se inyecta por ldflags (`main.version`)
+  y goreleaser pasa `{{ .Version }}`; sin build tag queda `dev`.
+- **No se podía fijar el CLI de agente.** La autodetección prueba
+  `opencode` primero y lo elige aunque esté sin cuota — `Available()`
+  solo verifica que el binario responda. Nuevo campo `cli:` en
+  `config.yml`. **Ojo: se llama `cli`, no `ejecutor`**, porque `kv.Pairs`
+  no distingue indentación y chocaba con el rol `ejecutor` de
+  `proveedores`.
+- **Dos falsos positivos del escáner de ruido** frenaban todo `ship` en
+  un proyecto Go real: `log.Print*` se marcaba como debug (es el logger
+  estándar de producción, no `fmt.Println`), y el heurístico de "código
+  comentado" saltaba con cualquier `;` en medio de una oración o con
+  comentarios que empiezan con `for`/`if`/`type` como palabra suelta.
+  Ahora `;` solo cuenta al final de línea y la palabra clave exige además
+  pinta de código (`(`, `{` o `:=`).
+- **`depende_de` no cruzaba corridas.** `integrada` arrancaba vacío en
+  cada `run`, así que una tarea nueva que dependía de trabajo ya verde se
+  rechazaba con "bloqueada · depende de T-00X que no salió verde" para
+  siempre. `sembrarVerdesPrevias` ahora siembra el mapa desde el estado
+  persistido e integra esas ramas para que la oleada nueva vea el código.
+- **`ship` sin remoto daba `exit status 128`.** Ahora verifica `origin`
+  antes de empujar y dice qué hacer; además el error de git se lee de su
+  salida, no de `err.Error()`, que es solo "exit status N".
+
 ---
 
 ## Qué falta
@@ -131,6 +162,12 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
   verificados. `v0.1.0` quedó etiquetada en un commit anterior (sin release).
 - **Tap de Homebrew** pendiente: un repo `homebrew-*` aparte + `goreleaser`
   con `brews`. Se hace tras publicar la release.
+- **Limitación conocida, no es bug:** varias tareas que arrancan de la
+  misma base heredan el mismo archivo raíz (un `main.go` placeholder, por
+  ejemplo). Al entregar la segunda, el rebase da conflicto en ese archivo
+  y hay que resolverlo a mano. Es el costo real del paralelo; devclean lo
+  reporta claro (`rebase en conflicto · archivos: main.go`) en vez de
+  mezclar a ciegas.
 
 **v0.2:** Parte B entera (examinador ciego, solapamiento funcional, duplicación
 entre ramas, reglas de dependencia, constitución). Ya especificada, sin empezar.

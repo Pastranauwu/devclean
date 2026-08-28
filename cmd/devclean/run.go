@@ -166,6 +166,7 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 			return results
 		}
 		base = room.IntegrationBranch
+		results = append(results, sembrarVerdesPrevias(ctx, root, aprobadas, integrada)...)
 	}
 
 	for {
@@ -225,6 +226,58 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 			}
 			integrada[v.ID] = true
 		}
+	}
+	return results
+}
+
+// sembrarVerdesPrevias marca como verdes las dependencias que ya
+// quedaron `lista` en una corrida anterior, e integra su rama para que
+// la oleada nueva vea ese código.
+//
+// Sin esto, `integrada` arrancaba vacío en cada corrida: una tarea que
+// dependía de trabajo ya hecho se rechazaba con "bloqueada · depende de
+// T-00X que no salió verde" para siempre, y no había forma de avanzar
+// salvo rehacer todo de una sola corrida. Una dependencia verde cuya
+// rama ya no existe se da por satisfecha: `ship` la entregó y liberó su
+// cuarto, así que su código ya está en la rama base.
+func sembrarVerdesPrevias(ctx context.Context, root string, aprobadas []task.Task, integrada map[string]bool) []runResult {
+	enOla := map[string]bool{}
+	for _, t := range aprobadas {
+		enOla[t.ID] = true
+	}
+
+	var previas []string
+	vistas := map[string]bool{}
+	for _, t := range aprobadas {
+		for _, d := range t.DependeDe {
+			if enOla[d] || vistas[d] {
+				continue
+			}
+			vistas[d] = true
+			previas = append(previas, d)
+		}
+	}
+	sort.Strings(previas)
+
+	var results []runResult
+	for _, id := range previas {
+		s, err := state.Get(root, id)
+		if err != nil || s.Estado != state.Lista {
+			continue
+		}
+		if !room.RamaExiste(ctx, root, id) {
+			// verde y ya entregada: su código vive en la rama base
+			integrada[id] = true
+			continue
+		}
+		if salida, err := room.Integrar(ctx, root, id); err != nil {
+			results = append(results, runResult{
+				ID: id, Estado: "detenida",
+				Motivo: "no se pudo reusar el trabajo verde de una corrida anterior · " + salida,
+			})
+			continue
+		}
+		integrada[id] = true
 	}
 	return results
 }

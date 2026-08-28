@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
@@ -62,6 +66,35 @@ func TestDepsVerdes(t *testing.T) {
 	}
 	if got := depsFaltantes([]string{"T-001", "T-003"}, verde); len(got) != 1 || got[0] != "T-003" {
 		t.Errorf("depsFaltantes = %v, quiero [T-003]", got)
+	}
+}
+
+// Una dependencia que quedó verde en una corrida anterior no debe
+// bloquear a la que la necesita: antes `integrada` arrancaba vacío en
+// cada corrida y la tarea se rechazaba con "no salió verde" para
+// siempre.
+func TestSembrarVerdesPrevias(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".devclean", "state"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Save(root, state.State{ID: "T-001", Estado: state.Lista}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Save(root, state.State{ID: "T-002", Estado: state.Detenida}); err != nil {
+		t.Fatal(err)
+	}
+
+	nueva := task.Task{ID: "T-009", Titulo: "T-009", DependeDe: []string{"T-001", "T-002"}}
+	integrada := map[string]bool{}
+	// sin repo git, RamaExiste es falso: la verde cuenta como ya entregada
+	sembrarVerdesPrevias(context.Background(), root, []task.Task{nueva}, integrada)
+
+	if !integrada["T-001"] {
+		t.Error("T-001 quedó lista en una corrida anterior, debió contar como verde")
+	}
+	if integrada["T-002"] {
+		t.Error("T-002 está detenida, no debió contar como verde")
 	}
 }
 
