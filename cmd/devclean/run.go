@@ -12,9 +12,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/constitution"
+	"github.com/Pastranauwu/devclean/internal/examiner"
 	"github.com/Pastranauwu/devclean/internal/executor"
 	"github.com/Pastranauwu/devclean/internal/gate"
 	"github.com/Pastranauwu/devclean/internal/loop"
+	"github.com/Pastranauwu/devclean/internal/overlap"
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
@@ -57,6 +60,10 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 		return err
 	}
 	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+	constitucion, err := constitution.Load(root)
 	if err != nil {
 		return err
 	}
@@ -122,25 +129,25 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 	}
 
 	if esTUI() {
-		_, err := correrConTUI(context.Background(), root, cfg, ex, modelo, aprobadas, agentes)
+		_, err := correrConTUI(context.Background(), root, cfg, ex, modelo, constitucion, aprobadas, agentes)
 		return err
 	}
 
-	results = append(results, ejecutarOlas(context.Background(), root, cfg, ex, modelo, aprobadas, agentes, nil)...)
+	results = append(results, ejecutarOlas(context.Background(), root, cfg, ex, modelo, constitucion, aprobadas, agentes, nil)...)
 	sortRunResults(results)
 	return emitirResultados(results)
 }
 
 // correrConTUI ejecuta la corrida dentro del tablero en vivo y devuelve
 // los resultados para imprimirlos al final.
-func correrConTUI(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo string, aprobadas []task.Task, agentes int) ([]runResult, error) {
+func correrConTUI(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion string, aprobadas []task.Task, agentes int) ([]runResult, error) {
 	filas := make([]tui.FilaRun, 0, len(aprobadas))
 	for _, t := range aprobadas {
 		filas = append(filas, tui.FilaRun{ID: t.ID, Titulo: t.Titulo, Limite: t.LimiteIntentos})
 	}
 	var results []runResult
 	err := tui.CorrerRun(filas, func(emit func(tui.EventoRun)) {
-		results = ejecutarOlas(ctx, root, cfg, ex, modelo, aprobadas, agentes, emit)
+		results = ejecutarOlas(ctx, root, cfg, ex, modelo, constitucion, aprobadas, agentes, emit)
 	})
 	return results, err
 }
@@ -149,7 +156,7 @@ func correrConTUI(ctx context.Context, root string, cfg config.Config, ex execut
 // una ola solo arranca cuando sus dependencias ya están verdes. El
 // trabajo verde de cada ola se integra en una rama temporal y la
 // siguiente ola arranca desde ahí, así la cadena comparte estado.
-func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo string, aprobadas []task.Task, agentes int, emit func(tui.EventoRun)) []runResult {
+func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion string, aprobadas []task.Task, agentes int, emit func(tui.EventoRun)) []runResult {
 	var results []runResult
 	procesadas := map[string]bool{}
 	integrada := map[string]bool{}
@@ -207,7 +214,7 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 
 		var verdes []runResult
 		if len(asignadas) > 0 {
-			r := correr(ctx, root, cfg, ex, modelo, base, asignadas, agentes, emit)
+			r := correr(ctx, root, cfg, ex, modelo, constitucion, base, asignadas, agentes, emit)
 			results = append(results, r...)
 			for _, rr := range r {
 				procesadas[rr.ID] = true
@@ -442,7 +449,13 @@ func (a agenteExecutor) Run(ctx context.Context, req loop.Request) (loop.Result,
 
 // correr lanza las tareas con `agentes` trabajadores en paralelo. onEvent,
 // si no es nil, recibe cada transición para el tablero en vivo.
-func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, base string, asignadas []task.Task, agentes int, onEvent func(tui.EventoRun)) []runResult {
+func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion, base string, asignadas []task.Task, agentes int, onEvent func(tui.EventoRun)) []runResult {
+	// §6.9: solapamiento activo entre tareas de la misma oleada
+	alertasOverlap := checkOverlapOla(root, asignadas)
+	for _, a := range alertasOverlap {
+		out.Line("⚠ SOLAPAMIENTO  %s", a)
+	}
+
 	jobs := make(chan task.Task)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -456,7 +469,7 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 				if onEvent != nil {
 					onEvent(tui.EventoRun{ID: t.ID, Estado: "trabajando"})
 				}
-				r := correrUno(ctx, root, cfg, ex, modelo, base, t)
+				r := correrUno(ctx, root, cfg, ex, modelo, base, constitucion, t)
 				if onEvent != nil {
 					onEvent(tui.EventoRun{ID: r.ID, Estado: r.Estado, Intentos: r.Intentos, Motivo: r.Motivo})
 				}
@@ -474,10 +487,27 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 	return results
 }
 
+// checkOverlapOla runs overlap checks between all pairs of tasks in a wave.
+// Returns human-readable alerts for any detected overlap.
+func checkOverlapOla(root string, tareas []task.Task) []string {
+	var alertas []string
+	for i, a := range tareas {
+		for _, b := range tareas[i+1:] {
+			asA, _ := loop.ReadAttempts(root, a.ID)
+			asB, _ := loop.ReadAttempts(root, b.ID)
+			r := overlap.CheckPar(root, a.ID, b.ID, asA, asB)
+			if alert := r.Alerta(); alert != "" {
+				alertas = append(alertas, alert)
+			}
+		}
+	}
+	return alertas
+}
+
 // correrUno ejecuta una tarea completa: cuarto, esclusa de estado,
 // bucle, y deja el estado final (lista o detenida). El cuarto no se
 // destruye aquí: ship lo libera al entregar.
-func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, base string, t task.Task) runResult {
+func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, base, constitucion string, t task.Task) runResult {
 	r, err := room.Create(ctx, root, t.ID, base)
 	if err != nil {
 		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
@@ -488,6 +518,13 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
 	}
 
+	exam := examiner.Runner{Options: examiner.Options{
+		Agent:   agenteExecutor{ex},
+		Task:    t,
+		Root:    root,
+		Model:   config.ModeloRol(cfg, "planificador"),
+		Timeout: 3 * time.Minute,
+	}}
 	outcome, err := loop.Run(ctx, loop.Options{
 		Agent:          agenteExecutor{ex},
 		Root:           root,
@@ -498,6 +535,8 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		PatronesPrueba: cfg.PatronesPrueba,
 		Env:            []string{fmt.Sprintf("PORT=%d", r.Puerto)},
 		Interfaces:     t.Usa,
+		Constitucion:   constitucion,
+		Examinador:     exam,
 	})
 	if err != nil {
 		_ = state.Save(root, state.State{ID: t.ID, Estado: state.Detenida, Rama: r.Rama, Puerto: r.Puerto, UltimoError: err.Error()})

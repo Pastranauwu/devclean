@@ -93,6 +93,7 @@ func runShip(id string, dryRun bool) error {
 			Conflicto:   res.Conflicto,
 			PR:          res.PR,
 			Aprobado:    res.Aprobado,
+			Brecha:      res.Brecha,
 		})
 	}
 

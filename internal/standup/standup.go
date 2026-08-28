@@ -1,0 +1,180 @@
+// Package standup implements the data standup report of §6.7.
+// All events are derived from attempts.jsonl; no model is used for the
+// deterministic detectors. Inputs come from the caller to keep this
+// package pure.
+package standup
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/Pastranauwu/devclean/internal/loop"
+	"github.com/Pastranauwu/devclean/internal/state"
+	"github.com/Pastranauwu/devclean/internal/task"
+)
+
+// TipoEvento classifies each standup alert.
+type TipoEvento int
+
+const (
+	EventoColision TipoEvento = iota // shared exported symbols between active tasks
+	EventoAtasco                     // no test-count progress for > UmbralAtasco
+	EventoOK                         // within scope, no issues
+)
+
+// Evento is one standup line.
+type Evento struct {
+	Tipo    TipoEvento `json:"tipo"`
+	TareaID string     `json:"tarea_id"`
+	Detalle string     `json:"detalle"`
+}
+
+// UmbralAtasco is the maximum duration without test-count improvement
+// before flagging a task as stuck.
+const UmbralAtasco = 10 * time.Minute
+
+// Analizar derives all standup events from disk state. No model is used.
+func Analizar(
+	tareas []task.Task,
+	estados map[string]state.State,
+	attempts map[string][]loop.Attempt,
+) []Evento {
+	activas := activasCon(tareas, estados)
+	var eventos []Evento
+
+	// 1. colisión: shared exported symbols between in-progress tasks
+	eventos = append(eventos, detectarColisiones(activas, attempts)...)
+
+	// 2. atasco: no test progress for > UmbralAtasco
+	for _, t := range activas {
+		if e, ok := detectarAtasco(t.ID, attempts[t.ID]); ok {
+			eventos = append(eventos, e)
+		}
+	}
+
+	// ok: active tasks with no alerts
+	alertadas := map[string]bool{}
+	for _, e := range eventos {
+		alertadas[e.TareaID] = true
+	}
+	for _, t := range activas {
+		if !alertadas[t.ID] {
+			eventos = append(eventos, Evento{Tipo: EventoOK, TareaID: t.ID})
+		}
+	}
+	return eventos
+}
+
+// Formatear renders the standup report in the canonical §6.7 format.
+func Formatear(eventos []Evento, ahora time.Time, nActivas int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "PARTE %s · %d tareas en curso\n", ahora.Format("15:04"), nActivas)
+	if len(eventos) == 0 {
+		b.WriteString("\n✓ sin alertas")
+		return b.String()
+	}
+	b.WriteString("\n")
+	for _, e := range eventos {
+		switch e.Tipo {
+		case EventoColision:
+			fmt.Fprintf(&b, "⚠ COLISIÓN   %s\n", e.Detalle)
+		case EventoAtasco:
+			fmt.Fprintf(&b, "⚠ ATASCO     %s\n", e.Detalle)
+		case EventoOK:
+			fmt.Fprintf(&b, "✓            %s dentro de contrato\n", e.TareaID)
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func activasCon(tareas []task.Task, estados map[string]state.State) []task.Task {
+	var out []task.Task
+	for _, t := range tareas {
+		if s, ok := estados[t.ID]; ok && s.Estado == state.EnCurso {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func detectarColisiones(activas []task.Task, attempts map[string][]loop.Attempt) []Evento {
+	ultimosSimbolos := make(map[string][]string, len(activas))
+	for _, t := range activas {
+		as := attempts[t.ID]
+		if len(as) == 0 {
+			continue
+		}
+		if s := as[len(as)-1].SimbolosExportados; s != nil {
+			ultimosSimbolos[t.ID] = *s
+		}
+	}
+
+	var eventos []Evento
+	reportadas := map[string]bool{}
+	for i, a := range activas {
+		for _, b := range activas[i+1:] {
+			clave := a.ID + "+" + b.ID
+			if reportadas[clave] {
+				continue
+			}
+			comunes := interseccion(ultimosSimbolos[a.ID], ultimosSimbolos[b.ID])
+			if len(comunes) == 0 {
+				continue
+			}
+			reportadas[clave] = true
+			detalle := fmt.Sprintf("%s y %s modifican símbolo(s) exportado(s) en común: %s", a.ID, b.ID, strings.Join(comunes, ", "))
+			eventos = append(eventos, Evento{Tipo: EventoColision, TareaID: a.ID, Detalle: detalle})
+		}
+	}
+	return eventos
+}
+
+func detectarAtasco(id string, as []loop.Attempt) (Evento, bool) {
+	if len(as) < 2 {
+		return Evento{}, false
+	}
+	ultimo := as[len(as)-1]
+	if time.Since(ultimo.Fin) < UmbralAtasco {
+		return Evento{}, false
+	}
+	// find earliest attempt still within the window
+	var referencia *loop.Attempt
+	for i := range as {
+		if time.Since(as[i].Fin) <= UmbralAtasco {
+			referencia = &as[i]
+			break
+		}
+	}
+	if referencia == nil {
+		referencia = &as[0]
+	}
+	if ultimo.TestsPasaron == nil || referencia.TestsPasaron == nil {
+		return Evento{}, false
+	}
+	if *ultimo.TestsPasaron > *referencia.TestsPasaron {
+		return Evento{}, false // progreso: pasaron más tests
+	}
+	mins := int(time.Since(ultimo.Fin).Minutes())
+	detalle := fmt.Sprintf("%s sin cambio en el conteo de tests desde hace %d min", id, mins)
+	return Evento{Tipo: EventoAtasco, TareaID: id, Detalle: detalle}, true
+}
+
+func interseccion(a, b []string) []string {
+	if len(a) == 0 || len(b) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(a))
+	for _, s := range a {
+		set[s] = true
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range b {
+		if set[s] && !seen[s] {
+			out = append(out, s)
+			seen[s] = true
+		}
+	}
+	return out
+}

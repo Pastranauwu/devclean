@@ -35,6 +35,10 @@ type Config struct {
 	Proveedores     map[string]Proveedor `json:"proveedores,omitempty"`
 	Estrategia      string               `json:"estrategia,omitempty"` // ligera | equilibrada | pesada
 	Modelos         map[string]string    `json:"modelos,omitempty"`    // peso -> modelo (liviana/media/pesada)
+	// ReglasImport declara la dirección permitida entre módulos (§6.10):
+	// cada string es una cadena como "api → dominio → datos". Se verifica
+	// en la esclusa de salida que ningún import del diff viole el orden.
+	ReglasImport []string `json:"reglas_import,omitempty"`
 }
 
 // Proveedor es un rol del motor de agentes (§8.1): qué modelo usa y de
@@ -128,6 +132,9 @@ func (c Config) Save(root string) error {
 	}
 	if c.Estrategia != "" {
 		fmt.Fprintf(&b, "estrategia: %s\n", c.Estrategia)
+	}
+	if len(c.ReglasImport) > 0 {
+		fmt.Fprintf(&b, "reglas_import: %s\n", kv.MarshalList(c.ReglasImport))
 	}
 	if len(c.Modelos) > 0 {
 		fmt.Fprintf(&b, "modelos:\n")
@@ -225,6 +232,12 @@ func Parse(data []byte) (Config, error) {
 			cfg.TimeoutEsclusa = seg
 		case "estrategia":
 			cfg.Estrategia = kv.Unquote(p.Value)
+		case "reglas_import":
+			list, err := kv.ParseList(p.Value)
+			if err != nil {
+				return cfg, fmt.Errorf("config.yml: línea %d · %s", p.Line, err)
+			}
+			cfg.ReglasImport = list
 		}
 	}
 

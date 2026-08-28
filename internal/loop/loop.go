@@ -27,6 +27,13 @@ type Agent interface {
 	Run(ctx context.Context, req Request) (Result, error)
 }
 
+// Examinador genera la suite de pruebas ciega antes de que el
+// implementador empiece (§6.8). La interfaz vive en loop para evitar
+// un ciclo de importación con el paquete examiner.
+type Examinador interface {
+	Run(ctx context.Context, roomPath string) (bool, error)
+}
+
 // Request es una invocación del agente dentro de su cuarto.
 type Request struct {
 	RoomPath     string
@@ -62,6 +69,15 @@ type Options struct {
 	// agente inventa la firma: las tareas de una misma oleada corren en
 	// cuartos separados y no pueden leerse entre sí.
 	Interfaces []string
+
+	// Constitucion es el contenido de .devclean/constitution.md (§6.11),
+	// ya cargado por quien llama. Si está vacío, no se inyecta nada.
+	Constitucion string
+
+	// Examinador, si no es nil, se invoca una vez antes del bucle del
+	// implementador para escribir la suite visible y sellar la oculta
+	// (§6.8). Si falla, el bucle continúa sin pruebas ciegas.
+	Examinador Examinador
 }
 
 // Outcome es el resultado de correr el bucle sobre una tarea.
@@ -109,13 +125,17 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		return Outcome{}, err
 	}
 
+	if o.Examinador != nil {
+		_, _ = o.Examinador.Run(ctx, o.Room.Path) // graceful degradation: never blocks
+	}
+
 	var prevErr string
 	for intento := 1; intento <= limite; intento++ {
 		inicio := time.Now().UTC()
 
 		req := Request{
 			RoomPath:     o.Room.Path,
-			Prompt:       promptPara(o.Task, o.Interfaces, prevErr),
+			Prompt:       promptPara(o.Task, o.Interfaces, o.Constitucion, prevErr),
 			AllowedGlobs: o.Task.TocarSolo,
 			Model:        o.Model,
 			Timeout:      o.AgentTimeout,
@@ -152,7 +172,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		}
 
 		salida, code := runPrueba(ctx, o.Room.Path, o.Task.ListoCuando, o.PruebaTimeout)
-		pasaron, fallaron := parseTestCounts(salida)
+		pasaron, fallaron := ParseTestCounts(salida)
 		fin := time.Now().UTC()
 
 		// los campos de lista son arrays en el contrato, no null: un
@@ -249,8 +269,11 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration) (
 
 // promptPara arma el prompt de un intento: el contrato y, si lo hay, la
 // salida del intento anterior. El agente nunca decide si terminó.
-func promptPara(t task.Task, interfaces []string, prevErr string) string {
+func promptPara(t task.Task, interfaces []string, constitucion, prevErr string) string {
 	var b strings.Builder
+	if constitucion != "" {
+		fmt.Fprintf(&b, "Constitución del proyecto (convenciones que todos los agentes deben seguir):\n%s\n\n", constitucion)
+	}
 	fmt.Fprintf(&b, "Tarea %s: %s\n", t.ID, t.Titulo)
 	if t.Porque != "" {
 		fmt.Fprintf(&b, "Por qué: %s\n", t.Porque)

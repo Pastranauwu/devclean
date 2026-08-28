@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/constitution"
 	"github.com/Pastranauwu/devclean/internal/executor"
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/task"
@@ -73,11 +74,16 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 		return err
 	}
 
+	constitucion, err := constitution.Load(root)
+	if err != nil {
+		return err
+	}
 	esVacio := config.DetectEmpty(root)
 	ctx := plan.Contexto{
-		Lenguaje: config.DetectLanguage(root),
-		EsVacio:  esVacio,
-		Pruebas:  cfg.Pruebas,
+		Lenguaje:     config.DetectLanguage(root),
+		EsVacio:      esVacio,
+		Pruebas:      cfg.Pruebas,
+		Constitucion: constitucion,
 	}
 	if esVacio && !aprobar && isTerminal(os.Stdin) {
 		ctx.Stack, ctx.Requisitos = pedirRequisitos(os.Stdin, esTUI())
