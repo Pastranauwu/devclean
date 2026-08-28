@@ -37,12 +37,13 @@ type Generador interface {
 // planear. Se lo pasa al modelo para que no adivine el stack ni
 // invente comandos que no existen en el proyecto (§8.2).
 type Contexto struct {
-	Lenguaje     string // go, node, python, rust, "" si no se detecta
-	EsVacio      bool   // repo sin código fuente todavía
-	Pruebas      string // comando de pruebas detectado ("" si no hay)
-	Stack        string // stack elegido por el humano ("" si lo decide el modelo)
-	Requisitos   string // requisitos extra que dijo el humano, en texto libre
-	Constitucion string // contenido de .devclean/constitution.md (§6.11), "" si no existe
+	Lenguaje     string   // go, node, python, rust, "" si no se detecta
+	EsVacio      bool     // repo sin código fuente todavía
+	Pruebas      string   // comando de pruebas detectado ("" si no hay)
+	Stack        string   // stack elegido por el humano ("" si lo decide el modelo)
+	Requisitos   string   // requisitos extra que dijo el humano, en texto libre
+	Constitucion string   // contenido de .devclean/constitution.md (§6.11), "" si no existe
+	Vedadas      []string // globs que tocar_solo nunca puede incluir (zonas prohibidas + rutas de prueba)
 }
 
 // Prompt arma la instrucción para el planificador: una frase entra, un
@@ -63,6 +64,9 @@ func Prompt(frase string, c Contexto) string {
 	b.WriteString("- \"porque\": por qué importa (una frase)\n")
 	b.WriteString("- \"listo_cuando\": un comando ejecutable que diga \"ya está\" (obligatorio)\n")
 	b.WriteString("- \"tocar_solo\": array de globs de archivos que la tarea puede tocar\n")
+	if len(c.Vedadas) > 0 {
+		b.WriteString("  · \"tocar_solo\" NUNCA puede incluir estas rutas (las maneja el proyecto o el examinador ciego, no la tarea): " + strings.Join(c.Vedadas, ", ") + "\n")
+	}
 	b.WriteString("- \"depende_de\": array de ids (ej. \"T-001\") de tareas que deben estar verdes antes que esta; vacío si no depende de ninguna\n")
 	b.WriteString("- \"expone\": array de firmas públicas que esta tarea produce y otra consume (ej. \"wol.Send(mac, addr string) error\", \"POST /wake\"); vacío si no produce ninguna\n")
 	b.WriteString("- \"usa\": array de firmas de OTRAS tareas que esta consume, copiadas palabra por palabra del \"expone\" de aquella; vacío si no consume ninguna\n")
