@@ -25,8 +25,9 @@ type Entrega struct {
 	LineasMenos int       `json:"lineas_menos"`
 	Ruido       int       `json:"ruido"`
 	Conflicto   bool      `json:"conflicto"`
-	PR          string    `json:"pr,omitempty"`
-	Aprobado    bool      `json:"aprobado"`
+	PR          string   `json:"pr,omitempty"`
+	Aprobado    bool     `json:"aprobado"`
+	Brecha      *float64 `json:"brecha,omitempty"` // visible_pct - hidden_pct (§6.8)
 }
 
 func entregaPath(root, id string) string {

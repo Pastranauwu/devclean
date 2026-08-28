@@ -14,7 +14,10 @@ var (
 	failingRE      = regexp.MustCompile(`(\d+)\s+failing`)
 )
 
-func parseTestCounts(salida string) (pasaron, fallaron *int) {
+// ParseTestCounts parses test pass/fail counts from test runner output.
+// Returns (nil, nil) when the format is not recognized — callers must
+// not invent numbers (adenda A.2).
+func ParseTestCounts(salida string) (pasaron, fallaron *int) {
 	// pytest y jest: "5 passed, 4 failed" / "Tests: 5 passed, 4 failed"
 	if m := passedFailedRE.FindStringSubmatch(salida); m != nil {
 		p, _ := strconv.Atoi(m[1])

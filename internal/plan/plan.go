@@ -37,11 +37,12 @@ type Generador interface {
 // planear. Se lo pasa al modelo para que no adivine el stack ni
 // invente comandos que no existen en el proyecto (§8.2).
 type Contexto struct {
-	Lenguaje   string // go, node, python, rust, "" si no se detecta
-	EsVacio    bool   // repo sin código fuente todavía
-	Pruebas    string // comando de pruebas detectado ("" si no hay)
-	Stack      string // stack elegido por el humano ("" si lo decide el modelo)
-	Requisitos string // requisitos extra que dijo el humano, en texto libre
+	Lenguaje     string // go, node, python, rust, "" si no se detecta
+	EsVacio      bool   // repo sin código fuente todavía
+	Pruebas      string // comando de pruebas detectado ("" si no hay)
+	Stack        string // stack elegido por el humano ("" si lo decide el modelo)
+	Requisitos   string // requisitos extra que dijo el humano, en texto libre
+	Constitucion string // contenido de .devclean/constitution.md (§6.11), "" si no existe
 }
 
 // Prompt arma la instrucción para el planificador: una frase entra, un
@@ -50,6 +51,11 @@ type Contexto struct {
 func Prompt(frase string, c Contexto) string {
 	var b strings.Builder
 	b.WriteString("Eres el planificador de devclean. Parte esta petición en tareas independientes, pequeñas y verificables:\n\n")
+	if c.Constitucion != "" {
+		b.WriteString("Constitución del proyecto (convenciones establecidas que el plan debe respetar):\n")
+		b.WriteString(c.Constitucion)
+		b.WriteString("\n\n")
+	}
 	b.WriteString("\"" + frase + "\"\n\n")
 	b.WriteString(contextoPrompt(c))
 	b.WriteString("\n\nDevuelve SOLO un array JSON, sin texto alrededor, con estos campos por tarea:\n")

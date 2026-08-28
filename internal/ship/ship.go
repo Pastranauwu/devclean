@@ -34,10 +34,11 @@ type Resultado struct {
 	PR       string `json:"pr,omitempty"`
 
 	// Resumen para las métricas, aunque la esclusa frene antes.
-	LineasMas   int  `json:"lineas_mas,omitempty"`
-	LineasMenos int  `json:"lineas_menos,omitempty"`
-	Ruido       int  `json:"ruido,omitempty"`
-	Conflicto   bool `json:"conflicto,omitempty"`
+	LineasMas   int      `json:"lineas_mas,omitempty"`
+	LineasMenos int      `json:"lineas_menos,omitempty"`
+	Ruido       int      `json:"ruido,omitempty"`
+	Conflicto   bool     `json:"conflicto,omitempty"`
+	Brecha      *float64 `json:"brecha,omitempty"` // visible_pct - hidden_pct (§6.8)
 }
 
 // Opciones carries the exit gate's dependencies.
@@ -131,6 +132,14 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	}
 	apuntar(Paso{"interfaces", true, "expone lo prometido"})
 
+	// 6.5 dependencias — verifica el grafo de imports del diff (§6.10)
+	if detalle, ok := verificarDependencias(diff, o.Config.ReglasImport); !ok {
+		apuntar(Paso{"dependencias", false, detalle})
+		return res
+	} else if len(o.Config.ReglasImport) > 0 {
+		apuntar(Paso{"dependencias", true, detalle})
+	}
+
 	// 7. bisectable — el commit compila y pasa las pruebas
 	if detalle, ok := verificarBisectable(ctx, o.Room.Path, o.Config.Pruebas, o.Timeout); !ok {
 		apuntar(Paso{"bisectable", false, detalle})
@@ -139,11 +148,26 @@ func Run(ctx context.Context, o Opciones) Resultado {
 		apuntar(Paso{"bisectable", true, detalle})
 	}
 
-	// 8. handoff — qué cambió, qué no, cómo verificar
+	// 8. suite_oculta — hidden test gate (§6.8); skipped if no sealed suite
+	pruebas := o.Config.Pruebas
+	if pruebas == "" {
+		pruebas = o.Task.ListoCuando
+	}
+	if brecha, detalle, suiteOK := verificarSuiteOculta(ctx, o.Root, o.Room.Path, o.Task, pruebas, o.Timeout); brecha != nil || !suiteOK {
+		res.Brecha = brecha
+		if suiteOK {
+			apuntar(Paso{"suite_oculta", true, detalle})
+		} else {
+			apuntar(Paso{"suite_oculta", false, detalle})
+			return res
+		}
+	}
+
+	// 9. handoff — qué cambió, qué no, cómo verificar
 	cuerpo := generarHandoff(o.Task, archivos, mas, menos)
 	apuntar(Paso{"handoff", true, ""})
 
-	// 9. pr — abrir y liberar el cuarto
+	// 10. pr — abrir y liberar el cuarto
 	if o.DryRun {
 		apuntar(Paso{"pr", true, "dry-run · sin PR"})
 		res.Aprobado = true
