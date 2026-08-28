@@ -188,6 +188,29 @@ func TestGlobsOverlap(t *testing.T) {
 	}
 }
 
+func TestAlcanceProhibido(t *testing.T) {
+	zonas := []string{"go.sum", "migrations/**", ".github/**"}
+	patrones := []string{"*_test.go", "test/**"}
+	cases := []struct {
+		p        string
+		wantZona string
+		wantMal  bool
+	}{
+		{"go.sum", "go.sum", true},
+		{"go.mod", "", false}, // no se cruza con go.sum
+		{"migrations/001.sql", "migrations/**", true},
+		{"internal/wol/**", "", false},
+		{"internal/wol/wol_test.go", "*_test.go", true},
+		{"test/fixtures/**", "test/**", true},
+	}
+	for _, tc := range cases {
+		z, mal := AlcanceProhibido(tc.p, zonas, patrones)
+		if mal != tc.wantMal || z != tc.wantZona {
+			t.Errorf("AlcanceProhibido(%q) = (%q, %v), quiero (%q, %v)", tc.p, z, mal, tc.wantZona, tc.wantMal)
+		}
+	}
+}
+
 func TestGateRechazaRutasDePrueba(t *testing.T) {
 	for _, ruta := range []string{
 		"src/export/*_test.go",

@@ -90,6 +90,13 @@ func Create(ctx context.Context, root, id, base string) (Room, error) {
 	if _, err := os.Stat(r.Path); err == nil {
 		return Room{}, fmt.Errorf("ya existe el cuarto %s · destrúyelo antes de reintentar", id)
 	}
+	// la carpeta del cuarto no está: limpia cualquier worktree o rama
+	// que dejó una corrida anterior con rooms/ borrado, para que el
+	// `worktree add` de abajo no choque. Create solo se llama sobre
+	// tareas pendientes, así que una rama devclean/<id> aquí es basura.
+	if err := Destroy(ctx, root, id); err != nil {
+		return Room{}, err
+	}
 	if base == "" {
 		base = "HEAD"
 	}
@@ -118,21 +125,23 @@ func Create(ctx context.Context, root, id, base string) (Room, error) {
 }
 
 // Destroy removes the worktree and its branch. Missing pieces are
-// skipped: Destroy always leaves a clean state.
+// skipped: Destroy always leaves a clean state, even when the room
+// directory was wiped out of band. rooms/ is gitignored, so a `git
+// clean -fdx` o un rm a mano dejan la registración del worktree y su
+// rama huérfanas; sin limpiarlas, el próximo `worktree add` choca con
+// "fatal: una rama llamada 'devclean/<id>' ya existe".
 func Destroy(ctx context.Context, root, id string) error {
 	path := filepath.Join(Dir(root), id)
-	if _, err := os.Stat(path); err == nil {
-		if out, err := git(ctx, root, "worktree", "remove", "--force", path); err != nil {
-			return fmt.Errorf("no se pudo destruir el cuarto %s · %s", id, strings.TrimSpace(out))
-		}
+	// quita el worktree si su carpeta sigue ahí, luego poda las
+	// registraciones que quedaron cuando la carpeta ya no está.
+	_, _ = git(ctx, root, "worktree", "remove", "--force", path)
+	_, _ = git(ctx, root, "worktree", "prune")
+	// rev-parse no depende del idioma de git; `branch -D` sí.
+	if _, err := git(ctx, root, "rev-parse", "--verify", "--quiet", "refs/heads/"+Branch(id)); err != nil {
+		return nil
 	}
-	if _, err := git(ctx, root, "branch", "-D", Branch(id)); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			// la rama no existía: nada que borrar
-			return nil
-		}
-		return err
+	if out, err := git(ctx, root, "branch", "-D", Branch(id)); err != nil {
+		return fmt.Errorf("no se pudo borrar la rama %s · %s", Branch(id), strings.TrimSpace(out))
 	}
 	return nil
 }
