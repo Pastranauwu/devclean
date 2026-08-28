@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,6 +51,13 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	if o.Agent == nil {
 		return false, nil
 	}
+	// examen de caja negra: sin interfaz pública declarada no hay
+	// frontera que probar. Tareas de andamiaje (init, wiring) no exponen
+	// nada; examinarlas solo produce un test file de relleno que después
+	// dispara falsos solapamientos entre ramas (§6.8, §6.9).
+	if len(o.Task.Expone) == 0 {
+		return false, nil
+	}
 	if o.Timeout <= 0 {
 		o.Timeout = DefaultTimeout
 	}
@@ -71,13 +80,20 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	if strings.TrimSpace(text) == "" {
 		text = res.Stdout
 	}
-	visible, hidden, err := parseRespText(text)
+	visible, hidden, imports, err := parseRespText(text)
 	if err != nil || len(visible) == 0 {
 		return false, nil
 	}
 
 	importPath := resolveImportPath(roomPath, dir)
-	visibleContent := buildGoFile(pkg, importPath, visible)
+	visibleContent := buildGoFile(pkg, importPath, imports, visible)
+	// un examinador que emite pruebas que no compilan bloquea al
+	// implementador: no puede tocar el archivo (A.3) y su impl correcta
+	// igual da "build failed". Si la suite ni siquiera parsea, se
+	// descarta y el implementador corre sin suite ciega (§6.8).
+	if !parsea(visibleContent) {
+		return false, nil
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return false, nil
 	}
@@ -95,8 +111,12 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 
 	_, relDir := inferDirFromTocarSolo(o.Task.TocarSolo, roomPath)
 	hiddenRelPath := toRelPath(filepath.Join(relDir, HiddenFileName))
+	hiddenContent := buildGoFile(pkg, importPath, imports, hidden)
+	if !parsea(hiddenContent) {
+		return false, nil // solo visible; sin oculta que sellar
+	}
 	s := sealed.SuiteOculta{
-		Content: buildGoFile(pkg, importPath, hidden),
+		Content: hiddenContent,
 		Archivo: hiddenRelPath,
 	}
 	if err := sealed.Write(o.Root, o.Task.ID, s); err != nil {
@@ -130,11 +150,14 @@ func buildPrompt(t task.Task, pkg string) string {
 - 70%% van en "visible": el implementador las verá como criterio de aceptación.
 - 30%% van en "hidden": edge cases y casos límite que el implementador NO verá.
 - Los tests "hidden" deben fallar si la implementación es superficial o solo optimizada para "visible".
-- Usa solo la stdlib de Go (testing, fmt, errors, etc.). Sin imports externos.
+- Usa solo la stdlib de Go. Sin imports externos.
+- En "imports" enumera TODO paquete de la stdlib que usen tus tests aparte de "testing" (ej. "net", "time", "bytes", "encoding/json"). Si olvidas uno, la suite no compila y se descarta.
+- No pongas el bloque import en el código: solo las funciones. devclean arma el archivo.
 - Cada función de test es independiente.
 
 Devuelve SOLO este JSON (sin texto alrededor, sin markdown):
 {
+  "imports": ["net", "time", "bytes"],
   "visible": ["func TestXxx(t *testing.T) {\n\t// ...\n}", "..."],
   "hidden":  ["func TestYyy(t *testing.T) {\n\t// ...\n}", "..."]
 }`)
@@ -142,11 +165,12 @@ Devuelve SOLO este JSON (sin texto alrededor, sin markdown):
 }
 
 type suiteJSON struct {
+	Imports []string `json:"imports"`
 	Visible []string `json:"visible"`
 	Hidden  []string `json:"hidden"`
 }
 
-func parseRespText(text string) (visible, hidden []string, err error) {
+func parseRespText(text string) (visible, hidden, imports []string, err error) {
 	t := strings.TrimSpace(text)
 	t = strings.TrimPrefix(t, "```json")
 	t = strings.TrimPrefix(t, "```")
@@ -156,23 +180,37 @@ func parseRespText(text string) (visible, hidden []string, err error) {
 	ini := strings.Index(t, "{")
 	fin := strings.LastIndex(t, "}")
 	if ini == -1 || fin <= ini {
-		return nil, nil, fmt.Errorf("no JSON in response")
+		return nil, nil, nil, fmt.Errorf("no JSON in response")
 	}
 	var s suiteJSON
 	if err := json.Unmarshal([]byte(t[ini:fin+1]), &s); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return s.Visible, s.Hidden, nil
+	return s.Visible, s.Hidden, s.Imports, nil
 }
 
 // buildGoFile assembles a complete Go external test file.
 // importPath is the full import path of the package under test (e.g.
 // "mymod/calculator"). Empty string means no package import is added.
-func buildGoFile(pkg, importPath string, funcs []string) string {
+// extra are stdlib packages declared by the examiner; only those a test
+// body actually references are kept, so a package used only by the other
+// suite does not turn into an "imported and not used" build error.
+func buildGoFile(pkg, importPath string, extra, funcs []string) string {
+	body := strings.Join(funcs, "\n")
+
 	var b strings.Builder
 	fmt.Fprintf(&b, "package %s_test\n\nimport (\n\t\"testing\"\n", pkg)
 	if importPath != "" {
 		fmt.Fprintf(&b, "\t%q\n", importPath)
+	}
+	for _, imp := range dedup(extra) {
+		if !stdlibImport(imp) || imp == "testing" {
+			continue
+		}
+		if !strings.Contains(body, selector(imp)+".") {
+			continue
+		}
+		fmt.Fprintf(&b, "\t%q\n", imp)
 	}
 	b.WriteString(")\n\n")
 	for _, f := range funcs {
@@ -183,6 +221,49 @@ func buildGoFile(pkg, importPath string, funcs []string) string {
 		b.WriteString("\n\n")
 	}
 	return b.String()
+}
+
+// parsea reporta si el archivo de pruebas al menos compila a nivel
+// sintáctico. No detecta errores de tipos (que la impl aún no exista es
+// TDD legítimo), solo que el examinador no devolvió basura.
+func parsea(src string) bool {
+	_, err := parser.ParseFile(token.NewFileSet(), "devclean_test.go", src, parser.AllErrors)
+	return err == nil
+}
+
+// stdlibImport descarta paquetes externos: el primer segmento de la
+// stdlib nunca lleva punto (dominio).
+func stdlibImport(path string) bool {
+	if path == "" {
+		return false
+	}
+	first := path
+	if i := strings.IndexByte(path, '/'); i >= 0 {
+		first = path[:i]
+	}
+	return !strings.Contains(first, ".")
+}
+
+// selector devuelve el identificador con que se referencia un import:
+// el último segmento de la ruta ("encoding/json" → "json").
+func selector(path string) string {
+	if i := strings.LastIndexByte(path, '/'); i >= 0 {
+		return path[i+1:]
+	}
+	return path
+}
+
+func dedup(xs []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, x := range xs {
+		if x == "" || seen[x] {
+			continue
+		}
+		seen[x] = true
+		out = append(out, x)
+	}
+	return out
 }
 
 // resolveImportPath reads go.mod to find the module name, then computes
