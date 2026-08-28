@@ -47,6 +47,7 @@ type Request struct {
 // Result es lo que devolvió una invocación.
 type Result struct {
 	Stdout   string
+	Text     string // respuesta textual del agente (campo "result" del JSON de claude)
 	ExitCode int
 	Tokens   Tokens
 }

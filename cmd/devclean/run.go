@@ -442,6 +442,7 @@ func (a agenteExecutor) Run(ctx context.Context, req loop.Request) (loop.Result,
 	})
 	return loop.Result{
 		Stdout:   res.Stdout,
+		Text:     res.Text,
 		ExitCode: res.ExitCode,
 		Tokens:   loop.Tokens{Entrada: res.Tokens.Input, Salida: res.Tokens.Output},
 	}, err

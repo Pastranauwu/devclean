@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -66,26 +67,36 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		return false, nil // graceful degradation
 	}
 
-	visible, hidden, err := parseRespText(res.Stdout)
+	text := res.Text
+	if strings.TrimSpace(text) == "" {
+		text = res.Stdout
+	}
+	visible, hidden, err := parseRespText(text)
 	if err != nil || len(visible) == 0 {
 		return false, nil
 	}
 
-	visibleContent := buildGoFile(pkg, visible)
+	importPath := resolveImportPath(roomPath, dir)
+	visibleContent := buildGoFile(pkg, importPath, visible)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return false, nil
 	}
-	if err := os.WriteFile(filepath.Join(dir, VisibleFileName), []byte(visibleContent), 0o644); err != nil {
+	visiblePath := filepath.Join(dir, VisibleFileName)
+	if err := os.WriteFile(visiblePath, []byte(visibleContent), 0o644); err != nil {
 		return false, nil
 	}
+	// commit visible tests so the loop's revertFueraDeAlcance (A.3) does not
+	// undo them — git status won't list committed files as "changed".
+	commitVisible(roomPath, visiblePath)
 
 	if len(hidden) == 0 {
 		return false, nil
 	}
 
-	hiddenRelPath := toRelPath(filepath.Join(toRelDir(o.Task.TocarSolo), HiddenFileName))
+	_, relDir := inferDirFromTocarSolo(o.Task.TocarSolo, roomPath)
+	hiddenRelPath := toRelPath(filepath.Join(relDir, HiddenFileName))
 	s := sealed.SuiteOculta{
-		Content: buildGoFile(pkg, hidden),
+		Content: buildGoFile(pkg, importPath, hidden),
 		Archivo: hiddenRelPath,
 	}
 	if err := sealed.Write(o.Root, o.Task.ID, s); err != nil {
@@ -154,9 +165,16 @@ func parseRespText(text string) (visible, hidden []string, err error) {
 	return s.Visible, s.Hidden, nil
 }
 
-func buildGoFile(pkg string, funcs []string) string {
+// buildGoFile assembles a complete Go external test file.
+// importPath is the full import path of the package under test (e.g.
+// "mymod/calculator"). Empty string means no package import is added.
+func buildGoFile(pkg, importPath string, funcs []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "package %s_test\n\nimport \"testing\"\n\n", pkg)
+	fmt.Fprintf(&b, "package %s_test\n\nimport (\n\t\"testing\"\n", pkg)
+	if importPath != "" {
+		fmt.Fprintf(&b, "\t%q\n", importPath)
+	}
+	b.WriteString(")\n\n")
 	for _, f := range funcs {
 		b.WriteString(f)
 		if !strings.HasSuffix(strings.TrimSpace(f), "}") {
@@ -167,33 +185,97 @@ func buildGoFile(pkg string, funcs []string) string {
 	return b.String()
 }
 
+// resolveImportPath reads go.mod to find the module name, then computes
+// the import path for the package in dir. Returns "" on any failure.
+func resolveImportPath(roomPath, dir string) string {
+	data, err := os.ReadFile(filepath.Join(roomPath, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	// find "module <name>" line
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "module ") {
+			continue
+		}
+		mod := strings.TrimSpace(strings.TrimPrefix(line, "module"))
+		rel, err := filepath.Rel(roomPath, dir)
+		if err != nil || rel == "." || rel == "" {
+			return mod
+		}
+		return mod + "/" + filepath.ToSlash(rel)
+	}
+	return ""
+}
+
 // inferDirPkg returns the absolute worktree directory and the Go package
-// name inferred from tocar_solo[0]. Falls back to roomPath and "main".
+// name inferred from tocar_solo, skipping file-like entries (e.g. go.mod).
+// Falls back to roomPath and "main".
 func inferDirPkg(tocarSolo []string, roomPath string) (dir, pkg string) {
-	if len(tocarSolo) == 0 {
-		return roomPath, "main"
+	absDir, relDir := inferDirFromTocarSolo(tocarSolo, roomPath)
+	if relDir == "." {
+		return absDir, "main"
 	}
-	rel := strings.TrimRight(tocarSolo[0], "/*")
-	if rel == "" {
-		return roomPath, "main"
-	}
-	parts := strings.Split(rel, "/")
+	parts := strings.Split(relDir, "/")
 	pkg = parts[len(parts)-1]
 	if pkg == "" || pkg == "." {
 		pkg = "main"
 	}
-	return filepath.Join(roomPath, rel), pkg
+	return absDir, pkg
 }
 
 func toRelDir(tocarSolo []string) string {
-	if len(tocarSolo) == 0 {
-		return "."
-	}
-	rel := strings.TrimRight(tocarSolo[0], "/*")
-	if rel == "" {
-		return "."
-	}
-	return rel
+	_, relDir := inferDirFromTocarSolo(tocarSolo, "")
+	return relDir
 }
 
 func toRelPath(p string) string { return filepath.ToSlash(p) }
+
+// commitVisible commits the visible test file to the worktree so the
+// implementer loop won't revert it (A.3 applies to changes, not to
+// already-committed files).
+func commitVisible(roomPath, absPath string) {
+	rel, err := filepath.Rel(roomPath, absPath)
+	if err != nil {
+		return
+	}
+	git := func(args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", roomPath}, args...)...)
+		_ = cmd.Run()
+	}
+	git("-c", "user.name=devclean", "-c", "user.email=devclean@local", "add", rel)
+	git("-c", "user.name=devclean", "-c", "user.email=devclean@local", "commit", "-m", "exam: suite visible")
+}
+
+// inferDirFromTocarSolo finds the best directory from tocar_solo:
+//   - "internal/wol/**" → "internal/wol" (strip glob)
+//   - "calculator/calculator.go" → "calculator" (take parent of a specific file)
+//   - "go.mod" → skip (top-level dotfile, not a package dir)
+//
+// Falls back to roomPath when no useful entry is found.
+func inferDirFromTocarSolo(tocarSolo []string, roomPath string) (absDir, relDir string) {
+	for _, g := range tocarSolo {
+		rel := strings.TrimRight(g, "/*")
+		if rel == "" || rel == "." {
+			return roomPath, "."
+		}
+		base := filepath.Base(rel)
+		if strings.Contains(base, ".") {
+			// specific file — use its parent directory
+			parent := filepath.Dir(rel)
+			if parent == "." || parent == "" {
+				// top-level file like "go.mod" — skip to next entry
+				continue
+			}
+			if roomPath != "" {
+				return filepath.Join(roomPath, parent), parent
+			}
+			return parent, parent
+		}
+		if roomPath != "" {
+			return filepath.Join(roomPath, rel), rel
+		}
+		return rel, rel
+	}
+	return roomPath, "."
+}

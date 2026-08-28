@@ -153,7 +153,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	if pruebas == "" {
 		pruebas = o.Task.ListoCuando
 	}
-	if brecha, detalle, suiteOK := verificarSuiteOculta(ctx, o.Root, o.Room.Path, o.Task, pruebas, o.Timeout); brecha != nil || !suiteOK {
+	if brecha, detalle, suiteOK := verificarSuiteOculta(ctx, o.Root, o.Room.Path, o.Task, pruebas, o.Timeout); detalle != "" {
 		res.Brecha = brecha
 		if suiteOK {
 			apuntar(Paso{"suite_oculta", true, detalle})
