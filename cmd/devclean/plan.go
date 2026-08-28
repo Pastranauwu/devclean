@@ -15,6 +15,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/constitution"
 	"github.com/Pastranauwu/devclean/internal/executor"
+	"github.com/Pastranauwu/devclean/internal/gate"
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/tui"
@@ -79,11 +80,13 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 		return err
 	}
 	esVacio := config.DetectEmpty(root)
+	zonas, patrones := zonasYPatrones(cfg)
 	ctx := plan.Contexto{
 		Lenguaje:     config.DetectLanguage(root),
 		EsVacio:      esVacio,
 		Pruebas:      cfg.Pruebas,
 		Constitucion: constitucion,
+		Vedadas:      append(append([]string{}, zonas...), patrones...),
 	}
 	if esVacio && !aprobar && isTerminal(os.Stdin) {
 		ctx.Stack, ctx.Requisitos = pedirRequisitos(os.Stdin, esTUI())
@@ -103,6 +106,8 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 	if err != nil {
 		return err
 	}
+
+	sanearAlcance(borradores, zonas, patrones)
 
 	ids, err := idsCorrelativos(dir, len(borradores))
 	if err != nil {
@@ -183,6 +188,39 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 		out.Line("· sin comando de pruebas en config.yml · decláralo antes de devclean ship")
 	}
 	return nil
+}
+
+// zonasYPatrones devuelve las zonas prohibidas y los patrones de prueba
+// efectivos: los de config.yml, o los del proyecto si config no los
+// declara.
+func zonasYPatrones(cfg config.Config) (zonas, patrones []string) {
+	zonas = cfg.ZonasProhibidas
+	if len(zonas) == 0 {
+		zonas = config.DefaultForbiddenZones()
+	}
+	patrones = cfg.PatronesPrueba
+	if len(patrones) == 0 {
+		patrones = config.DefaultTestPatterns()
+	}
+	return zonas, patrones
+}
+
+// sanearAlcance recorta de tocar_solo las rutas que la esclusa de
+// entrada rechaza sí o sí. El planificador es un modelo y a veces las
+// mete (típico: go.sum junto a go.mod); sin esto el plan entero muere
+// en `devclean run` y no hay arreglo salvo editar a mano.
+func sanearAlcance(bs []plan.Borrador, zonas, patrones []string) {
+	for i := range bs {
+		limpio := bs[i].TocarSolo[:0]
+		for _, p := range bs[i].TocarSolo {
+			if z, mal := gate.AlcanceProhibido(p, zonas, patrones); mal {
+				out.Line("· quito %q de tocar_solo · zona vedada (%s)", p, z)
+				continue
+			}
+			limpio = append(limpio, p)
+		}
+		bs[i].TocarSolo = limpio
+	}
 }
 
 // idsCorrelativos devuelve n ids libres a partir del primero.

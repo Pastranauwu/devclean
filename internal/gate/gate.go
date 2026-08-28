@@ -194,6 +194,30 @@ func checkSinCruce(t task.Task, otras []task.Task) Check {
 	return Check{"sin cruce", true, ""}
 }
 
+// AlcanceProhibido reporta si una ruta de tocar_solo cae en una zona
+// prohibida global (§6.3: lockfiles, migraciones, CI, changelog) o en
+// una ruta de prueba (adenda A.3: las escribe el examinador ciego), y
+// devuelve cuál. `plan` la usa para recortar el alcance antes de
+// escribir el contrato: el planificador es un modelo y a veces las
+// incluye, y un rechazo en la esclusa no tiene arreglo salvo editar a
+// mano, que es justo lo que devclean evita (§6.1).
+func AlcanceProhibido(p string, zonas, patronesPrueba []string) (string, bool) {
+	for _, z := range zonas {
+		if globsOverlap(p, z) {
+			return z, true
+		}
+	}
+	if len(patronesPrueba) == 0 {
+		patronesPrueba = config.DefaultTestPatterns()
+	}
+	for _, patron := range patronesPrueba {
+		if esRutaDePrueba(p, patron) {
+			return patron, true
+		}
+	}
+	return "", false
+}
+
 // checkZonasProhibidas: tocar_solo must not reach the global forbidden
 // zones (§6.3: lockfiles, migrations, CI, changelog).
 func checkZonasProhibidas(t task.Task, zonas []string) Check {
