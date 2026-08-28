@@ -1,4 +1,4 @@
-// Package ship implements the exit gate of §6.5: the eight deterministic
+// Package ship implements the exit gate of §6.5: the nine deterministic
 // steps a task must pass before devclean opens a PR. Every check is pure
 // code; no model is involved in verification (§6.5, reglas del equipo).
 //
@@ -8,6 +8,7 @@ package ship
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/Pastranauwu/devclean/internal/config"
@@ -52,7 +53,7 @@ type Opciones struct {
 	Progreso func(Paso)    // llamado tras cada paso, para el TUI; nil = silencio
 }
 
-// Run executes the eight steps in order and returns the gate result.
+// Run executes the nine steps in order and returns the gate result.
 // The first failing step stops the gate (la compuerta se frena ahí).
 func Run(ctx context.Context, o Opciones) Resultado {
 	res := Resultado{ID: o.Task.ID}
@@ -123,7 +124,14 @@ func Run(ctx context.Context, o Opciones) Resultado {
 		apuntar(Paso{"presupuesto", true, detalle})
 	}
 
-	// 6. bisectable — el commit compila y pasa las pruebas
+	// 6. interfaces — entregó lo que sus hermanas consumen (§6.10)
+	if faltan := verificarExpone(o.Task.Expone, diff); len(faltan) > 0 {
+		apuntar(Paso{"interfaces", false, "no expone lo prometido: " + strings.Join(faltan, "; ")})
+		return res
+	}
+	apuntar(Paso{"interfaces", true, "expone lo prometido"})
+
+	// 7. bisectable — el commit compila y pasa las pruebas
 	if detalle, ok := verificarBisectable(ctx, o.Room.Path, o.Config.Pruebas, o.Timeout); !ok {
 		apuntar(Paso{"bisectable", false, detalle})
 		return res
@@ -131,11 +139,11 @@ func Run(ctx context.Context, o Opciones) Resultado {
 		apuntar(Paso{"bisectable", true, detalle})
 	}
 
-	// 7. handoff — qué cambió, qué no, cómo verificar
+	// 8. handoff — qué cambió, qué no, cómo verificar
 	cuerpo := generarHandoff(o.Task, archivos, mas, menos)
 	apuntar(Paso{"handoff", true, ""})
 
-	// 8. pr — abrir y liberar el cuarto
+	// 9. pr — abrir y liberar el cuarto
 	if o.DryRun {
 		apuntar(Paso{"pr", true, "dry-run · sin PR"})
 		res.Aprobado = true

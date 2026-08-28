@@ -266,12 +266,31 @@ El chequeo 3 de la esclusa de entrada (§6.3) es la versión barata y estática 
 
 ### 6.10 Integración y acoplamiento
 
-**No implementado. v0.2** (adenda §6.10).
+**Contratos entre tareas: implementado.** El resto sigue en v0.2 (adenda §6.10).
 
 Ataca directamente el hallazgo de GitClear: el código "movido", señal de refactorización, se desplomó de 15.88% a 3.10% mientras subían el añadido y el copiado. Los agentes agregan y duplican; no integran.
 
 - **Duplicación entre ramas:** comparar estructura de funciones nuevas entre ramas activas. Determinista y barato.
-- **Contratos entre tareas:** si T-001 produce una interfaz que T-002 consume, la firma se congela en ambos contratos y se verifica contra los dos diffs.
+- **Contratos entre tareas (hecho):** si T-001 produce una interfaz que T-002 consume, la firma se congela en ambos contratos — `expone` en la que la produce, `usa` en la que la consume — y se verifica en los dos extremos.
+
+  El problema que resuelve: las tareas de una misma oleada corren en cuartos aislados y **no pueden leerse el código entre sí**. Sin la firma congelada, cada una inventa la suya y el desajuste aparece recién al juntar las ramas, cuando ya se gastó todo el trabajo.
+
+  ```yaml
+  # T-001
+  expone: ["wol.Send(mac, addr string) error"]
+
+  # T-002
+  usa: ["wol.Send(mac, addr string) error"]
+  ```
+
+  Tres puntos de control, todos deterministas y sin gastar tokens:
+  1. **Al planear:** el planificador llena los dos campos; el prompt le explica que las tareas son ciegas entre sí.
+  2. **Al asignar:** un `usa` que ningún contrato expone es un plan incoherente — la tarea se rechaza antes de gastar un token.
+  3. **Al entregar:** el paso `interfaces` de la esclusa de salida verifica que el diff realmente contenga lo que `expone` prometía.
+
+  Además, `usa` se inyecta en el prompt del agente: "otras tareas exponen esto; úsalo tal cual, no lo redefinas".
+
+  **Límite honesto:** la verificación compara el *nombre* de la firma, no la firma completa. El lenguaje reescribe nombres de parámetros y orden de tipos, así que exigir el texto literal rechazaría implementaciones correctas. Atrapa el fallo real —no implementó la pieza, o la bautizó distinto—, no un cambio de tipos. La verificación por AST es v0.2 (§6.8).
 - **Reglas de dependencia:** dirección permitida entre módulos declarada en config (`api → dominio → datos`); se verifica el grafo de imports del diff.
 
 ### 6.11 Constitución del proyecto

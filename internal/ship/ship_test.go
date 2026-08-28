@@ -152,10 +152,10 @@ func TestRunDryRun(t *testing.T) {
 	if !res.Aprobado {
 		t.Fatalf("dry-run no aprobado: %+v", res.Pasos)
 	}
-	if len(res.Pasos) != 8 {
-		t.Fatalf("pasos = %d, quiero 8", len(res.Pasos))
+	if len(res.Pasos) != 9 {
+		t.Fatalf("pasos = %d, quiero 9", len(res.Pasos))
 	}
-	nombres := []string{"base", "historial", "ruido", "secretos", "presupuesto", "bisectable", "handoff", "pr"}
+	nombres := []string{"base", "historial", "ruido", "secretos", "presupuesto", "interfaces", "bisectable", "handoff", "pr"}
 	for i, n := range nombres {
 		if res.Pasos[i].Nombre != n {
 			t.Errorf("paso %d = %q, quiero %q", i, res.Pasos[i].Nombre, n)

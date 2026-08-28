@@ -167,3 +167,25 @@ func TestGenerarHandoff(t *testing.T) {
 		}
 	}
 }
+
+func TestVerificarExpone(t *testing.T) {
+	diff := `--- a/internal/wol/wol.go
++++ b/internal/wol/wol.go
++func Send(macStr, addr string) error {
++	return nil
++}
+`
+	// el nombre está aunque los parámetros se llamen distinto
+	if faltan := verificarExpone([]string{"wol.Send(mac, addr string) error"}, diff); len(faltan) != 0 {
+		t.Errorf("faltan = %v, la firma sí está entregada", faltan)
+	}
+	// sin firmas declaradas, no hay nada que verificar
+	if faltan := verificarExpone(nil, diff); len(faltan) != 0 {
+		t.Errorf("faltan = %v, quiero vacío", faltan)
+	}
+	// prometida y no entregada
+	faltan := verificarExpone([]string{"POST /wake"}, diff)
+	if len(faltan) != 1 || faltan[0] != "POST /wake" {
+		t.Errorf("faltan = %v, quiero [POST /wake]", faltan)
+	}
+}

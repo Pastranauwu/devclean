@@ -102,6 +102,11 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 		results = append(results, runResult{ID: t.ID, Titulo: t.Titulo, Estado: "rechazada", Motivo: res.PrimerMotivo()})
 	}
 
+	// §6.10: una tarea no puede consumir una firma que nadie promete.
+	// gate.Run no puede verlo: solo recibe las tareas en_curso, y quien
+	// expone suele estar pendiente en la misma corrida.
+	aprobadas, results = rechazarUsaHuerfano(aprobadas, tareas, results)
+
 	if len(aprobadas) == 0 {
 		sortRunResults(results)
 		_ = emitirResultados(results)
@@ -228,6 +233,38 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 		}
 	}
 	return results
+}
+
+// rechazarUsaHuerfano saca las tareas que consumen una firma que ningún
+// contrato del proyecto expone (§6.10). Es un plan incoherente: el
+// agente iba a inventar esa interfaz, y el desajuste recién aparecería
+// al juntar las dos ramas.
+func rechazarUsaHuerfano(aprobadas, todas []task.Task, results []runResult) ([]task.Task, []runResult) {
+	expuestas := map[string]bool{}
+	for _, t := range todas {
+		for _, f := range t.Expone {
+			expuestas[task.NombreDeFirma(f)] = true
+		}
+	}
+
+	var ok []task.Task
+	for _, t := range aprobadas {
+		var huerfanas []string
+		for _, f := range t.Usa {
+			if n := task.NombreDeFirma(f); n != "" && !expuestas[n] {
+				huerfanas = append(huerfanas, f)
+			}
+		}
+		if len(huerfanas) == 0 {
+			ok = append(ok, t)
+			continue
+		}
+		results = append(results, runResult{
+			ID: t.ID, Titulo: t.Titulo, Estado: "rechazada",
+			Motivo: "usa una firma que ninguna tarea expone: " + strings.Join(huerfanas, "; ") + " · agrégala al expone de quien la produce",
+		})
+	}
+	return ok, results
 }
 
 // sembrarVerdesPrevias marca como verdes las dependencias que ya
@@ -460,6 +497,7 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		Base:           base,
 		PatronesPrueba: cfg.PatronesPrueba,
 		Env:            []string{fmt.Sprintf("PORT=%d", r.Puerto)},
+		Interfaces:     t.Usa,
 	})
 	if err != nil {
 		_ = state.Save(root, state.State{ID: t.ID, Estado: state.Detenida, Rama: r.Rama, Puerto: r.Puerto, UltimoError: err.Error()})

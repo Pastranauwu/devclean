@@ -21,7 +21,7 @@ $ devclean run --agentes 3
   T-003  test de regresión acentos    ⏸ detenida · agotó 3 intentos · falla: …
 
 $ devclean ship T-001
-  ✓ base · ✓ historial · ✓ ruido · ✓ secretos · ✓ presupuesto · ✓ bisectable · ✓ handoff · ✓ pr
+  ✓ base · ✓ historial · ✓ ruido · ✓ secretos · ✓ presupuesto · ✓ interfaces · ✓ bisectable · ✓ handoff · ✓ pr
   entregado · https://github.com/tu/repo/pull/142
 ```
 
@@ -62,9 +62,9 @@ en un cuarto aislado, y **la verificación la hace código, nunca el modelo**.
    revierte lo que se salió, ejecuta `listo_cuando` y decide. Verde → entregado;
    rojo → se devuelve el error al agente. Agotados los intentos → se detiene
    con una pregunta concreta, no con un arreglo inventado.
-3. **Esclusa de salida** — ocho pasos deterministas en `ship`: rebase,
+3. **Esclusa de salida** — nueve pasos deterministas en `ship`: rebase,
    historial aplanado, sin ruido, sin secretos, dentro de presupuesto,
-   bisectable, handoff, y recién entonces el PR.
+   interfaces entregadas, bisectable, handoff, y recién entonces el PR.
 
 ## Quién hace qué: plan, tareas y agentes
 
@@ -184,14 +184,21 @@ trabaja en worktrees aislados. No toca tu rama principal hasta `ship`.
    `devclean task add` + `devclean task edit`. La regla de oro: `listo_cuando`
    debe ser un comando que **hoy falla** y que el agente hará pasar.
 
-5. **Acota cada tarea.** `tocar_solo` declara qué rutas puede tocar el
+5. **Declara las interfaces entre tareas.** Las tareas de una misma oleada
+   corren aisladas y **no pueden leerse el código entre sí**. Si una produce
+   algo que otra consume, congela la firma en los dos contratos: `expone` en
+   la que la produce, `usa` en la que la consume, con el mismo texto. El
+   planificador los llena solo; devclean rechaza un `usa` que nadie expone y
+   verifica al entregar que el `expone` esté de verdad en el diff.
+
+6. **Acota cada tarea.** `tocar_solo` declara qué rutas puede tocar el
    agente. Si corres varias tareas a la vez, es obligatorio: sin alcance
    declarado no hay cruce que detectar.
 
-6. **Ejecuta y revisa.** `devclean run --agentes N`, luego `devclean board`,
+7. **Ejecuta y revisa.** `devclean run --agentes N`, luego `devclean board`,
    `devclean logs T-001` y `devclean report`.
 
-7. **Entrega.** `devclean ship T-001 --dry-run` para ver los ocho pasos sin
+8. **Entrega.** `devclean ship T-001 --dry-run` para ver los nueve pasos sin
    publicar; `devclean ship T-001` para abrir el PR (requiere `gh`).
 
 ### El contrato de tarea
@@ -208,6 +215,8 @@ listo_cuando: npm test -- export.spec.ts     # OBLIGATORIO, ejecutable
 tocar_solo: ["src/export/**"]
 no_tocar: ["src/auth/**", "migrations/**"]
 depende_de: ["T-000"]                        # opcional: ids que deben estar verdes antes
+expone: ["wol.Send(mac, addr string) error"] # opcional: firmas que otras tareas consumen
+usa: ["config.Cargar(p string) error"]       # opcional: firmas de otras, copiadas igual
 peso: liviana                                # opcional: liviana | media | pesada
 limite_intentos: 3
 limite_lineas: 200

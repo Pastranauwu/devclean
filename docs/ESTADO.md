@@ -1,8 +1,8 @@
 # Estado del proyecto — traspaso entre sesiones
 
 Última actualización: 27 agosto 2026. Fases 1–5 cerradas. Última release
-publicada: **v0.2.4**, con binarios para las seis plataformas, `install.sh`
-y `checksums.txt`. Falta el tap de Homebrew y toda la Parte B (v0.2).
+publicada: **v0.2.5**, con binarios para las seis plataformas, `install.sh`
+y `checksums.txt`. Falta el tap de Homebrew y el resto de la Parte B (v0.2).
 
 **Orden de lectura para quien llegue nuevo:**
 1. `docs/PRD-devclean.md` — la especificación.
@@ -44,16 +44,17 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
   `cmd/devclean/run.go`; el cuarto no se destruye en `run`, lo libera `ship`.
 
 **Fase 3 — hecha**
-- `internal/ship`: la esclusa de salida (§6.5), ocho pasos en orden. La
+- `internal/ship`: la esclusa de salida (§6.5), nueve pasos en orden. La
   compuerta se frena en el primero que falla y da la razón exacta.
   1. `base` (rebase sobre la rama base, conflicto → abortar),
   2. `historial` (aplanar los `wip:` en un commit Conventional + trailer `Agent:`),
   3. `ruido` (prints de debug, código comentado, temporales),
   4. `secretos` (claves de proveedores, privadas, credenciales en claro),
   5. `presupuesto` (`limite_lineas`, archivos),
-  6. `bisectable` (corre `pruebas` en el commit aplanado),
-  7. `handoff` (qué cambió, qué no, cómo verificar — determinista),
-  8. `pr` (sube la rama, `gh pr create`, libera el cuarto).
+  6. `interfaces` (el diff contiene lo que `expone` prometía, §6.10),
+  7. `bisectable` (corre `pruebas` en el commit aplanado),
+  8. `handoff` (qué cambió, qué no, cómo verificar — determinista),
+  9. `pr` (sube la rama, `gh pr create`, libera el cuarto).
 - `devclean ship <id> [--dry-run]`: exige estado `lista`, corre la esclusa y
   muestra un paso por línea; `--dry-run` hace todo menos abrir el PR. El
   squash produce un solo commit (dentro de los 1–5 del criterio de
@@ -107,8 +108,9 @@ Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
 - **C.5** `init` muestra el comando de pruebas detectado y deja corregirlo;
   `--pruebas` lo fija sin preguntar.
 
-**Parte B** documentada en el PRD (§6.7 a §6.11), sin implementar, más §6.2b y
-el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
+**Parte B** documentada en el PRD (§6.7 a §6.11). Implementados los
+contratos entre tareas de §6.10 (ver abajo); el resto sin empezar. Más
+§6.2b y el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 
 **Fase 5 — lanzamiento**
 - `README.md` con manifiesto, instalación, adopción en proyectos reales,
@@ -117,8 +119,10 @@ el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
 - `scripts/demo.sh` (demo reproducible con agente falso, se autocompila) y
   `docs/demo.tape` para grabar el GIF con `vhs`. **El GIF (`docs/demo.gif`)
   ya está grabado.**
-- Etiquetado y pusheado **`v0.1.0`** (`main` + tag). Falta publicar el release
-  en GitHub (no hay `gh`; se hace desde la web o instalando `gh`).
+- Releases publicadas con `goreleaser` y `gh` (ambos instalados): de
+  `v0.2.0` a `v0.2.5`, cada una con los seis binarios, `checksums.txt` e
+  `install.sh` como asset. `install.sh` ahora también agrega el destino
+  al `PATH` del shell que detecte, en vez de solo avisar.
 
 **Dogfooding en un proyecto real (27 ago 2026)** — se usó devclean para
 construir `wakeup` (servicio Go de wake-on-lan + puente Hue para Alexa)
@@ -162,20 +166,34 @@ en pruebas sintéticas, todas corregidas:
   verificados. `v0.1.0` quedó etiquetada en un commit anterior (sin release).
 - **Tap de Homebrew** pendiente: un repo `homebrew-*` aparte + `goreleaser`
   con `brews`. Se hace tras publicar la release.
-- **Gap real (§6.10, v0.2): dentro de una oleada, las tareas paralelas son
-  ciegas entre sí.** `promptPara` (`internal/loop/loop.go`) le pasa al
-  agente solo su propio contrato: nada de qué interfaces producen o
-  consumen sus hermanas. Entre oleadas no se nota, porque la siguiente
-  arranca desde la rama de integración y el agente *lee* el código ya
-  mergeado — así fue como T-004 de `wakeup` acertó la firma de
-  `wol.Send`. Pero dos tareas de la *misma* oleada no pueden verse: si
-  una produce una interfaz que la otra consume, cada una la inventa por
-  su lado. Eso es exactamente lo que §6.10 llama "contratos entre
-  tareas": congelar la firma en ambos contratos y verificarla contra los
-  dos diffs.
+**Contratos entre tareas (§6.10) — implementado.** Salió de la misma
+sesión: dentro de una oleada las tareas paralelas eran ciegas entre sí.
+`promptPara` le pasaba al agente solo su propio contrato. Entre oleadas
+no se nota (la siguiente arranca desde `_integra` y el agente *lee* el
+código ya mergeado — así acertó T-004 de `wakeup` la firma de
+`wol.Send`), pero dos tareas de la *misma* oleada no pueden verse.
 
-**v0.2:** Parte B entera (examinador ciego, solapamiento funcional, duplicación
-entre ramas, reglas de dependencia, constitución). Ya especificada, sin empezar.
+Campos nuevos `expone` / `usa` con la firma congelada en ambos contratos,
+y tres controles deterministas:
+1. `plan` los llena; el prompt le explica al modelo que las tareas son
+   ciegas entre sí.
+2. `rechazarUsaHuerfano` (`cmd/devclean/run.go`) rechaza un `usa` que
+   ningún contrato expone, antes de gastar un token. Va en `run` y no en
+   `gate.Run` porque este último solo recibe las tareas `en_curso`, y
+   quien expone suele estar `pendiente` en la misma corrida.
+3. Paso `interfaces` en la esclusa de salida: el diff tiene que contener
+   lo que `expone` prometía. **Compara el nombre, no la firma completa**
+   (`task.NombreDeFirma`): el lenguaje reescribe nombres de parámetros y
+   orden de tipos, así que el texto literal rechazaría implementaciones
+   correctas. La esclusa pasó de ocho pasos a nueve.
+
+De paso, `kv.ParseList` no respetaba las comas dentro de comillas, y una
+firma las lleva siempre (`wol.Send(mac, addr string) error`). Ahora sí.
+
+**v0.2:** Parte B, menos los contratos entre tareas de §6.10, que ya están
+hechos: falta el examinador ciego, el solapamiento funcional, la
+duplicación entre ramas, las reglas de dependencia y la constitución.
+Ya especificado, sin empezar.
 
 **Deuda conocida, chica**
 - `internal/executor` aparece en el historial de dos commits (`22a48f8`,
