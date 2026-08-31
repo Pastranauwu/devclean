@@ -417,3 +417,54 @@ proveedores:
 		t.Errorf("ModeloRol(revisor) = %q, quiere vacío", got)
 	}
 }
+
+func TestObtenerAgente(t *testing.T) {
+	cfg := Config{
+		Cli: "claude",
+		Agentes: map[string]Agente{
+			"backend": {Provider: "opencode", Modelo: "glm-5.2", Skills: []string{"custom-backend"}},
+		},
+		Proveedores: map[string]Proveedor{
+			"revisor": {Modelo: "claude-haiku", KeyEnv: "ANTHROPIC_API_KEY"},
+		},
+	}
+
+	// 1. Agente explícito en config gana
+	ag, ok := cfg.ObtenerAgente("backend")
+	if !ok || ag.Provider != "opencode" || len(ag.Skills) != 1 || ag.Skills[0] != "custom-backend" {
+		t.Errorf("backend = %+v, ok = %v", ag, ok)
+	}
+
+	// 2. Arquetipo por defecto (frontend) se resuelve automáticamente
+	front, ok := cfg.ObtenerAgente("frontend")
+	if !ok || front.Provider != "claude" || front.Modelo != "claude-sonnet" || len(front.Skills) == 0 {
+		t.Errorf("frontend = %+v, ok = %v", front, ok)
+	}
+
+	// 3. Arquetipo architect
+	arch, ok := cfg.ObtenerAgente("architect")
+	if !ok || arch.Provider != "claude" || len(arch.Skills) == 0 {
+		t.Errorf("architect = %+v, ok = %v", arch, ok)
+	}
+
+	// 4. Rol en Proveedores
+	rev, ok := cfg.ObtenerAgente("revisor")
+	if !ok || rev.Modelo != "claude-haiku" {
+		t.Errorf("revisor = %+v, ok = %v", rev, ok)
+	}
+
+	// 5. Agente totalmente desconocido
+	_, ok = cfg.ObtenerAgente("agente-fantasma-xyz")
+	if ok {
+		t.Error("agente-fantasma-xyz debió dar ok = false")
+	}
+
+	// 6. TodosLosAgentes incluye arquetipos y personalizaciones
+	todos := cfg.TodosLosAgentes()
+	if todos["backend"].Skills[0] != "custom-backend" {
+		t.Errorf("todos backend no tomó la personalización: %+v", todos["backend"])
+	}
+	if _, ok := todos["frontend"]; !ok {
+		t.Error("todos frontend no está presente")
+	}
+}

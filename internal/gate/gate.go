@@ -313,20 +313,17 @@ func literalHead(p string) string {
 }
 
 // checkAgente verifica que el agente asignado a la tarea (si existe)
-// esté declarado en la configuración (agentes o proveedores).
+// sea conocido (declarado en config.yml o arquetipo predefinido estándar).
 func checkAgente(t task.Task, cfg config.Config) Check {
 	if t.Agente == "" {
 		return Check{"agente conocido", true, ""}
 	}
-	if _, ok := cfg.Agentes[t.Agente]; ok {
-		return Check{"agente conocido", true, ""}
-	}
-	if _, ok := cfg.Proveedores[t.Agente]; ok {
+	if _, ok := cfg.ObtenerAgente(t.Agente); ok {
 		return Check{"agente conocido", true, ""}
 	}
 	return Check{
 		Nombre: "agente conocido",
 		OK:     false,
-		Motivo: fmt.Sprintf("agente desconocido: %s · decláralo en config.yml o usa uno existente", t.Agente),
+		Motivo: fmt.Sprintf("agente desconocido: %s · decláralo en config.yml o usa uno existente (backend, frontend, architect, tester, refactor, ejecutor)", t.Agente),
 	}
 }

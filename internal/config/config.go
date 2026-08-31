@@ -389,3 +389,111 @@ func parseAgentes(data []byte) (map[string]Agente, error) {
 	}
 	return out, nil
 }
+
+// DefaultAgentes devuelve el catálogo de arquetipos predefinidos con modelos y skills listos para usar.
+func DefaultAgentes(cli string) map[string]Agente {
+	provider := cli
+	if provider == "" {
+		provider = "claude"
+	}
+
+	modeloSonnet := "claude-sonnet"
+	modeloHaiku := "claude-haiku"
+	keyEnv := "ANTHROPIC_API_KEY"
+
+	if provider == "opencode" {
+		modeloSonnet = "glm-5.2"
+		modeloHaiku = "glm-4"
+		keyEnv = "OPENCODE_API_KEY"
+	}
+
+	return map[string]Agente{
+		"ejecutor": {
+			Provider: provider,
+			Modelo:   modeloSonnet,
+			KeyEnv:   keyEnv,
+			Skills:   []string{"implementacion", "tdd", "refactor"},
+		},
+		"backend": {
+			Provider: provider,
+			Modelo:   modeloSonnet,
+			KeyEnv:   keyEnv,
+			Skills:   []string{"backend", "api", "database", "sql", "performance"},
+		},
+		"frontend": {
+			Provider: provider,
+			Modelo:   modeloSonnet,
+			KeyEnv:   keyEnv,
+			Skills:   []string{"frontend", "ui", "ux", "components", "css", "state"},
+		},
+		"architect": {
+			Provider: provider,
+			Modelo:   modeloSonnet,
+			KeyEnv:   keyEnv,
+			Skills:   []string{"arquitectura", "diseno", "contratos", "clean-code"},
+		},
+		"tester": {
+			Provider: provider,
+			Modelo:   modeloHaiku,
+			KeyEnv:   keyEnv,
+			Skills:   []string{"testing", "cobertura", "edge-cases", "examinador"},
+		},
+		"refactor": {
+			Provider: provider,
+			Modelo:   modeloSonnet,
+			KeyEnv:   keyEnv,
+			Skills:   []string{"refactoring", "simplificacion", "deuda-tecnica"},
+		},
+	}
+}
+
+// ObtenerAgente resuelve un agente por nombre buscando primero en la configuración
+// personalizada del usuario (c.Agentes), luego en los arquetipos predefinidos (DefaultAgentes)
+// y finalmente en c.Proveedores.
+func (c Config) ObtenerAgente(nombre string) (Agente, bool) {
+	if nombre == "" {
+		nombre = "ejecutor"
+	}
+
+	// 1. Configuración explícita del usuario
+	if ag, ok := c.Agentes[nombre]; ok {
+		if ag.Provider == "" {
+			ag.Provider = c.Cli
+		}
+		if ag.Provider == "" {
+			ag.Provider = "claude"
+		}
+		return ag, true
+	}
+
+	// 2. Arquetipos predefinidos estándar
+	defaults := DefaultAgentes(c.Cli)
+	if ag, ok := defaults[nombre]; ok {
+		return ag, true
+	}
+
+	// 3. Bloque proveedores clásico
+	if p, ok := c.Proveedores[nombre]; ok {
+		provider := c.Cli
+		if provider == "" {
+			provider = "claude"
+		}
+		return Agente{
+			Provider: provider,
+			Modelo:   p.Modelo,
+			KeyEnv:   p.KeyEnv,
+		}, true
+	}
+
+	return Agente{}, false
+}
+
+// TodosLosAgentes devuelve el mapa completo de agentes disponibles, fusionando
+// los arquetipos por defecto con las personalizaciones del usuario.
+func (c Config) TodosLosAgentes() map[string]Agente {
+	res := DefaultAgentes(c.Cli)
+	for k, v := range c.Agentes {
+		res[k] = v
+	}
+	return res
+}

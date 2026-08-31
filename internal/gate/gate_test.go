@@ -336,15 +336,21 @@ func TestGateAgenteValidoEInvalido(t *testing.T) {
 		t.Errorf("tarea con agente en proveedores rechazada: %s", res.PrimerMotivo())
 	}
 
-	// 4. Con agente inexistente -> rechazada
+	// 4. Con arquetipo por defecto (backend, frontend) sin configurar en config.yml -> pasa
+	tareaBackend := tareaValida()
+	tareaBackend.Agente = "backend"
+	if res := Run(context.Background(), t.TempDir(), config.Config{}, tareaBackend, nil, DefaultTimeout); !res.Aprobada {
+		t.Errorf("tarea con arquetipo backend rechazada: %s", res.PrimerMotivo())
+	}
+
+	// 5. Con agente inexistente -> rechazada
 	tareaDesconocido := tareaValida()
 	tareaDesconocido.Agente = "no-existe"
 	res := Run(context.Background(), t.TempDir(), cfg, tareaDesconocido, nil, DefaultTimeout)
 	if res.Aprobada {
 		t.Fatal("tarea con agente desconocido aprobada")
 	}
-	want := "agente desconocido: no-existe · decláralo en config.yml o usa uno existente"
-	if res.PrimerMotivo() != want {
-		t.Errorf("motivo = %q, quiere %q", res.PrimerMotivo(), want)
+	if !strings.Contains(res.PrimerMotivo(), "agente desconocido: no-existe") {
+		t.Errorf("motivo = %q, quiere que contenga 'agente desconocido: no-existe'", res.PrimerMotivo())
 	}
 }
