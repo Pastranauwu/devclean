@@ -21,7 +21,7 @@ $ devclean run --agentes 3
   T-003  test de regresión acentos    ⏸ detenida · agotó 3 intentos · falla: …
 
 $ devclean ship T-001
-  ✓ base · ✓ historial · ✓ ruido · ✓ secretos · ✓ presupuesto · ✓ interfaces · ✓ bisectable · ✓ handoff · ✓ pr
+  ✓ base · ✓ historial · ✓ ruido · ✓ secretos · ✓ presupuesto · ✓ interfaces · ✓ dependencias · ✓ bisectable · ✓ suite_oculta · ✓ handoff · ✓ pr
   entregado · https://github.com/tu/repo/pull/142
 ```
 
@@ -51,20 +51,42 @@ las soluciones que no encajan.
 
 ## Cómo lo resuelve
 
-Dos esclusas y un contrato. Antes de gastar un token, la tarea se define con
-un comando ejecutable que dice "ya está" (`listo_cuando`). El agente trabaja
-en un cuarto aislado, y **la verificación la hace código, nunca el modelo**.
+Dos esclusas, un contrato y un examinador que no ve tu código. Antes de gastar
+un token, la tarea se define con un comando ejecutable que dice "ya está"
+(`listo_cuando`). El agente trabaja en un cuarto aislado, y **la verificación
+la hace código, nunca el modelo**.
 
 1. **Esclusa de entrada** — `listo_cuando` debe existir, fallar hoy y no
    pisar el alcance de otra tarea. Una tarea mal definida se rechaza con un
-   motivo legible, antes de gastar un solo token.
+   motivo legible, antes de gastar un solo token. Si el modelo metió una ruta
+   vedada (`go.sum`, `*_test.go`…) en `tocar_solo`, se recorta con aviso antes
+   de escribir el contrato y no hay callejón sin salida.
 2. **Bucle de intentos** — el agente edita dentro de su alcance; devclean
    revierte lo que se salió, ejecuta `listo_cuando` y decide. Verde → entregado;
    rojo → se devuelve el error al agente. Agotados los intentos → se detiene
-   con una pregunta concreta, no con un arreglo inventado.
-3. **Esclusa de salida** — nueve pasos deterministas en `ship`: rebase,
+   con una pregunta concreta, no con un arreglo inventado. Antes del primer
+   intento, un **examinador ciego** (§6.8) genera la suite de pruebas contra la
+   frontera pública (`expone`) — 70% visible para el implementador, 30% sellada
+   con hash — sin ver el cuerpo de las funciones. Si la tarea no declara
+   `expone`, no hay examen: no hay frontera que probar.
+3. **Esclusa de salida** — hasta once pasos deterministas en `ship`: rebase,
    historial aplanado, sin ruido, sin secretos, dentro de presupuesto,
-   interfaces entregadas, bisectable, handoff, y recién entonces el PR.
+   interfaces entregadas, dependencias dentro de las reglas, bisectable,
+   suite oculta superada, handoff, y recién entonces el PR. Nueve pasos son
+   fijos; `dependencias` corre solo si hay `reglas_import` en la config y
+   `suite_oculta` solo si el examinador selló pruebas. Cualquiera que falle
+   frena la compuerta con la razón exacta.
+
+Arriba del bucle, dos radares sin tokens:
+- **Solapamiento activo** (§6.9): `git merge-tree` + símbolos exportados en
+  común entre cada par de ramas de la misma oleada. Alerta antes de juntar.
+- **Parte de datos** (§6.7): `devclean standup` deriva COLISIÓN (símbolos
+  compartidos) y ATASCO (>10 min sin progreso en conteo de tests) de
+  `attempts.jsonl`. No hay reuniones entre agentes; todo se mide del artefacto.
+
+Una **constitución** (`.devclean/constitution.md`, §6.11) inyectada en cada
+prompt evita que dos tareas paralelas elijan arquitecturas incompatibles.
+Se genera una vez con `devclean constitution` y se versiona en git.
 
 ## Quién hace qué: plan, tareas y agentes
 
@@ -150,6 +172,9 @@ falta (git, un CLI de agente, una API key) antes de que intentes usarlo.
 # 1. dentro de un repo git con al menos un commit
 devclean init
 
+# 1b. opcional pero recomendado: fija las convenciones del proyecto
+devclean constitution
+
 # 2. convierte una petición en tareas (el planificador usa un modelo)
 devclean plan "exportar clientes a CSV y arreglar el login con tildes"
 
@@ -157,12 +182,15 @@ devclean plan "exportar clientes a CSV y arreglar el login con tildes"
 devclean run --agentes 3
 
 # 4. revisa y entrega
-devclean board
-devclean ship T-001
+devclean board       # tablero
+devclean standup     # parte de datos: colisiones y atascos
+devclean ship T-001  # esclusa de salida + PR
 ```
 
 `init` detecta la rama base y el comando de pruebas; si se equivoca, corrígelo
 con `devclean init --pruebas "mi comando"` o editando `.devclean/config.yml`.
+En un repo vacío (`greenfield`) `plan` te pregunta stack y requisitos antes de
+generar.
 
 ## Adoptarlo en un proyecto real
 
@@ -176,30 +204,39 @@ trabaja en worktrees aislados. No toca tu rama principal hasta `ship`.
 2. **Inicializa.** `devclean init` detecta la rama base y el comando de
    pruebas. Si tu comando no se detecta, pásalo con `--pruebas`.
 
-3. **Delimita lo que nadie debe tocar.** En `.devclean/config.yml`, revisa
-   `zonas_prohibidas` (lockfiles, migraciones, CI, changelog). Por defecto ya
-   están los sospechosos habituales.
+3. **Fija la constitución.** `devclean constitution` genera
+   `.devclean/constitution.md` (capas, convenciones, patrones prohibidos).
+   Versiona el archivo. Todos los agentes la reciben en cada prompt.
 
-4. **Define el trabajo.** Con `devclean plan` (modelo) o a mano con
+4. **Delimita lo que nadie debe tocar.** En `.devclean/config.yml`, revisa
+   `zonas_prohibidas` (lockfiles, migraciones, CI, changelog) y
+   `reglas_import` (ej. `api → dominio → datos`). Por defecto ya están los
+   sospechosos habituales.
+
+5. **Define el trabajo.** Con `devclean plan` (modelo) o a mano con
    `devclean task add` + `devclean task edit`. La regla de oro: `listo_cuando`
-   debe ser un comando que **hoy falla** y que el agente hará pasar.
+   debe ser un comando que **hoy falla** y que el agente hará pasar. En
+   `greenfield`, `plan` también limpia automáticamente cualquier ruta vedada
+   que el modelo haya metido en `tocar_solo`.
 
-5. **Declara las interfaces entre tareas.** Las tareas de una misma oleada
+6. **Declara las interfaces entre tareas.** Las tareas de una misma oleada
    corren aisladas y **no pueden leerse el código entre sí**. Si una produce
    algo que otra consume, congela la firma en los dos contratos: `expone` en
    la que la produce, `usa` en la que la consume, con el mismo texto. El
    planificador los llena solo; devclean rechaza un `usa` que nadie expone y
    verifica al entregar que el `expone` esté de verdad en el diff.
 
-6. **Acota cada tarea.** `tocar_solo` declara qué rutas puede tocar el
+7. **Acota cada tarea.** `tocar_solo` declara qué rutas puede tocar el
    agente. Si corres varias tareas a la vez, es obligatorio: sin alcance
    declarado no hay cruce que detectar.
 
-7. **Ejecuta y revisa.** `devclean run --agentes N`, luego `devclean board`,
-   `devclean logs T-001` y `devclean report`.
+8. **Ejecuta y revisa.** `devclean run --agentes N`, luego `devclean board`,
+   `devclean standup`, `devclean logs T-001` y `devclean report`. Si ves
+   `⚠ SOLAPAMIENTO` durante `run`, dos ramas tocan el mismo símbolo o archivo.
 
-8. **Entrega.** `devclean ship T-001 --dry-run` para ver los nueve pasos sin
-   publicar; `devclean ship T-001` para abrir el PR (requiere `gh`).
+9. **Entrega.** `devclean ship T-001 --dry-run` para ver la esclusa sin
+   publicar; `devclean ship T-001` para abrir el PR (requiere `gh`). La suite
+   oculta del examinador, si existe, se verifica acá y se quema al usarse.
 
 ### El contrato de tarea
 
@@ -224,6 +261,8 @@ riesgos: archivos grandes pueden agotar memoria
 ---
 ```
 
+Notas libres opcionales debajo del segundo `---`.
+
 ### Configuración
 
 `.devclean/config.yml`:
@@ -243,6 +282,7 @@ modelos:                        # modelo por peso de tarea (Fase 3)
   liviana: glm-4
   media: glm-5.2
   pesada: claude-sonnet
+reglas_import: ["api → dominio → datos"]  # opcional: verifica grafo de imports en ship
 ```
 
 Sin `cli`, devclean usa el primer CLI que encuentre instalado. Fíjalo
@@ -260,19 +300,22 @@ devclean run --ejecutor claude
 | Comando | Qué hace |
 |---|---|
 | `devclean init` | detecta repo, rama base y comando de pruebas; crea `.devclean/` |
+| `devclean constitution [--forzar]` | genera `.devclean/constitution.md` con un modelo (§6.11) |
 | `devclean plan "<texto>"` | convierte lenguaje natural en contratos de tarea |
 | `devclean task add\|edit\|rm\|list` | manejo manual de tareas |
 | `devclean check <id>` | corre la esclusa de entrada sobre una tarea |
-| `devclean run [--agentes N]` | ejecuta las tareas pendientes en paralelo |
+| `devclean run [--agentes N]` | ejecuta las tareas pendientes en paralelo (detecta solapamiento) |
 | `devclean board` | tablero de estado |
-| `devclean ship <id>` | esclusa de salida y PR |
+| `devclean standup` | parte de datos: COLISIÓN y ATASCO sin gastar tokens (§6.7) |
+| `devclean ship <id>` | esclusa de salida (hasta 11 pasos) y PR |
 | `devclean logs <id>` | detalle interno de una tarea |
 | `devclean report` | métricas del proyecto |
 | `devclean doctor` | verifica configuración, keys, permisos y git |
 
 Todos aceptan `--plain` (una línea por evento, para CI) y `--json` (salida
 estructurada). Sin flags, en terminal, algunos comandos usan la interfaz
-interactiva.
+interactiva. `run` recupera automáticamente cuartos huérfanos si
+`.devclean/rooms/` fue borrado (p. ej. `git clean -fdx`).
 
 ## Métricas
 
@@ -285,10 +328,13 @@ interactiva.
 | Roce | conflictos de merge por cada 10 entregas | < 1 |
 | Fricción | minutos entre PR abierto y aprobado | bajar |
 | Rechazo en entrada | % de tareas rechazadas por mala definición | visible |
+| Brecha (§6.8) | % suite visible − % suite oculta | cercana a 0 |
 
 Cada métrica muestra su flecha de tendencia frente a la corrida anterior
 (↑ subió, ↓ bajó, · sin cambio). El historial vive en
-`.devclean/historial.jsonl`. Cada tarea guarda su costo en tokens.
+`.devclean/historial.jsonl`. Cada tarea guarda su costo en tokens. La
+**brecha** solo aparece cuando el examinador selló una suite oculta; si la
+suite oculta falló, la entrega guarda la brecha igualmente para el reporte.
 
 ## Seguridad
 
@@ -310,11 +356,45 @@ evidencia:
 - El debate multi-agente es una martingala: no aporta ganancia esperada
   sobre el voto independiente.
 
+`devclean standup` y el chequeo de solapamiento de `run` reemplazan ese
+debate con dos detectores deterministas que cuestan cero tokens.
+
 ## Estado
 
-**v0.1 (MVP).** Lo de arriba funciona de punta a punta. Queda pendiente para
-v0.2: examinador ciego y suite oculta, detección de solapamiento funcional,
-duplicación entre ramas, reglas de dependencia y constitución del proyecto.
+**v0.3.x (Parte B completa).** El MVP (v0.1) más todo lo de v0.2 ya está
+implementado y verificado en `main`:
+
+- **v0.3.2** publicada en GitHub con binarios estáticos (linux/darwin/windows
+  × amd64/arm64), `checksums.txt` e `install.sh` como asset. `v0.2` y `v0.3`
+  anteriores también publicadas. Instalación con una línea vía `curl` o con
+  `go install` verificada.
+- **Esclusa de entrada blindada:** `plan` ya no genera contratos que la
+  propia esclusa rechaza. `sanearAlcance` recorta rutas vedadas de
+  `tocar_solo` con aviso; el prompt del planificador recibe la lista de
+  vedadas. `gate.AlcanceProhibido` compartida.
+- **Cuartos huérfanos recuperados:** `room.Create`/`Destroy` limpian ramas y
+  worktrees huérfanos si `.devclean/rooms/` fue borrado (queda gitignored).
+  Verifica la rama con `rev-parse`, sin depender del idioma de git.
+- **Contratos entre tareas (§6.10):** `expone`/`usa` congelados y verificados
+  en `plan` → `run` (rechaza `usa` huérfano) → `ship` (paso `interfaces`) +
+  `reglas_import` en `ship` (paso `dependencias`).
+- **Examinador ciego y suite oculta (§6.8):** `internal/examiner` genera
+  `devclean_visible_test.go` (70%) y sella `devclean_hidden_test.go` (30%)
+  con `internal/sealed`; `ship` lo verifica y lo quema (paso
+  `suite_oculta`). Declara `imports` por suite, filtra `imported and not
+  used`, chequea sintaxis con `go/parser` y se salta si `expone` está vacío
+  (sin frontera no hay examen; evita falsos solapamientos).
+- **Solapamiento activo (§6.9):** `internal/overlap` — `git merge-tree` +
+  símbolos exportados de `attempts.jsonl` — corre en cada oleada de `run`.
+- **Parte de datos (§6.7):** `devclean standup` + `internal/standup` —
+  COLISIÓN y ATASCO derivados de `attempts.jsonl`, cero tokens.
+- **Constitución (§6.11):** `devclean constitution` + `internal/constitution`
+  — se genera con el modelo, se guarda en `.devclean/constitution.md` y se
+  inyecta en el prompt del planificador y de cada agente.
+
+**Pendiente real:** duplicación entre ramas, solapamiento funcional completo
+(merge en seco + correr suites) y mutation testing del examinador. Todo lo
+demás del PRD ya está en `main` con pruebas verdes.
 
 > El GIF (`docs/demo.gif`) se graba con `vhs docs/demo.tape`; el tape usa
 > `scripts/demo-env.sh` (agente falso para no gastar tokens) y muestra la TUI.
@@ -322,8 +402,9 @@ duplicación entre ramas, reglas de dependencia y constitución del proyecto.
 ## Límite honesto
 
 devclean sirve para lo que tiene oráculo: un comando que decide verde o rojo.
-No verifica interfaz gráfica, comportamiento visual ni criterios difusos.
-Prometer más quema el proyecto.
+No verifica interfaz gráfica, comportamiento visual ni criterios difusos. El
+examinador ciego es de caja negra sobre la interfaz pública; sin expone no
+hay prueba. Prometer más quema el proyecto.
 
 ## Licencia
 
