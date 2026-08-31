@@ -66,30 +66,37 @@ func newTaskAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			dir := config.TasksDir(root)
-			id, err := task.NextID(dir)
-			if err != nil {
-				return err
-			}
-			t := task.Task{
-				Version:        task.Version,
-				ID:             id,
-				Titulo:         titulo,
-				TocarSolo:      []string{},
-				NoTocar:        []string{},
-				LimiteIntentos: task.DefaultLimiteIntentos,
-				LimiteLineas:   task.DefaultLimiteLineas,
-			}
-			if err := task.Save(dir, t); err != nil {
-				return err
-			}
-			if err := out.Data(t); err != nil {
-				return err
-			}
-			out.Line("✓ %s creada · completa listo_cuando con devclean task edit %s", id, id)
-			return nil
+			return runTaskAdd(root, titulo)
 		},
 	}
+}
+
+func runTaskAdd(root, titulo string) error {
+	dir := config.TasksDir(root)
+	id, err := task.NextID(dir)
+	if err != nil {
+		return err
+	}
+	stack := config.DetectLanguage(root)
+	t := task.Task{
+		Version:        task.Version,
+		ID:             id,
+		Titulo:         titulo,
+		TocarSolo:      []string{},
+		NoTocar:        []string{},
+		LimiteIntentos: task.DefaultLimiteIntentos,
+		LimiteLineas:   task.DefaultLimiteLineas,
+		Notas:          notasListoCuando(stack),
+	}
+	if err := task.Save(dir, t); err != nil {
+		return err
+	}
+	if err := out.Data(t); err != nil {
+		return err
+	}
+	out.Line("✓ %s creada · completa listo_cuando con devclean task edit %s", id, id)
+	imprimirPlantillasListoCuando(stack)
+	return nil
 }
 
 func newTaskEditCmd() *cobra.Command {
