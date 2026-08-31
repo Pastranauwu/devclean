@@ -25,11 +25,18 @@ var DefaultSpecNames = []string{
 	".devclean/spec.yaml",
 }
 
+// Limites define límites por defecto para todas las tareas de una especificación.
+type Limites struct {
+	Intentos int `json:"intentos,omitempty"`
+	Lineas   int `json:"lineas,omitempty"`
+}
+
 // Spec es la especificación declarativa de una feature o conjunto de tareas.
 type Spec struct {
 	Version int         `json:"version"`
 	Feature string      `json:"feature"`
 	Agente  string      `json:"agente,omitempty"`
+	Limites Limites     `json:"limites,omitempty"`
 	Reglas  []string    `json:"reglas,omitempty"`
 	Tasks   []task.Task `json:"tasks"`
 }
@@ -101,6 +108,37 @@ func Parse(data []byte) (Spec, error) {
 			s.Feature = kv.Unquote(v)
 		case "agente":
 			s.Agente = kv.Unquote(v)
+		case "limite_intentos":
+			n, err := kv.ParseInt(v)
+			if err != nil {
+				return s, fmt.Errorf("línea %d: %w", i+1, err)
+			}
+			s.Limites.Intentos = n
+		case "limite_lineas":
+			n, err := kv.ParseInt(v)
+			if err != nil {
+				return s, fmt.Errorf("línea %d: %w", i+1, err)
+			}
+			s.Limites.Lineas = n
+		case "limites":
+			if v != "" {
+				m, err := kv.ParseInlineMap(v)
+				if err != nil {
+					return s, fmt.Errorf("línea %d: %w", i+1, err)
+				}
+				if val, ok := m["intentos"]; ok {
+					if n, err := kv.ParseInt(val); err == nil {
+						s.Limites.Intentos = n
+					}
+				}
+				if val, ok := m["lineas"]; ok {
+					if n, err := kv.ParseInt(val); err == nil {
+						s.Limites.Lineas = n
+					}
+				}
+			} else {
+				inBlock = "limites"
+			}
 		case "reglas":
 			if v != "" {
 				r, err := kv.ParseList(v)
@@ -124,7 +162,16 @@ func Parse(data []byte) (Spec, error) {
 		}
 	}
 
-	// 2. Aplicar defaults y agente por defecto a las tareas
+	// 2. Aplicar defaults y límites por defecto a las tareas
+	defIntentos := task.DefaultLimiteIntentos
+	if s.Limites.Intentos > 0 {
+		defIntentos = s.Limites.Intentos
+	}
+	defLineas := task.DefaultLimiteLineas
+	if s.Limites.Lineas > 0 {
+		defLineas = s.Limites.Lineas
+	}
+
 	for i := range s.Tasks {
 		if s.Tasks[i].Version == 0 {
 			s.Tasks[i].Version = task.Version
@@ -133,10 +180,10 @@ func Parse(data []byte) (Spec, error) {
 			s.Tasks[i].Agente = s.Agente
 		}
 		if s.Tasks[i].LimiteIntentos == 0 {
-			s.Tasks[i].LimiteIntentos = task.DefaultLimiteIntentos
+			s.Tasks[i].LimiteIntentos = defIntentos
 		}
 		if s.Tasks[i].LimiteLineas == 0 {
-			s.Tasks[i].LimiteLineas = task.DefaultLimiteLineas
+			s.Tasks[i].LimiteLineas = defLineas
 		}
 	}
 
@@ -145,6 +192,29 @@ func Parse(data []byte) (Spec, error) {
 
 func processBlock(s *Spec, blockName string, lines []string, offset int) error {
 	switch blockName {
+	case "limites":
+		pairs, err := kv.Pairs(lines, offset-len(lines))
+		if err != nil {
+			return err
+		}
+		for _, p := range pairs {
+			switch p.Key {
+			case "intentos", "limite_intentos":
+				n, err := kv.ParseInt(p.Value)
+				if err != nil {
+					return fmt.Errorf("línea %d: %w", p.Line, err)
+				}
+				s.Limites.Intentos = n
+			case "lineas", "limite_lineas":
+				n, err := kv.ParseInt(p.Value)
+				if err != nil {
+					return fmt.Errorf("línea %d: %w", p.Line, err)
+				}
+				s.Limites.Lineas = n
+			default:
+				return fmt.Errorf("línea %d: campo desconocido en limites: %s", p.Line, p.Key)
+			}
+		}
 	case "reglas":
 		for i, raw := range lines {
 			trimmed := strings.TrimSpace(kv.StripComment(raw))
@@ -207,8 +277,6 @@ func parseTaskList(lines []string, startLine int) ([]task.Task, error) {
 func parseTaskChunk(chunk []string, lineNum int) (task.Task, error) {
 	var t task.Task
 	t.Version = task.Version
-	t.LimiteIntentos = task.DefaultLimiteIntentos
-	t.LimiteLineas = task.DefaultLimiteLineas
 
 	firstLine := strings.TrimSpace(kv.StripComment(chunk[0]))
 	contentFirst := strings.TrimSpace(strings.TrimPrefix(firstLine, "-"))
@@ -286,8 +354,6 @@ func parseTaskChunk(chunk []string, lineNum int) (task.Task, error) {
 func buildTaskFromMap(m map[string]string, lineNum int) (task.Task, error) {
 	var t task.Task
 	t.Version = task.Version
-	t.LimiteIntentos = task.DefaultLimiteIntentos
-	t.LimiteLineas = task.DefaultLimiteLineas
 
 	var err error
 	for k, v := range m {
@@ -375,6 +441,15 @@ func Apply(tasksDir string, s Spec, dryRun bool) ([]task.Task, error) {
 		return nil, err
 	}
 
+	defIntentos := task.DefaultLimiteIntentos
+	if s.Limites.Intentos > 0 {
+		defIntentos = s.Limites.Intentos
+	}
+	defLineas := task.DefaultLimiteLineas
+	if s.Limites.Lineas > 0 {
+		defLineas = s.Limites.Lineas
+	}
+
 	// Aplicar defaults y agente por defecto si no vienen
 	for i := range tasksWithIDs {
 		if tasksWithIDs[i].Version == 0 {
@@ -384,10 +459,10 @@ func Apply(tasksDir string, s Spec, dryRun bool) ([]task.Task, error) {
 			tasksWithIDs[i].Agente = s.Agente
 		}
 		if tasksWithIDs[i].LimiteIntentos == 0 {
-			tasksWithIDs[i].LimiteIntentos = task.DefaultLimiteIntentos
+			tasksWithIDs[i].LimiteIntentos = defIntentos
 		}
 		if tasksWithIDs[i].LimiteLineas == 0 {
-			tasksWithIDs[i].LimiteLineas = task.DefaultLimiteLineas
+			tasksWithIDs[i].LimiteLineas = defLineas
 		}
 	}
 
@@ -428,6 +503,15 @@ func Marshal(s Spec) []byte {
 	}
 	if s.Agente != "" {
 		fmt.Fprintf(&b, "agente: %s\n", s.Agente)
+	}
+	if s.Limites.Intentos > 0 || s.Limites.Lineas > 0 {
+		b.WriteString("limites:\n")
+		if s.Limites.Intentos > 0 {
+			fmt.Fprintf(&b, "  intentos: %d\n", s.Limites.Intentos)
+		}
+		if s.Limites.Lineas > 0 {
+			fmt.Fprintf(&b, "  lineas: %d\n", s.Limites.Lineas)
+		}
 	}
 	if len(s.Reglas) > 0 {
 		b.WriteString("reglas:\n")
