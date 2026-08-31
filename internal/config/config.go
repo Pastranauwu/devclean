@@ -33,6 +33,7 @@ type Config struct {
 	TimeoutEsclusa  int                  `json:"timeout_esclusa"` // segundos para el chequeo "falla hoy"
 	PatronesPrueba  []string             `json:"patrones_prueba"` // rutas que ninguna tarea puede editar
 	Proveedores     map[string]Proveedor `json:"proveedores,omitempty"`
+	Agentes         map[string]Agente    `json:"agentes,omitempty"`
 	Estrategia      string               `json:"estrategia,omitempty"` // ligera | equilibrada | pesada
 	Modelos         map[string]string    `json:"modelos,omitempty"`    // peso -> modelo (liviana/media/pesada)
 	// ReglasImport declara la dirección permitida entre módulos (§6.10):
@@ -47,6 +48,15 @@ type Config struct {
 type Proveedor struct {
 	Modelo string `json:"modelo"`
 	KeyEnv string `json:"key_env"`
+}
+
+// Agente es un agente del motor (§8.1 / Fase 1): qué proveedor usa, qué
+// modelo, variable de entorno para su API key y habilidades asociadas.
+type Agente struct {
+	Provider string   `json:"provider"`
+	Modelo   string   `json:"model"`
+	KeyEnv   string   `json:"key_env,omitempty"`
+	Skills   []string `json:"skills,omitempty"`
 }
 
 // DefaultForbiddenZones implements §6.3: lockfiles, migrations, CI and
@@ -130,6 +140,26 @@ func (c Config) Save(root string) error {
 			fmt.Fprintf(&b, "  %s: { modelo: %s, key_env: %s }\n", rol, kv.Quote(p.Modelo), kv.Quote(p.KeyEnv))
 		}
 	}
+	if len(c.Agentes) > 0 {
+		fmt.Fprintf(&b, "agentes:\n")
+		for _, nombre := range sortedAgentNames(c.Agentes) {
+			a := c.Agentes[nombre]
+			var parts []string
+			if a.Provider != "" {
+				parts = append(parts, fmt.Sprintf("provider: %s", kv.Quote(a.Provider)))
+			}
+			if a.Modelo != "" {
+				parts = append(parts, fmt.Sprintf("model: %s", kv.Quote(a.Modelo)))
+			}
+			if a.KeyEnv != "" {
+				parts = append(parts, fmt.Sprintf("key_env: %s", kv.Quote(a.KeyEnv)))
+			}
+			if len(a.Skills) > 0 {
+				parts = append(parts, fmt.Sprintf("skills: %s", kv.MarshalList(a.Skills)))
+			}
+			fmt.Fprintf(&b, "  %s: { %s }\n", nombre, strings.Join(parts, ", "))
+		}
+	}
 	if c.Estrategia != "" {
 		fmt.Fprintf(&b, "estrategia: %s\n", c.Estrategia)
 	}
@@ -166,9 +196,24 @@ func sortedRoles(m map[string]Proveedor) []string {
 	return roles
 }
 
+// sortedAgentNames devuelve los nombres de agentes en orden estable para Save.
+func sortedAgentNames(m map[string]Agente) []string {
+	names := make([]string, 0, len(m))
+	for n := range m {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // ModeloRol devuelve el modelo declarado para un rol (planificador,
-// ejecutor, revisor) en la configuración, o "" si no está.
+// ejecutor, revisor) en la configuración, o "" si no está. Si existe un
+// agente con ese nombre en `agentes:`, su modelo tiene prioridad sobre
+// `proveedores:`.
 func ModeloRol(c Config, rol string) string {
+	if a, ok := c.Agentes[rol]; ok && a.Modelo != "" {
+		return a.Modelo
+	}
 	if c.Proveedores == nil {
 		return ""
 	}
@@ -247,6 +292,12 @@ func Parse(data []byte) (Config, error) {
 	}
 	cfg.Proveedores = proveedores
 
+	agentes, err := parseAgentes(data)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Agentes = agentes
+
 	modelos, err := parseModelos(data)
 	if err != nil {
 		return cfg, err
@@ -289,6 +340,52 @@ func parseProveedores(data []byte) (map[string]Proveedor, error) {
 			return nil, fmt.Errorf("config.yml: línea %d · %s", c.Line, err)
 		}
 		out[c.Key] = Proveedor{Modelo: fields["modelo"], KeyEnv: fields["key_env"]}
+	}
+	return out, nil
+}
+
+// parseAgentes lee el bloque anidado `agentes:` (Fase 1), con un agente
+// por línea: `architect: { provider: claude, model: claude-sonnet, skills: ["diseno"] }`.
+func parseAgentes(data []byte) (map[string]Agente, error) {
+	children, err := kv.Nested(strings.Split(string(data), "\n"), "agentes", 1)
+	if err != nil {
+		return nil, fmt.Errorf("config.yml: %s", err)
+	}
+	if len(children) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]Agente, len(children))
+	for _, c := range children {
+		fields, err := kv.ParseInlineMap(c.Value)
+		if err != nil {
+			return nil, fmt.Errorf("config.yml: línea %d · %s", c.Line, err)
+		}
+		provider := fields["provider"]
+		if provider == "" {
+			provider = fields["proveedor"]
+		}
+		if provider != "claude" && provider != "opencode" {
+			return nil, fmt.Errorf("config.yml: línea %d · provider desconocido: %s · usa claude u opencode", c.Line, provider)
+		}
+
+		modelo := fields["model"]
+		if modelo == "" {
+			modelo = fields["modelo"]
+		}
+
+		agente := Agente{
+			Provider: provider,
+			Modelo:   modelo,
+			KeyEnv:   fields["key_env"],
+		}
+		if rawSkills, ok := fields["skills"]; ok && rawSkills != "" {
+			skills, err := kv.ParseList(rawSkills)
+			if err != nil {
+				return nil, fmt.Errorf("config.yml: línea %d · %s", c.Line, err)
+			}
+			agente.Skills = skills
+		}
+		out[c.Key] = agente
 	}
 	return out, nil
 }

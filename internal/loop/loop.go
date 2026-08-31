@@ -78,6 +78,9 @@ type Options struct {
 	// ya cargado por quien llama. Si está vacío, no se inyecta nada.
 	Constitucion string
 
+	// Skills son las habilidades del rol asignado (§8.1 / Fase 1).
+	Skills []string
+
 	// Examinador, si no es nil, se invoca una vez antes del bucle del
 	// implementador para escribir la suite visible y sellar la oculta
 	// (§6.8). Si falla, el bucle continúa sin pruebas ciegas.
@@ -144,7 +147,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 
 		req := Request{
 			RoomPath:     o.Room.Path,
-			Prompt:       promptPara(o.Task, o.Interfaces, o.Constitucion, prevErr),
+			Prompt:       promptPara(o.Task, o.Interfaces, o.Constitucion, o.Skills, prevErr),
 			AllowedGlobs: o.Task.TocarSolo,
 			Model:        o.Model,
 			Timeout:      o.AgentTimeout,
@@ -302,10 +305,13 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration) (
 
 // promptPara arma el prompt de un intento: el contrato y, si lo hay, la
 // salida del intento anterior. El agente nunca decide si terminó.
-func promptPara(t task.Task, interfaces []string, constitucion, prevErr string) string {
+func promptPara(t task.Task, interfaces []string, constitucion string, skills []string, prevErr string) string {
 	var b strings.Builder
 	if constitucion != "" {
 		fmt.Fprintf(&b, "Constitución del proyecto (convenciones que todos los agentes deben seguir):\n%s\n\n", constitucion)
+	}
+	if len(skills) > 0 {
+		fmt.Fprintf(&b, "Habilidades de este rol: %s\n\n", strings.Join(skills, ", "))
 	}
 	fmt.Fprintf(&b, "Tarea %s: %s\n", t.ID, t.Titulo)
 	if t.Porque != "" {

@@ -84,6 +84,11 @@ func runDoctor() error {
 			keys = append(keys, p.KeyEnv)
 		}
 	}
+	for _, a := range cfg.Agentes {
+		if a.KeyEnv != "" {
+			keys = append(keys, a.KeyEnv)
+		}
+	}
 	var presentes []string
 	for _, k := range keys {
 		if os.Getenv(k) != "" {

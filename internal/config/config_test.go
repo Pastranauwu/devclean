@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -271,5 +272,148 @@ func TestModeloPeso(t *testing.T) {
 	}
 	if got := (Config{}).ModeloPeso("media"); got != "" {
 		t.Errorf("ModeloPeso sin config = %q, quiere vacío", got)
+	}
+}
+
+func TestParseAgentes(t *testing.T) {
+	data := []byte(`
+base: main
+agentes:
+  architect:   { provider: claude, model: claude-sonnet, key_env: ANTHROPIC_API_KEY, skills: ["diseno", "arquitectura"] }
+  implementer: { provider: opencode, model: glm-5.2, key_env: OPENCODE_API_KEY, skills: ["go", "refactor"] }
+  tester:      { provider: claude, model: claude-haiku, skills: ["tests", "cobertura"] }
+`)
+	cfg, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(cfg.Agentes) != 3 {
+		t.Fatalf("Agentes = %v · quiere 3 agentes", cfg.Agentes)
+	}
+
+	arch := cfg.Agentes["architect"]
+	if arch.Provider != "claude" || arch.Modelo != "claude-sonnet" || arch.KeyEnv != "ANTHROPIC_API_KEY" {
+		t.Errorf("architect = %+v", arch)
+	}
+	wantArchSkills := []string{"diseno", "arquitectura"}
+	if !reflect.DeepEqual(arch.Skills, wantArchSkills) {
+		t.Errorf("architect.Skills = %v, quiero %v", arch.Skills, wantArchSkills)
+	}
+
+	impl := cfg.Agentes["implementer"]
+	if impl.Provider != "opencode" || impl.Modelo != "glm-5.2" || impl.KeyEnv != "OPENCODE_API_KEY" {
+		t.Errorf("implementer = %+v", impl)
+	}
+	wantImplSkills := []string{"go", "refactor"}
+	if !reflect.DeepEqual(impl.Skills, wantImplSkills) {
+		t.Errorf("implementer.Skills = %v, quiero %v", impl.Skills, wantImplSkills)
+	}
+
+	tester := cfg.Agentes["tester"]
+	if tester.Provider != "claude" || tester.Modelo != "claude-haiku" || tester.KeyEnv != "" {
+		t.Errorf("tester = %+v", tester)
+	}
+	wantTesterSkills := []string{"tests", "cobertura"}
+	if !reflect.DeepEqual(tester.Skills, wantTesterSkills) {
+		t.Errorf("tester.Skills = %v, quiero %v", tester.Skills, wantTesterSkills)
+	}
+}
+
+func TestAgentesIdaYVuelta(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		Base:    "main",
+		Pruebas: "go test ./...",
+		Agentes: map[string]Agente{
+			"architect":   {Provider: "claude", Modelo: "claude-sonnet", KeyEnv: "ANTHROPIC_API_KEY", Skills: []string{"diseno"}},
+			"implementer": {Provider: "opencode", Modelo: "glm-5.2", KeyEnv: "OPENCODE_API_KEY", Skills: []string{"go"}},
+			"tester":      {Provider: "claude", Modelo: "claude-haiku"},
+		},
+	}
+	if err := cfg.Save(root); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(cfg.Agentes, loaded.Agentes) {
+		t.Errorf("Agentes = %+v, quiero %+v", loaded.Agentes, cfg.Agentes)
+	}
+}
+
+func TestConfigSinAgentes(t *testing.T) {
+	data := []byte(`
+base: main
+pruebas: go test ./...
+proveedores:
+  planificador: { modelo: claude-sonnet, key_env: ANTHROPIC_API_KEY }
+  ejecutor:     { modelo: glm-5.2, key_env: OPENCODE_API_KEY }
+modelos:
+  liviana: glm-4
+  media: glm-5.2
+estrategia: equilibrada
+`)
+	cfg, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.Agentes != nil {
+		t.Errorf("Agentes = %v, quiere nil", cfg.Agentes)
+	}
+	if len(cfg.Proveedores) != 2 {
+		t.Errorf("Proveedores = %v, quiere 2", cfg.Proveedores)
+	}
+	if got := ModeloRol(cfg, "planificador"); got != "claude-sonnet" {
+		t.Errorf("ModeloRol(planificador) = %q, quiere claude-sonnet", got)
+	}
+	if got := ModeloRol(cfg, "ejecutor"); got != "glm-5.2" {
+		t.Errorf("ModeloRol(ejecutor) = %q, quiere glm-5.2", got)
+	}
+}
+
+func TestParseAgenteProviderInvalido(t *testing.T) {
+	data := []byte(`
+base: main
+agentes:
+  architect: { provider: openai, model: gpt-4 }
+`)
+	_, err := Parse(data)
+	if err == nil {
+		t.Fatal("Parse debió fallar con un provider inválido")
+	}
+	want := "provider desconocido: openai · usa claude u opencode"
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, quiere que contenga %q", err.Error(), want)
+	}
+}
+
+func TestAgentesGanaSobreProveedores(t *testing.T) {
+	data := []byte(`
+base: main
+agentes:
+  planificador: { provider: claude, model: claude-3-7-sonnet }
+proveedores:
+  planificador: { modelo: claude-3-5-sonnet, key_env: ANTHROPIC_API_KEY }
+  ejecutor:     { modelo: glm-5.2, key_env: OPENCODE_API_KEY }
+`)
+	cfg, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	// agentes gana para los roles que define
+	if got := ModeloRol(cfg, "planificador"); got != "claude-3-7-sonnet" {
+		t.Errorf("ModeloRol(planificador) = %q, quiere claude-3-7-sonnet", got)
+	}
+	// proveedores resuelve los roles no cubiertos por agentes
+	if got := ModeloRol(cfg, "ejecutor"); got != "glm-5.2" {
+		t.Errorf("ModeloRol(ejecutor) = %q, quiere glm-5.2", got)
+	}
+	// rol inexistente
+	if got := ModeloRol(cfg, "revisor"); got != "" {
+		t.Errorf("ModeloRol(revisor) = %q, quiere vacío", got)
 	}
 }
