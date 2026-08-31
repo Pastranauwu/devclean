@@ -305,7 +305,7 @@ devclean run --ejecutor claude
 | `devclean task add\|edit\|rm\|list` | manejo manual de tareas |
 | `devclean check <id>` | corre la esclusa de entrada sobre una tarea |
 | `devclean run [--agentes N]` | ejecuta las tareas pendientes en paralelo (detecta solapamiento) |
-| `devclean board` | tablero de estado |
+| `devclean board` | tablero de estado · en TUI, `s` dispara `ship --dry-run` sobre la tarea lista |
 | `devclean standup` | parte de datos: COLISIÓN y ATASCO sin gastar tokens (§6.7) |
 | `devclean ship <id>` | esclusa de salida (hasta 11 pasos) y PR |
 | `devclean logs <id>` | detalle interno de una tarea |
