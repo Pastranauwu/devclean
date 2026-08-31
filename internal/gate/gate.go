@@ -89,6 +89,7 @@ func Run(ctx context.Context, root string, cfg config.Config, t task.Task, otras
 	res.Chequeos = append(res.Chequeos, checkSinCruce(t, otras))
 	res.Chequeos = append(res.Chequeos, checkZonasProhibidas(t, cfg.ZonasProhibidas))
 	res.Chequeos = append(res.Chequeos, checkRutasDePrueba(t, cfg.PatronesPrueba))
+	res.Chequeos = append(res.Chequeos, checkAgente(t, cfg))
 
 	res.Aprobada = true
 	for _, c := range res.Chequeos {
@@ -309,4 +310,23 @@ func literalHead(p string) string {
 		return p
 	}
 	return p[:i]
+}
+
+// checkAgente verifica que el agente asignado a la tarea (si existe)
+// esté declarado en la configuración (agentes o proveedores).
+func checkAgente(t task.Task, cfg config.Config) Check {
+	if t.Agente == "" {
+		return Check{"agente conocido", true, ""}
+	}
+	if _, ok := cfg.Agentes[t.Agente]; ok {
+		return Check{"agente conocido", true, ""}
+	}
+	if _, ok := cfg.Proveedores[t.Agente]; ok {
+		return Check{"agente conocido", true, ""}
+	}
+	return Check{
+		Nombre: "agente conocido",
+		OK:     false,
+		Motivo: fmt.Sprintf("agente desconocido: %s · decláralo en config.yml o usa uno existente", t.Agente),
+	}
 }

@@ -24,7 +24,7 @@ func TestRunTaskAddSugiereGo(t *testing.T) {
 
 	var b strings.Builder
 	out = ui.New(&b, false)
-	if err := runTaskAdd(root, "exportar csv"); err != nil {
+	if err := runTaskAdd(root, "exportar csv", ""); err != nil {
 		t.Fatalf("runTaskAdd: %v", err)
 	}
 	if !strings.Contains(b.String(), "go test ./internal/") {
@@ -52,7 +52,7 @@ func TestRunTaskAddSinStackNoInventa(t *testing.T) {
 
 	var b strings.Builder
 	out = ui.New(&b, false)
-	if err := runTaskAdd(root, "hacer algo"); err != nil {
+	if err := runTaskAdd(root, "hacer algo", ""); err != nil {
 		t.Fatalf("runTaskAdd: %v", err)
 	}
 	texto := b.String()
@@ -74,5 +74,25 @@ func TestRunTaskAddSinStackNoInventa(t *testing.T) {
 	}
 	if got.Notas != reglaOroListoCuando {
 		t.Errorf("notas = %q, quiere solo la regla de oro", got.Notas)
+	}
+}
+
+func TestRunTaskAddConAgente(t *testing.T) {
+	root := repoTemporal(t)
+	out = ui.New(io.Discard, false)
+	if err := runInit(root, "", "", nil); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+
+	if err := runTaskAdd(root, "diseñar base de datos", "architect"); err != nil {
+		t.Fatalf("runTaskAdd con agente: %v", err)
+	}
+
+	got, err := task.Load(config.TasksDir(root), "T-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Agente != "architect" {
+		t.Errorf("Agente = %q, quiero architect", got.Agente)
 	}
 }

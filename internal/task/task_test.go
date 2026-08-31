@@ -232,3 +232,31 @@ func TestExponeUsaIdaYVuelta(t *testing.T) {
 		t.Errorf("Usa = %v", got.Usa)
 	}
 }
+
+func TestAgenteIdaYVuelta(t *testing.T) {
+	orig := Task{
+		Version:        Version,
+		ID:             "T-001",
+		Titulo:         "diseñar esquema",
+		ListoCuando:    "go test ./...",
+		LimiteIntentos: 3,
+		LimiteLineas:   200,
+		Agente:         "architect",
+	}
+	raw := orig.Marshal()
+	if !strings.Contains(string(raw), "agente: architect") {
+		t.Fatalf("Marshal no incluyó agente:\n%s", raw)
+	}
+	got, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got.Agente != "architect" {
+		t.Errorf("Agente = %q, quiero architect", got.Agente)
+	}
+
+	inv := Task{Version: Version, ID: "T-001", Titulo: "x", ListoCuando: "true", LimiteIntentos: 3, LimiteLineas: 200, Agente: "con espacios"}
+	if errs := inv.Validate(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "agente inválido") {
+		t.Errorf("Validate agente inválido = %v", errs)
+	}
+}

@@ -509,6 +509,39 @@ func checkOverlapOla(root string, tareas []task.Task) []string {
 	return alertas
 }
 
+// resolverAgenteTarea determina el ejecutor, modelo y skills para una tarea concreta (Fase 2).
+func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagModelo string, t task.Task) (executor.Executor, string, []string) {
+	nombreAgente := t.Agente
+	if nombreAgente == "" {
+		nombreAgente = "ejecutor"
+	}
+
+	ex := defaultEx
+	if ag, ok := cfg.Agentes[nombreAgente]; ok && ag.Provider != "" {
+		if e, err := elegirEjecutor(ag.Provider); err == nil {
+			ex = e
+		}
+	}
+
+	modelo := flagModelo
+	if modelo == "" {
+		if ag, ok := cfg.Agentes[nombreAgente]; ok && ag.Modelo != "" {
+			modelo = ag.Modelo
+		} else if p, ok := cfg.Proveedores[nombreAgente]; ok && p.Modelo != "" {
+			modelo = p.Modelo
+		} else {
+			modelo = modeloParaTarea(cfg, "", t)
+		}
+	}
+
+	var skills []string
+	if ag, ok := cfg.Agentes[nombreAgente]; ok {
+		skills = ag.Skills
+	}
+
+	return ex, modelo, skills
+}
+
 // correrUno ejecuta una tarea completa: cuarto, esclusa de estado,
 // bucle, y deja el estado final (lista o detenida). El cuarto no se
 // destruye aquí: ship lo libera al entregar.
@@ -523,30 +556,28 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
 	}
 
+	exTarea, modeloTarea, skillsTarea := resolverAgenteTarea(cfg, ex, modelo, t)
+
 	exam := examiner.Runner{Options: examiner.Options{
-		Agent:    agenteExecutor{ex},
+		Agent:    agenteExecutor{exTarea},
 		Task:     t,
 		Root:     root,
 		Model:    config.ModeloRol(cfg, "planificador"),
 		Timeout:  3 * time.Minute,
 		Lenguaje: config.DetectLanguage(root),
 	}}
-	var skills []string
-	if a, ok := cfg.Agentes["ejecutor"]; ok {
-		skills = a.Skills
-	}
 	outcome, err := loop.Run(ctx, loop.Options{
-		Agent:          agenteExecutor{ex},
+		Agent:          agenteExecutor{exTarea},
 		Root:           root,
 		Room:           r,
 		Task:           t,
-		Model:          modeloParaTarea(cfg, modelo, t),
+		Model:          modeloTarea,
 		Base:           base,
 		PatronesPrueba: cfg.PatronesPrueba,
 		Env:            []string{fmt.Sprintf("PORT=%d", r.Puerto)},
 		Interfaces:     t.Usa,
 		Constitucion:   constitucion,
-		Skills:         skills,
+		Skills:         skillsTarea,
 		Examinador:     exam,
 	})
 	if err != nil {
