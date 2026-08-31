@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/examiner"
+	"github.com/Pastranauwu/devclean/internal/sealed"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
@@ -25,6 +28,7 @@ func newTaskCmd() *cobra.Command {
 		newTaskRmCmd(),
 		newTaskListCmd(),
 		newTaskCheckCmd(),
+		newTaskSealCmd(),
 	)
 	return cmd
 }
@@ -99,6 +103,108 @@ func runTaskAdd(root, titulo string) error {
 	out.Line("✓ %s creada · completa listo_cuando con devclean task edit %s", id, id)
 	imprimirPlantillasListoCuando(stack)
 	return nil
+}
+
+func newTaskSealCmd() *cobra.Command {
+	var visible, oculta string
+	var forzar bool
+	cmd := &cobra.Command{
+		Use:   "seal <id>",
+		Short: "sella una suite oculta escrita a mano, sin gastar modelo",
+		Long: `Sella pruebas que escribiste vos —o que generó un modelo caro corriendo
+aparte, fuera del bucle del implementador— en vez de dejárselas al
+examinador ciego.
+
+La suite --visible se copia al cuarto de la tarea cuando corra: el
+implementador la ve y es su criterio de aceptación. La suite --oculta se
+sella con hash y solo corre en la esclusa de salida (devclean ship), que
+no distingue si la escribió un humano o el examinador.
+
+Los archivos se leen del disco al sellar, así que después podés borrarlos:
+lo sellado ya no depende de ellos.`,
+		Example: `  devclean task seal T-001 --visible pruebas/visible_test.go --oculta pruebas/oculta_test.go
+  devclean task seal T-001 --visible v.py --oculta o.py --forzar`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			if err := validTaskID(id); err != nil {
+				return err
+			}
+			root, err := projectRoot()
+			if err != nil {
+				return err
+			}
+			return runTaskSeal(root, id, visible, oculta, forzar)
+		},
+	}
+	cmd.Flags().StringVar(&visible, "visible", "", "archivo con las pruebas que el implementador SÍ ve")
+	cmd.Flags().StringVar(&oculta, "oculta", "", "archivo con las pruebas que se sellan y solo corren en ship")
+	cmd.Flags().BoolVar(&forzar, "forzar", false, "reemplaza una suite ya sellada")
+	_ = cmd.MarkFlagRequired("visible")
+	_ = cmd.MarkFlagRequired("oculta")
+	return cmd
+}
+
+// runTaskSeal sella una suite escrita a mano. Las rutas dentro del cuarto
+// salen de examiner.RutasSuite, el mismo camino que usa el examinador
+// automático: de acá para abajo nadie distingue el origen.
+func runTaskSeal(root, id, visiblePath, ocultaPath string, forzar bool) error {
+	t, err := task.Load(config.TasksDir(root), id)
+	if err != nil {
+		return fmt.Errorf("no existe la tarea %s · créala con devclean task add", id)
+	}
+	if sealed.Exists(root, id) && !forzar {
+		return fmt.Errorf("%s ya tiene una suite sellada · usa --forzar para reemplazarla", id)
+	}
+
+	visible, err := leerSuite(root, visiblePath)
+	if err != nil {
+		return err
+	}
+	oculta, err := leerSuite(root, ocultaPath)
+	if err != nil {
+		return err
+	}
+
+	rutaVisible, rutaOculta := examiner.RutasSuite(t.TocarSolo, config.DetectLanguage(root))
+	s := sealed.SuiteOculta{
+		Content:        oculta,
+		Archivo:        rutaOculta,
+		Visible:        visible,
+		ArchivoVisible: rutaVisible,
+	}
+	if err := sealed.Write(root, id, s); err != nil {
+		return fmt.Errorf("no se pudo sellar la suite de %s · %s", id, err)
+	}
+
+	if err := out.Data(map[string]string{
+		"id":      id,
+		"visible": rutaVisible,
+		"oculta":  rutaOculta,
+	}); err != nil {
+		return err
+	}
+	out.Line("✓ %s sellada a mano · visible → %s en el cuarto", id, rutaVisible)
+	out.Line("  la oculta se verifica en devclean ship y se quema al usarse")
+	return nil
+}
+
+// leerSuite lee un archivo de pruebas del disco. Las rutas relativas se
+// resuelven contra la raíz del repo, no contra el cuarto: sellar pasa
+// antes de que el cuarto exista.
+func leerSuite(root, p string) (string, error) {
+	abs := p
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(root, p)
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return "", fmt.Errorf("no se pudo leer %s · %s", p, err)
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return "", fmt.Errorf("%s está vacío · una suite sin pruebas no verifica nada", p)
+	}
+	return string(data), nil
 }
 
 func newTaskEditCmd() *cobra.Command {
