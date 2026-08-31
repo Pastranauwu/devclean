@@ -56,7 +56,9 @@ func newTaskAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   `add "<título>"`,
 		Short: "crea una tarea nueva con id correlativo",
-		Args:  cobra.ExactArgs(1),
+		Example: `  devclean task add "exportar clientes a CSV"
+  devclean task add "login acepta tildes con soporte de ñ"`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			titulo := strings.TrimSpace(args[0])
 			if titulo == "" {
