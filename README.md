@@ -282,6 +282,70 @@ riesgos: archivos grandes pueden agotar memoria
 
 Notas libres opcionales debajo del segundo `---`.
 
+---
+
+## Requerimientos como Código (Declarativo estilo Docker Compose)
+
+Así como `docker-compose.yml` declara servicios y contenedores, o `git` versiona ramas y cambios, **devclean** permite declarar tus épicas, requerimientos y agentes en un archivo declarativo (`devclean.spec.yml`):
+
+### Analogías del Flujo
+
+| Concepto | Docker Compose | Git | Devclean |
+|---|---|---|---|
+| **Definición** | `docker-compose.yml` | `.git/config` | `devclean.spec.yml` (Requerimientos como Código) |
+| **Sincronización** | `docker compose build` | `git add` | `devclean apply [-f spec.yml]` |
+| **Orquestación** | `docker compose up` | `git checkout -b` (worktrees) | `devclean up` / `devclean run` |
+| **Estado en vivo** | `docker compose ps` | `git status` | `devclean ps` / `devclean board` |
+| **Entrega / Release** | `docker compose push` | `git merge / push` | `devclean ship` |
+
+### Ejemplo de `devclean.spec.yml`
+
+```yaml
+version: 1
+feature: "Autenticación de usuarios y JWT"
+agente: backend  # agente por defecto para las tareas
+
+reglas:
+  - "no usar sesiones en memoria, tokens stateless"
+  - "validar formato de correo antes de consultar bd"
+
+tasks:
+  - id: T-001  # opcional: si se omite, devclean asigna correlativo
+    titulo: "modelo de usuario y hash de contraseñas"
+    listo_cuando: "go test ./internal/auth/ -run TestPasswordHash"
+    tocar_solo: ["internal/auth/**"]
+    agente: backend
+    peso: liviana
+
+  - id: T-002
+    titulo: "endpoint de login con generación de JWT"
+    listo_cuando: "go test ./internal/auth/ -run TestLogin"
+    tocar_solo: ["internal/auth/**", "internal/api/**"]
+    depende_de: ["T-001"]
+    expone: ["POST /api/login -> 200 {token}"]
+    agente: backend
+
+  - id: T-003
+    titulo: "formulario de login en cliente web"
+    listo_cuando: "npm test -- LoginForm.test.tsx"
+    tocar_solo: ["frontend/src/**"]
+    depende_de: ["T-002"]
+    usa: ["POST /api/login -> 200 {token}"]
+    agente: frontend
+```
+
+### Comandos Declarativos
+
+- **`devclean apply`**: Lee `devclean.spec.yml`, valida los contratos y genera o sincroniza `.devclean/tasks/`.
+  - `devclean apply --dry-run` para validar sin tocar el disco.
+  - `devclean apply -f specs/modulo.yml` para aplicar un archivo específico.
+  - `devclean apply --run` para aplicar y ejecutar inmediatamente.
+- **`devclean up`**: Atajo estilo compose que aplica la especificación declarativa (si existe) y corre las tareas pendientes en paralelo en sus cuartos aislados.
+- **`devclean ps`**: Resumen del estado de cada tarea, agente asignado, cuarto y puerto activo.
+- **`devclean plan "..." --export-spec devclean.spec.yml`**: Le pide al planificador IA que redacte la propuesta y la guarde como archivo declarativo para que la puedas editar antes de aplicarla.
+
+---
+
 ### Configuración
 
 `.devclean/config.yml`:
@@ -331,8 +395,11 @@ devclean run --ejecutor claude
 |---|---|
 | `devclean init` | detecta repo, rama base y comando de pruebas; crea `.devclean/` |
 | `devclean constitution [--forzar]` | genera `.devclean/constitution.md` con un modelo (§6.11) |
-| `devclean plan "<texto>"` | convierte lenguaje natural en contratos de tarea |
-| `devclean task add\|edit\|rm\|list` | manejo manual de tareas |
+| `devclean plan "<texto>"` | convierte lenguaje natural en contratos de tarea (acepta `--export-spec`) |
+| `devclean apply [-f <spec.yml>]` | aplica y valida una especificación declarativa (acepta `--dry-run`, `--run`) |
+| `devclean up` | aplica la spec y ejecuta tareas en paralelo en cuartos aislados (estilo compose) |
+| `devclean ps` | muestra el estado de tareas, cuartos activos y puertos asignados |
+| `devclean task add\|edit\|rm\|list` | manejo manual de tareas (acepta `--agente`) |
 | `devclean task seal <id> --visible <f> --oculta <f>` | sella una suite escrita a mano, sin gastar modelo (§6.8) |
 | `devclean check <id>` | corre la esclusa de entrada sobre una tarea |
 | `devclean run [--agentes N]` | ejecuta las tareas pendientes en paralelo (detecta solapamiento) |

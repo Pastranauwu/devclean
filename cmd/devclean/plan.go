@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/executor"
 	"github.com/Pastranauwu/devclean/internal/gate"
 	"github.com/Pastranauwu/devclean/internal/plan"
+	"github.com/Pastranauwu/devclean/internal/spec"
 	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/tui"
 )
@@ -37,23 +39,24 @@ type propuesta struct {
 }
 
 func newPlanCmd() *cobra.Command {
-	var modelo, ejecutor string
+	var modelo, ejecutor, exportSpec string
 	var aprobar bool
 	cmd := &cobra.Command{
 		Use:   `plan "<texto>"`,
 		Short: "convierte una petición en contratos de tarea",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPlan(strings.Join(args, " "), modelo, ejecutor, aprobar)
+			return runPlan(strings.Join(args, " "), modelo, ejecutor, exportSpec, aprobar)
 		},
 	}
 	cmd.Flags().StringVar(&modelo, "modelo", "", "modelo del planificador (por defecto, el suyo)")
 	cmd.Flags().StringVar(&ejecutor, "ejecutor", "", "opencode o claude (por defecto, el primero disponible)")
+	cmd.Flags().StringVar(&exportSpec, "export-spec", "", "exporta la propuesta como archivo de especificación declarativa (ej. devclean.spec.yml)")
 	cmd.Flags().BoolVar(&aprobar, "aprobar", false, "crea las tareas sin preguntar")
 	return cmd
 }
 
-func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
+func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 	root, err := projectRoot()
 	if err != nil {
 		return err
@@ -154,6 +157,44 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 				ag = " [" + p.Agente + "]"
 			}
 			out.Line("%s  %s%s  · listo cuando: %s", p.ID, p.Titulo, ag, p.ListoCuando)
+		}
+	}
+
+	if exportSpec != "" {
+		if !filepath.IsAbs(exportSpec) {
+			exportSpec = filepath.Join(root, exportSpec)
+		}
+		var tasks []task.Task
+		for i, b := range borradores {
+			tasks = append(tasks, task.Task{
+				Version:        task.Version,
+				ID:             ids[i],
+				Titulo:         b.Titulo,
+				Porque:         b.Porque,
+				ListoCuando:    b.ListoCuando,
+				TocarSolo:      b.TocarSolo,
+				NoTocar:        b.NoTocar,
+				DependeDe:      b.DependeDe,
+				Expone:         b.Expone,
+				Usa:            b.Usa,
+				Riesgos:        b.Riesgos,
+				Peso:           b.Peso,
+				Agente:         b.Agente,
+				LimiteIntentos: task.DefaultLimiteIntentos,
+				LimiteLineas:   task.DefaultLimiteLineas,
+			})
+		}
+		s := spec.Spec{
+			Version: 1,
+			Feature: frase,
+			Tasks:   tasks,
+		}
+		if err := os.WriteFile(exportSpec, spec.Marshal(s), 0o644); err != nil {
+			return fmt.Errorf("error al guardar especificación: %w", err)
+		}
+		out.Line("✓ especificación guardada en %s · revísala y aplícala con devclean apply", exportSpec)
+		if !aprobar {
+			return nil
 		}
 	}
 

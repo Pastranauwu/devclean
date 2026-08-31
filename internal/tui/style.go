@@ -95,8 +95,12 @@ func Caja(s string) string { return caja(s) }
 
 // Titulo y Apagado exponen los dos estilos de texto más usados fuera de
 // este paquete, sin tener que exportar la paleta entera.
-func Titulo(s string) string  { return estiloTitulo.Render(s) }
-func Apagado(s string) string { return estiloApagado.Render(s) }
+func Titulo(s string) string      { return estiloTitulo.Render(s) }
+func Apagado(s string) string     { return estiloApagado.Render(s) }
+func Presion(s string) string     { return estiloPresion.Render(s) }
+func Alerta(s string) string      { return estiloAlerta.Render(s) }
+func Espera(s string) string      { return estiloEspera.Render(s) }
+func GlifoEstado(estado string) string { return glifoEstado(estado) }
 
 // caja envuelve contenido en una tarjeta con borde recto (§16.2).
 func caja(s string) string {
