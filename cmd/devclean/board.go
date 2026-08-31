@@ -34,7 +34,14 @@ func runBoard() error {
 		return err
 	}
 	if esTUI() {
-		return tui.CorrerBoard(root)
+		id, err := tui.CorrerBoard(root)
+		if err != nil {
+			return err
+		}
+		if id == "" {
+			return nil
+		}
+		return runShip(id, true)
 	}
 
 	tasks, err := task.List(config.TasksDir(root))
