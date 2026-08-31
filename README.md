@@ -222,6 +222,15 @@ trabaja en worktrees aislados. No toca tu rama principal hasta `ship`.
    `greenfield`, `plan` también limpia automáticamente cualquier ruta vedada
    que el modelo haya metido en `tocar_solo`.
 
+   Ejemplo de creación manual:
+   ```sh
+   devclean task add "exportar clientes a CSV"
+   devclean task edit T-001  # completa listo_cuando, tocar_solo, etc.
+   ```
+   **Nota:** el título va como argumento posicional entre comillas, NO como
+   flag (`--titulo` o `--title` truenaría con error). Cobra muestra ejemplos
+   en `devclean task add --help`.
+
 6. **Declara las interfaces entre tareas.** Las tareas de una misma oleada
    corren aisladas y **no pueden leerse el código entre sí**. Si una produce
    algo que otra consume, congela la firma en los dos contratos: `expone` en
