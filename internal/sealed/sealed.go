@@ -19,6 +19,14 @@ type SuiteOculta struct {
 	Hash    string `json:"hash"`    // sha256 of Content for integrity check
 	Content string `json:"content"` // the hidden test file content
 	Archivo string `json:"archivo"` // relative path within the room to write this file
+
+	// Visible y ArchivoVisible los llena solo `devclean task seal`. El
+	// examinador automático escribe su suite visible directo en el cuarto
+	// porque corre con el cuarto ya creado; la manual se sella antes de
+	// que exista, así que espera acá hasta que el bucle lo cree. Quedan
+	// fuera del hash: lo que la esclusa de salida verifica es la oculta.
+	Visible        string `json:"visible,omitempty"`
+	ArchivoVisible string `json:"archivo_visible,omitempty"`
 }
 
 // Dir returns .devclean/sealed/<id>/ in root.

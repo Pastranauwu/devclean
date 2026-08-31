@@ -72,6 +72,9 @@ la hace código, nunca el modelo**.
    soporta **go** (validado con `go/parser`) y **python** (validado con
    `ast.parse` del `python3` del sistema); rust y node todavía no, y en
    esos stacks el examen se salta en vez de emitir pruebas que no corren.
+   También podés saltarte el modelo y sellar tus propias pruebas con
+   `devclean task seal` (abajo): la esclusa de salida las trata igual, no
+   pregunta quién las escribió.
 3. **Esclusa de salida** — hasta once pasos deterministas en `ship`: rebase,
    historial aplanado, sin ruido, sin secretos, dentro de presupuesto,
    interfaces entregadas, dependencias dentro de las reglas, bisectable,
@@ -318,6 +321,7 @@ devclean run --ejecutor claude
 | `devclean constitution [--forzar]` | genera `.devclean/constitution.md` con un modelo (§6.11) |
 | `devclean plan "<texto>"` | convierte lenguaje natural en contratos de tarea |
 | `devclean task add\|edit\|rm\|list` | manejo manual de tareas |
+| `devclean task seal <id> --visible <f> --oculta <f>` | sella una suite escrita a mano, sin gastar modelo (§6.8) |
 | `devclean check <id>` | corre la esclusa de entrada sobre una tarea |
 | `devclean run [--agentes N]` | ejecuta las tareas pendientes en paralelo (detecta solapamiento) |
 | `devclean board` | tablero de estado · en TUI, `s` dispara `ship --dry-run` sobre la tarea lista |
