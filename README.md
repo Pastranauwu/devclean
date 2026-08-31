@@ -305,6 +305,11 @@ version: 1
 feature: "Autenticación de usuarios y JWT"
 agente: backend  # agente por defecto para las tareas
 
+# Límites globales para todas las tareas de esta feature (opcional)
+limites:
+  intentos: 5    # máximo de intentos del bucle TDD (por defecto, 3)
+  lineas: 500    # límite de líneas modificadas por tarea (por defecto, 200)
+
 reglas:
   - "no usar sesiones en memoria, tokens stateless"
   - "validar formato de correo antes de consultar bd"
@@ -333,6 +338,23 @@ tasks:
     usa: ["POST /api/login -> 200 {token}"]
     agente: frontend
 ```
+
+### ¿Cómo se generan y ejecutan las pruebas?
+
+No necesitas inventar rutas de prueba manuales para cada tarea:
+
+1. **Examinador Ciego Automático (IA)**:
+   - Cuando una tarea declara contratos públicos en `expone:` (ej. `"POST /api/login"` o `"wol.Send(mac) error"`), devclean invoca al **examinador ciego** (§6.8) antes de empezar.
+   - El examinador genera automáticamente las pruebas unitarias contra la interfaz en rutas estándar dentro del cuarto aislado (`.devclean/rooms/T-xxx/`).
+   - El 70% de la suite es **visible** para el agente como criterio de aceptación; el 30% restante se **sella con hash en una suite oculta** que solo se evalúa en la esclusa de salida (`devclean ship`), evitando que el agente haga trampa (*test cheating*).
+2. **Pruebas Escritas a Mano (`devclean task seal`)**:
+   - Si prefieres escribir tus propios tests o usar una suite predefinida sin gastar tokens de examinador, puedes sellarla con:
+     ```sh
+     devclean task seal T-001 --visible pruebas/visible_test.go --oculta pruebas/oculta_test.go
+     ```
+   - La esclusa de salida verificará la suite sellada exactamente igual, sin distinguir si la escribió un humano o la IA.
+3. **Criterio Determinista (`listo_cuando`)**:
+   - Cada tarea incluye su comando real de verificación (ej. `go test ./internal/auth/...`), garantizando que la compuerta de éxito la decida código determinista y nunca la opinión del modelo.
 
 ### Comandos Declarativos
 

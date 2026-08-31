@@ -219,3 +219,39 @@ func TestMarshalRoundtrip(t *testing.T) {
 		t.Errorf("Roundtrip mismatch:\nOriginal: %+v\nReparsed: %+v", original, reparsed)
 	}
 }
+
+func TestParseSpecLimites(t *testing.T) {
+	raw := `version: 1
+feature: "Feature con limites globales"
+limites:
+  intentos: 5
+  lineas: 500
+tasks:
+  - id: T-001
+    titulo: "tarea con limites globales"
+    listo_cuando: "true"
+  - id: T-002
+    titulo: "tarea con limite especifico"
+    listo_cuando: "true"
+    limite_intentos: 2
+    limite_lineas: 100
+`
+	s, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatalf("Parse limites: %v", err)
+	}
+	if s.Limites.Intentos != 5 || s.Limites.Lineas != 500 {
+		t.Errorf("Limites = %+v", s.Limites)
+	}
+	if len(s.Tasks) != 2 {
+		t.Fatalf("len(Tasks) = %d", len(s.Tasks))
+	}
+	// T1 hereda limites globales
+	if s.Tasks[0].LimiteIntentos != 5 || s.Tasks[0].LimiteLineas != 500 {
+		t.Errorf("T1 limites = %d, %d; quiero 5, 500", s.Tasks[0].LimiteIntentos, s.Tasks[0].LimiteLineas)
+	}
+	// T2 mantiene sus límites específicos
+	if s.Tasks[1].LimiteIntentos != 2 || s.Tasks[1].LimiteLineas != 100 {
+		t.Errorf("T2 limites = %d, %d; quiero 2, 100", s.Tasks[1].LimiteIntentos, s.Tasks[1].LimiteLineas)
+	}
+}
