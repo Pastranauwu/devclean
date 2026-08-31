@@ -7,8 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go/parser"
-	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +31,11 @@ type Options struct {
 	Root    string
 	Model   string
 	Timeout time.Duration
+
+	// Lenguaje es el stack del proyecto (config.DetectLanguage), y decide
+	// cómo se arma y se valida la suite. Vacío se trata como go. Un stack
+	// sin examinador (rust, node) salta el examen.
+	Lenguaje string
 }
 
 // Runner implements loop.Examinador so cmd/run can wire it without a cycle.
@@ -58,13 +61,19 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	if len(o.Task.Expone) == 0 {
 		return false, nil
 	}
+	// un stack sin examinador (rust, node) no se examina: emitir un
+	// archivo de otro lenguaje solo rompería la compilación del cuarto.
+	lenguaje := lenguajeExamen(o.Lenguaje)
+	if lenguaje == "" {
+		return false, nil
+	}
 	if o.Timeout <= 0 {
 		o.Timeout = DefaultTimeout
 	}
 
 	dir, pkg := inferDirPkg(o.Task.TocarSolo, roomPath)
 
-	prompt := buildPrompt(o.Task, pkg)
+	prompt := buildPrompt(o.Task, pkg, lenguaje)
 	req := loop.Request{
 		RoomPath: roomPath,
 		Prompt:   prompt,
@@ -85,19 +94,24 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		return false, nil
 	}
 
-	importPath := resolveImportPath(roomPath, dir)
-	visibleContent := buildGoFile(pkg, importPath, imports, visible)
+	var importPath string
+	if lenguaje == "go" {
+		importPath = resolveImportPath(roomPath, dir)
+	}
+	visibleRelPath, hiddenRelPath := RutasSuite(o.Task.TocarSolo, lenguaje)
+
+	visibleContent := armarSuite(lenguaje, pkg, importPath, imports, visible)
 	// un examinador que emite pruebas que no compilan bloquea al
 	// implementador: no puede tocar el archivo (A.3) y su impl correcta
 	// igual da "build failed". Si la suite ni siquiera parsea, se
 	// descarta y el implementador corre sin suite ciega (§6.8).
-	if !parsea(visibleContent) {
+	if validarSintaxis(lenguaje, visibleContent) != nil {
 		return false, nil
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return false, nil
 	}
-	visiblePath := filepath.Join(dir, VisibleFileName)
+	visiblePath := filepath.Join(roomPath, filepath.FromSlash(visibleRelPath))
 	if err := os.WriteFile(visiblePath, []byte(visibleContent), 0o644); err != nil {
 		return false, nil
 	}
@@ -109,10 +123,8 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		return false, nil
 	}
 
-	_, relDir := inferDirFromTocarSolo(o.Task.TocarSolo, roomPath)
-	hiddenRelPath := toRelPath(filepath.Join(relDir, HiddenFileName))
-	hiddenContent := buildGoFile(pkg, importPath, imports, hidden)
-	if !parsea(hiddenContent) {
+	hiddenContent := armarSuite(lenguaje, pkg, importPath, imports, hidden)
+	if validarSintaxis(lenguaje, hiddenContent) != nil {
 		return false, nil // solo visible; sin oculta que sellar
 	}
 	s := sealed.SuiteOculta{
@@ -125,8 +137,10 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	return true, nil
 }
 
-// buildPrompt constructs the examiner instruction.
-func buildPrompt(t task.Task, pkg string) string {
+// buildPrompt constructs the examiner instruction. lenguaje va explícito
+// en el prompt: sin decirlo, el modelo asume Go y devuelve una suite que
+// el proyecto no puede correr.
+func buildPrompt(t task.Task, pkg, lenguaje string) string {
 	var b strings.Builder
 	b.WriteString("Eres el examinador ciego de devclean (§6.8). Escribes pruebas SIN ver la implementación.\n\n")
 	fmt.Fprintf(&b, "Tarea: %s — %s\n", t.ID, t.Titulo)
@@ -143,24 +157,20 @@ func buildPrompt(t task.Task, pkg string) string {
 	if t.Riesgos != "" {
 		fmt.Fprintf(&b, "Riesgos: %s\n", t.Riesgos)
 	}
-	fmt.Fprintf(&b, "Package Go de las pruebas: %s_test\n\n", pkg)
-	b.WriteString(`Reglas:
+	fmt.Fprintf(&b, "Lenguaje de las pruebas: %s · escribe SOLO en ese lenguaje.\n", lenguaje)
+	if lenguaje == "go" {
+		fmt.Fprintf(&b, "Package Go de las pruebas: %s_test\n", pkg)
+	}
+	b.WriteString(`
+Reglas:
 - Pruebas de CAJA NEGRA: testea solo la interfaz pública declarada en "expone".
 - NO escribas código de implementación.
-- 70%% van en "visible": el implementador las verá como criterio de aceptación.
-- 30%% van en "hidden": edge cases y casos límite que el implementador NO verá.
+- 70% van en "visible": el implementador las verá como criterio de aceptación.
+- 30% van en "hidden": edge cases y casos límite que el implementador NO verá.
 - Los tests "hidden" deben fallar si la implementación es superficial o solo optimizada para "visible".
-- Usa solo la stdlib de Go. Sin imports externos.
-- En "imports" enumera TODO paquete de la stdlib que usen tus tests aparte de "testing" (ej. "net", "time", "bytes", "encoding/json"). Si olvidas uno, la suite no compila y se descarta.
-- No pongas el bloque import en el código: solo las funciones. devclean arma el archivo.
 - Cada función de test es independiente.
-
-Devuelve SOLO este JSON (sin texto alrededor, sin markdown):
-{
-  "imports": ["net", "time", "bytes"],
-  "visible": ["func TestXxx(t *testing.T) {\n\t// ...\n}", "..."],
-  "hidden":  ["func TestYyy(t *testing.T) {\n\t// ...\n}", "..."]
-}`)
+`)
+	b.WriteString(reglasDe(lenguaje))
 	return b.String()
 }
 
@@ -221,14 +231,6 @@ func buildGoFile(pkg, importPath string, extra, funcs []string) string {
 		b.WriteString("\n\n")
 	}
 	return b.String()
-}
-
-// parsea reporta si el archivo de pruebas al menos compila a nivel
-// sintáctico. No detecta errores de tipos (que la impl aún no exista es
-// TDD legítimo), solo que el examinador no devolvió basura.
-func parsea(src string) bool {
-	_, err := parser.ParseFile(token.NewFileSet(), "devclean_test.go", src, parser.AllErrors)
-	return err == nil
 }
 
 // stdlibImport descarta paquetes externos: el primer segmento de la
@@ -303,11 +305,6 @@ func inferDirPkg(tocarSolo []string, roomPath string) (dir, pkg string) {
 		pkg = "main"
 	}
 	return absDir, pkg
-}
-
-func toRelDir(tocarSolo []string) string {
-	_, relDir := inferDirFromTocarSolo(tocarSolo, "")
-	return relDir
 }
 
 func toRelPath(p string) string { return filepath.ToSlash(p) }
