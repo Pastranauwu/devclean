@@ -59,3 +59,7 @@ case ":$PATH:" in
     fi
     ;;
 esac
+
+echo
+echo "siguiente paso: $bin doctor"
+echo "si todo está verde: $bin init"
