@@ -531,6 +531,10 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		Timeout:  3 * time.Minute,
 		Lenguaje: config.DetectLanguage(root),
 	}}
+	var skills []string
+	if a, ok := cfg.Agentes["ejecutor"]; ok {
+		skills = a.Skills
+	}
 	outcome, err := loop.Run(ctx, loop.Options{
 		Agent:          agenteExecutor{ex},
 		Root:           root,
@@ -542,6 +546,7 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		Env:            []string{fmt.Sprintf("PORT=%d", r.Puerto)},
 		Interfaces:     t.Usa,
 		Constitucion:   constitucion,
+		Skills:         skills,
 		Examinador:     exam,
 	})
 	if err != nil {

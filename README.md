@@ -292,9 +292,10 @@ cli: claude                     # CLI de agente por defecto: claude | opencode
 zonas_prohibidas: ["go.sum", "migrations/**", ".github/**"]
 patrones_prueba: ["*_test.go", "test/**", "*.spec.ts"]
 timeout_esclusa: 300            # segundos para el chequeo "falla hoy"
-proveedores:                    # modelo y key por rol (§8.1)
-  planificador: { modelo: claude-sonnet, key_env: ANTHROPIC_API_KEY }
-  ejecutor:     { modelo: glm-5.2, key_env: OPENCODE_API_KEY }
+agentes:                        # agentes con nombre libre, proveedor y skills (Fase 1)
+  architect:   { provider: claude, model: claude-sonnet, skills: ["diseno", "arquitectura"] }
+  implementer: { provider: opencode, model: glm-5.2, key_env: OPENCODE_API_KEY, skills: ["go", "refactor"] }
+  tester:      { provider: claude, model: claude-haiku, skills: ["tests", "cobertura"] }
 estrategia: equilibrada         # ligera | equilibrada | pesada (peso por defecto)
 modelos:                        # modelo por peso de tarea (Fase 3)
   liviana: glm-4
@@ -302,6 +303,16 @@ modelos:                        # modelo por peso de tarea (Fase 3)
   pesada: claude-sonnet
 reglas_import: ["api → dominio → datos"]  # opcional: verifica grafo de imports en ship
 ```
+
+También se soporta el bloque clásico `proveedores:` por retrocompatibilidad:
+
+```yaml
+proveedores:                    # modelo y key por rol (§8.1)
+  planificador: { modelo: claude-sonnet, key_env: ANTHROPIC_API_KEY }
+  ejecutor:     { modelo: glm-5.2, key_env: OPENCODE_API_KEY }
+```
+
+En `agentes:`, cada entrada define un nombre libre (`architect`, `implementer`, `tester`, etc.). `provider` debe ser `claude` u `opencode`. Si conviven `agentes:` y `proveedores:`, `agentes:` gana para los roles que define, y los restantes se resuelven por `proveedores:`. Las `skills` por ahora se inyectan como contexto adicional en el prompt del modelo ("Habilidades de este rol: ..."), no como lógica de comportamiento autónoma.
 
 Sin `cli`, devclean usa el primer CLI que encuentre instalado. Fíjalo
 cuando tengas los dos y quieras uno concreto (por ejemplo, si se te

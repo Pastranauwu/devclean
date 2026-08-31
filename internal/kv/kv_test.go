@@ -116,6 +116,14 @@ func TestParseInlineMap(t *testing.T) {
 			t.Errorf("ParseInlineMap(%q) aceptó un mapa mal formado", malo)
 		}
 	}
+
+	conLista, err := ParseInlineMap(`{ provider: claude, model: claude-sonnet, skills: ["diseno", "arquitectura"] }`)
+	if err != nil {
+		t.Fatalf("ParseInlineMap con lista: %v", err)
+	}
+	if conLista["provider"] != "claude" || conLista["model"] != "claude-sonnet" || conLista["skills"] != `["diseno", "arquitectura"]` {
+		t.Errorf("mapa con lista = %v", conLista)
+	}
 }
 
 func TestMarshalInlineMapIdaYVuelta(t *testing.T) {

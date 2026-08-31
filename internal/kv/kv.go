@@ -71,13 +71,14 @@ func ParseList(v string) ([]string, error) {
 	return out, nil
 }
 
-// dividirFuera corta por las comas que están fuera de comillas. Una
-// firma de `expone` lleva comas propias ("wol.Send(mac, addr string)
-// error"): partir a lo bruto la rompía en dos elementos sin comillas.
+// dividirFuera corta por las comas que están fuera de comillas y corchetes.
+// Una firma de `expone` lleva comas propias ("wol.Send(mac, addr string)
+// error") y una lista inline dentro de un mapa lleva sus propios corchetes.
 func dividirFuera(s string) []string {
 	var partes []string
 	var actual strings.Builder
 	dentro := false
+	corchetes := 0
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch {
@@ -88,7 +89,11 @@ func dividirFuera(s string) []string {
 			continue
 		case c == '"':
 			dentro = !dentro
-		case c == ',' && !dentro:
+		case !dentro && c == '[':
+			corchetes++
+		case !dentro && c == ']' && corchetes > 0:
+			corchetes--
+		case c == ',' && !dentro && corchetes == 0:
 			partes = append(partes, actual.String())
 			actual.Reset()
 			continue
@@ -128,7 +133,7 @@ func ParseInlineMap(v string) (map[string]string, error) {
 		return map[string]string{}, nil
 	}
 	out := map[string]string{}
-	for _, part := range strings.Split(inner, ",") {
+	for _, part := range dividirFuera(inner) {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
