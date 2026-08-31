@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/Pastranauwu/devclean/internal/config"
 )
 
 type generadorFijo struct {
@@ -89,5 +91,31 @@ func TestGenerar(t *testing.T) {
 	bs, err := Generar(context.Background(), g, Contexto{}, "haz a")
 	if err != nil || len(bs) != 1 {
 		t.Fatalf("Generar = %v, %v", bs, err)
+	}
+}
+
+func TestPromptInyectaAgentes(t *testing.T) {
+	ctx := Contexto{
+		Lenguaje: "go",
+		Agentes: map[string]config.Agente{
+			"architect": {Provider: "claude", Skills: []string{"diseno", "arquitectura"}},
+			"tester":    {Provider: "claude"},
+		},
+	}
+	p := Prompt("crear módulo", ctx)
+	for _, want := range []string{"architect (habilidades: diseno, arquitectura)", "tester", `"agente"`} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt sin %q:\n%s", want, p)
+		}
+	}
+}
+
+func TestParseBorradorConAgente(t *testing.T) {
+	bs, err := Parse(`[{"titulo":"diseño","listo_cuando":"true","agente":"architect"}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bs) != 1 || bs[0].Agente != "architect" {
+		t.Fatalf("bs = %+v", bs)
 	}
 }

@@ -53,8 +53,8 @@ func TestGateTodoVerde(t *testing.T) {
 	if !res.Aprobada {
 		t.Fatalf("tarea válida rechazada: %+v", res.Chequeos)
 	}
-	if len(res.Chequeos) != 6 {
-		t.Fatalf("Chequeos = %d, quiero 6", len(res.Chequeos))
+	if len(res.Chequeos) != 7 {
+		t.Fatalf("Chequeos = %d, quiero 7", len(res.Chequeos))
 	}
 }
 
@@ -303,5 +303,48 @@ func TestGatePropagaElAvisoDeVersionFutura(t *testing.T) {
 	}
 	if res.Aviso != tarea.Aviso {
 		t.Errorf("Aviso = %q · la esclusa debe propagarlo", res.Aviso)
+	}
+}
+
+func TestGateAgenteValidoEInvalido(t *testing.T) {
+	cfg := config.Config{
+		Agentes: map[string]config.Agente{
+			"architect": {Provider: "claude", Modelo: "claude-sonnet"},
+		},
+		Proveedores: map[string]config.Proveedor{
+			"planificador": {Modelo: "claude-sonnet"},
+		},
+	}
+
+	// 1. Sin agente en la tarea -> pasa
+	tarea := tareaValida()
+	if res := Run(context.Background(), t.TempDir(), cfg, tarea, nil, DefaultTimeout); !res.Aprobada {
+		t.Errorf("tarea sin agente rechazada: %s", res.PrimerMotivo())
+	}
+
+	// 2. Con agente existente en Agentes -> pasa
+	tareaConAgente := tareaValida()
+	tareaConAgente.Agente = "architect"
+	if res := Run(context.Background(), t.TempDir(), cfg, tareaConAgente, nil, DefaultTimeout); !res.Aprobada {
+		t.Errorf("tarea con agente existente rechazada: %s", res.PrimerMotivo())
+	}
+
+	// 3. Con agente existente en Proveedores -> pasa
+	tareaConProveedor := tareaValida()
+	tareaConProveedor.Agente = "planificador"
+	if res := Run(context.Background(), t.TempDir(), cfg, tareaConProveedor, nil, DefaultTimeout); !res.Aprobada {
+		t.Errorf("tarea con agente en proveedores rechazada: %s", res.PrimerMotivo())
+	}
+
+	// 4. Con agente inexistente -> rechazada
+	tareaDesconocido := tareaValida()
+	tareaDesconocido.Agente = "no-existe"
+	res := Run(context.Background(), t.TempDir(), cfg, tareaDesconocido, nil, DefaultTimeout)
+	if res.Aprobada {
+		t.Fatal("tarea con agente desconocido aprobada")
+	}
+	want := "agente desconocido: no-existe · decláralo en config.yml o usa uno existente"
+	if res.PrimerMotivo() != want {
+		t.Errorf("motivo = %q, quiere %q", res.PrimerMotivo(), want)
 	}
 }

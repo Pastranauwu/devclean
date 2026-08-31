@@ -273,6 +273,7 @@ depende_de: ["T-000"]                        # opcional: ids que deben estar ver
 expone: ["wol.Send(mac, addr string) error"] # opcional: firmas que otras tareas consumen
 usa: ["config.Cargar(p string) error"]       # opcional: firmas de otras, copiadas igual
 peso: liviana                                # opcional: liviana | media | pesada
+agente: architect                            # opcional: agente asignado (declarado en config.yml)
 limite_intentos: 3
 limite_lineas: 200
 riesgos: archivos grandes pueden agotar memoria

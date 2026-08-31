@@ -57,11 +57,12 @@ func validTaskID(id string) error {
 }
 
 func newTaskAddCmd() *cobra.Command {
-	return &cobra.Command{
+	var agente string
+	cmd := &cobra.Command{
 		Use:   `add "<título>"`,
 		Short: "crea una tarea nueva con id correlativo",
 		Example: `  devclean task add "exportar clientes a CSV"
-  devclean task add "login acepta tildes con soporte de ñ"`,
+  devclean task add "diseñar arquitectura" --agente architect`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			titulo := strings.TrimSpace(args[0])
@@ -72,12 +73,14 @@ func newTaskAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runTaskAdd(root, titulo)
+			return runTaskAdd(root, titulo, agente)
 		},
 	}
+	cmd.Flags().StringVar(&agente, "agente", "", "agente asignado para la tarea (declarado en config.yml)")
+	return cmd
 }
 
-func runTaskAdd(root, titulo string) error {
+func runTaskAdd(root, titulo, agente string) error {
 	dir := config.TasksDir(root)
 	id, err := task.NextID(dir)
 	if err != nil {
@@ -90,6 +93,7 @@ func runTaskAdd(root, titulo string) error {
 		Titulo:         titulo,
 		TocarSolo:      []string{},
 		NoTocar:        []string{},
+		Agente:         agente,
 		LimiteIntentos: task.DefaultLimiteIntentos,
 		LimiteLineas:   task.DefaultLimiteLineas,
 		Notas:          notasListoCuando(stack),

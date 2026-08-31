@@ -33,6 +33,7 @@ type propuesta struct {
 	Usa         []string `json:"usa,omitempty"`
 	Riesgos     string   `json:"riesgos,omitempty"`
 	Peso        string   `json:"peso,omitempty"`
+	Agente      string   `json:"agente,omitempty"`
 }
 
 func newPlanCmd() *cobra.Command {
@@ -87,6 +88,7 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 		Pruebas:      cfg.Pruebas,
 		Constitucion: constitucion,
 		Vedadas:      append(append([]string{}, zonas...), patrones...),
+		Agentes:      cfg.Agentes,
 	}
 	if esVacio && !aprobar && isTerminal(os.Stdin) {
 		ctx.Stack, ctx.Requisitos = pedirRequisitos(os.Stdin, esTUI())
@@ -126,6 +128,7 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 			Usa:         b.Usa,
 			Riesgos:     b.Riesgos,
 			Peso:        b.Peso,
+			Agente:      b.Agente,
 		}
 	}
 
@@ -136,13 +139,21 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 		var cuerpo strings.Builder
 		cuerpo.WriteString(tui.Titulo(fmt.Sprintf("PROPONGO %d TAREAS", len(props))) + "\n\n")
 		for _, p := range props {
-			cuerpo.WriteString(p.ID + "  " + p.Titulo + "  " + tui.Apagado("· listo cuando: "+p.ListoCuando) + "\n")
+			ag := ""
+			if p.Agente != "" {
+				ag = " [" + p.Agente + "]"
+			}
+			cuerpo.WriteString(p.ID + "  " + p.Titulo + ag + "  " + tui.Apagado("· listo cuando: "+p.ListoCuando) + "\n")
 		}
 		out.Line("%s", tui.Caja(strings.TrimRight(cuerpo.String(), "\n")))
 	} else {
 		out.Line("propongo %d tareas:", len(props))
 		for _, p := range props {
-			out.Line("%s  %s  · listo cuando: %s", p.ID, p.Titulo, p.ListoCuando)
+			ag := ""
+			if p.Agente != "" {
+				ag = " [" + p.Agente + "]"
+			}
+			out.Line("%s  %s%s  · listo cuando: %s", p.ID, p.Titulo, ag, p.ListoCuando)
 		}
 	}
 
@@ -171,6 +182,7 @@ func runPlan(frase, modelo, ejecutor string, aprobar bool) error {
 			Usa:            b.Usa,
 			Riesgos:        b.Riesgos,
 			Peso:           b.Peso,
+			Agente:         b.Agente,
 			LimiteIntentos: task.DefaultLimiteIntentos,
 			LimiteLineas:   task.DefaultLimiteLineas,
 		}

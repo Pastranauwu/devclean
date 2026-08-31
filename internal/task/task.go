@@ -49,6 +49,7 @@ type Task struct {
 	LimiteLineas   int      `json:"limite_lineas"`
 	Riesgos        string   `json:"riesgos"`
 	Peso           string   `json:"peso,omitempty"` // liviana | media | pesada ("" = estrategia global)
+	Agente         string   `json:"agente,omitempty"` // agente asignado (Fase 2)
 
 	// Notas is the free body after the frontmatter.
 	Notas string `json:"notas,omitempty"`
@@ -162,6 +163,8 @@ func Parse(data []byte) (Task, error) {
 			t.Riesgos = kv.Unquote(p.Value)
 		case "peso":
 			t.Peso = kv.Unquote(p.Value)
+		case "agente":
+			t.Agente = kv.Unquote(p.Value)
 		default:
 			// campos del futuro: se ignoran solo si el archivo lo es
 			if t.Aviso != "" {
@@ -213,6 +216,9 @@ func (t Task) Validate() []error {
 	default:
 		errs = append(errs, fmt.Errorf("peso inválido: %q · usa liviana, media o pesada", t.Peso))
 	}
+	if t.Agente != "" && strings.ContainsAny(t.Agente, " \t\n\r:") {
+		errs = append(errs, fmt.Errorf("agente inválido: %q · usa un nombre sin espacios", t.Agente))
+	}
 	return errs
 }
 
@@ -247,6 +253,9 @@ func (t Task) Marshal() []byte {
 	}
 	if t.Peso != "" {
 		fmt.Fprintf(&b, "peso: %s\n", t.Peso)
+	}
+	if t.Agente != "" {
+		fmt.Fprintf(&b, "agente: %s\n", t.Agente)
 	}
 	b.WriteString("---\n")
 	if t.Notas != "" {

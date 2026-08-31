@@ -187,3 +187,51 @@ func TestRechazarUsaHuerfano(t *testing.T) {
 		t.Fatalf("results = %+v, quiero T-003 rechazada", results)
 	}
 }
+
+func TestResolverAgenteTarea(t *testing.T) {
+	cfg := config.Config{
+		Agentes: map[string]config.Agente{
+			"architect": {Provider: "claude", Modelo: "claude-sonnet", Skills: []string{"diseno"}},
+			"ejecutor":  {Provider: "opencode", Modelo: "glm-5.2", Skills: []string{"refactor"}},
+		},
+		Proveedores: map[string]config.Proveedor{
+			"planificador": {Modelo: "claude-haiku"},
+		},
+	}
+
+	// 1. Tarea con agente architect
+	tArch := task.Task{ID: "T-001", Agente: "architect"}
+	ex, modelo, skills := resolverAgenteTarea(cfg, nil, "", tArch)
+	if ex != nil && ex.Name() != "claude" {
+		t.Errorf("ex.Name() = %q, quiero claude", ex.Name())
+	}
+	if modelo != "claude-sonnet" {
+		t.Errorf("modelo = %q, quiero claude-sonnet", modelo)
+	}
+	if len(skills) != 1 || skills[0] != "diseno" {
+		t.Errorf("skills = %v, quiero [diseno]", skills)
+	}
+
+	// 2. Tarea sin agente (cae a ejecutor)
+	tDefault := task.Task{ID: "T-002"}
+	_, modeloDef, skillsDef := resolverAgenteTarea(cfg, nil, "", tDefault)
+	if modeloDef != "glm-5.2" {
+		t.Errorf("modeloDef = %q, quiero glm-5.2", modeloDef)
+	}
+	if len(skillsDef) != 1 || skillsDef[0] != "refactor" {
+		t.Errorf("skillsDef = %v, quiero [refactor]", skillsDef)
+	}
+
+	// 3. flagModelo tiene precedencia
+	_, modeloFlag, _ := resolverAgenteTarea(cfg, nil, "modelo-manual", tArch)
+	if modeloFlag != "modelo-manual" {
+		t.Errorf("modeloFlag = %q, quiero modelo-manual", modeloFlag)
+	}
+
+	// 4. Tarea con agente en Proveedores
+	tPlan := task.Task{ID: "T-003", Agente: "planificador"}
+	_, modeloPlan, _ := resolverAgenteTarea(cfg, nil, "", tPlan)
+	if modeloPlan != "claude-haiku" {
+		t.Errorf("modeloPlan = %q, quiero claude-haiku", modeloPlan)
+	}
+}

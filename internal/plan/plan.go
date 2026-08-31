@@ -9,7 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+
+	"github.com/Pastranauwu/devclean/internal/config"
 )
 
 // Borrador es una tarea propuesta por el planificador, antes de asignarle
@@ -25,6 +28,7 @@ type Borrador struct {
 	Usa         []string `json:"usa"`
 	Riesgos     string   `json:"riesgos"`
 	Peso        string   `json:"peso"`
+	Agente      string   `json:"agente,omitempty"`
 }
 
 // Generador pide texto a un modelo. El comando lo adapta desde el
@@ -37,13 +41,14 @@ type Generador interface {
 // planear. Se lo pasa al modelo para que no adivine el stack ni
 // invente comandos que no existen en el proyecto (§8.2).
 type Contexto struct {
-	Lenguaje     string   // go, node, python, rust, "" si no se detecta
-	EsVacio      bool     // repo sin código fuente todavía
-	Pruebas      string   // comando de pruebas detectado ("" si no hay)
-	Stack        string   // stack elegido por el humano ("" si lo decide el modelo)
-	Requisitos   string   // requisitos extra que dijo el humano, en texto libre
-	Constitucion string   // contenido de .devclean/constitution.md (§6.11), "" si no existe
-	Vedadas      []string // globs que tocar_solo nunca puede incluir (zonas prohibidas + rutas de prueba)
+	Lenguaje     string                  // go, node, python, rust, "" si no se detecta
+	EsVacio      bool                    // repo sin código fuente todavía
+	Pruebas      string                  // comando de pruebas detectado ("" si no hay)
+	Stack        string                  // stack elegido por el humano ("" si lo decide el modelo)
+	Requisitos   string                  // requisitos extra que dijo el humano, en texto libre
+	Constitucion string                  // contenido de .devclean/constitution.md (§6.11), "" si no existe
+	Vedadas      []string                // globs que tocar_solo nunca puede incluir (zonas prohibidas + rutas de prueba)
+	Agentes      map[string]config.Agente // agentes disponibles en config.yml (§8.1 / Fase 2)
 }
 
 // Prompt arma la instrucción para el planificador: una frase entra, un
@@ -71,6 +76,18 @@ func Prompt(frase string, c Contexto) string {
 	b.WriteString("- \"expone\": array de firmas públicas que esta tarea produce y otra consume (ej. \"wol.Send(mac, addr string) error\", \"POST /wake\"); vacío si no produce ninguna\n")
 	b.WriteString("- \"usa\": array de firmas de OTRAS tareas que esta consume, copiadas palabra por palabra del \"expone\" de aquella; vacío si no consume ninguna\n")
 	b.WriteString("- \"peso\": \"liviana\", \"media\" o \"pesada\" según la complejidad de la tarea (por defecto \"media\")\n")
+	if len(c.Agentes) > 0 {
+		var ags []string
+		for nombre, a := range c.Agentes {
+			desc := nombre
+			if len(a.Skills) > 0 {
+				desc += fmt.Sprintf(" (habilidades: %s)", strings.Join(a.Skills, ", "))
+			}
+			ags = append(ags, desc)
+		}
+		sort.Strings(ags)
+		fmt.Fprintf(&b, "- \"agente\": nombre del agente asignado para esta tarea (disponibles: %s); o \"\" para el ejecutor por defecto\n", strings.Join(ags, "; "))
+	}
 	b.WriteString("- \"riesgos\": riesgos o limitaciones, o \"\" si no hay\n\n")
 	b.WriteString("Las tareas corren en paralelo y aisladas: no pueden leerse el código entre sí. Si una produce algo que otra necesita, la firma DEBE aparecer igual en el \"expone\" de la que la produce y en el \"usa\" de la que la consume; si no, cada una inventará la suya y no van a encajar.\n\n")
 	b.WriteString("Ejemplo:\n[\n")
