@@ -4,11 +4,14 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/gate"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
+	"github.com/Pastranauwu/devclean/internal/ui"
 )
 
 func tarea(id string, alcance []string) task.Task {
@@ -123,6 +126,49 @@ func TestModeloParaTarea(t *testing.T) {
 	cfg2 := config.Config{Modelos: map[string]string{"media": "glm-5.2"}, Proveedores: map[string]config.Proveedor{"ejecutor": {Modelo: "default"}}}
 	if got := modeloParaTarea(cfg2, "", task.Task{Peso: "pesada"}); got != "default" {
 		t.Errorf("peso sin mapeo = %q, quiero default", got)
+	}
+}
+
+func TestMotivoRechazoUneTodosLosChequeos(t *testing.T) {
+	res := gate.Result{
+		ID: "T-001",
+		Chequeos: []gate.Check{
+			{Nombre: "contrato válido", OK: true},
+			{Nombre: "ejecutable", OK: false, Motivo: "falta listo_cuando · escribe el comando que dice \"ya está\""},
+			{Nombre: "zonas prohibidas", OK: false, Motivo: "tocar_solo incluye go.sum"},
+		},
+	}
+	got := motivoRechazo(res)
+	if !strings.Contains(got, "ejecutable") || !strings.Contains(got, "falta listo_cuando") {
+		t.Errorf("falta el primer chequeo fallido: %s", got)
+	}
+	if !strings.Contains(got, "zonas prohibidas") || !strings.Contains(got, "go.sum") {
+		t.Errorf("falta el segundo chequeo fallido: %s", got)
+	}
+	if strings.Contains(got, "contrato válido") {
+		t.Errorf("no debe incluir chequeos en verde: %s", got)
+	}
+}
+
+func TestMotivoRechazoVacioCaeAPrimerMotivo(t *testing.T) {
+	res := gate.Result{ID: "T-001"}
+	if got := motivoRechazo(res); got != "" {
+		t.Errorf("sin chequeos = %q, quiere vacío", got)
+	}
+}
+
+func TestEmitirResultadosRechazadaImprimeMotivoCompleto(t *testing.T) {
+	var b strings.Builder
+	out = ui.New(&b, false)
+	if err := emitirResultados([]runResult{{
+		ID: "T-001", Titulo: "exportar", Estado: "rechazada",
+		Motivo: "ejecutable · falta listo_cuando · zonas prohibidas · tocar_solo incluye go.sum",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	got := b.String()
+	if !strings.Contains(got, "T-001") || !strings.Contains(got, "falta listo_cuando") || !strings.Contains(got, "go.sum") {
+		t.Errorf("plain no imprimió el motivo completo:\n%s", got)
 	}
 }
 

@@ -54,7 +54,7 @@ func runShip(id string, dryRun bool) error {
 		return err
 	}
 	if st.Estado != state.Lista {
-		return fmt.Errorf("%s no está lista · corre devclean run primero", id)
+		return errorShipNoLista(id, st)
 	}
 
 	r := room.Room{ID: id, Path: filepath.Join(room.Dir(root), id), Rama: room.Branch(id)}
@@ -132,6 +132,26 @@ func runShip(id string, dryRun bool) error {
 		out.Line("entregado · %s", res.PR)
 	}
 	return nil
+}
+
+func errorShipNoLista(id string, st state.State) error {
+	switch st.Estado {
+	case state.Detenida:
+		razon := st.Pregunta
+		if razon == "" {
+			razon = st.UltimoError
+		}
+		if razon == "" {
+			razon = "agotó intentos"
+		}
+		return fmt.Errorf("%s está detenida · %s · sube limite_intentos, revisa con devclean logs %s o edita la tarea", id, razon, id)
+	case state.EnCurso:
+		return fmt.Errorf("%s sigue en curso · espera a que termine o mira devclean board", id)
+	case state.Pendiente:
+		return fmt.Errorf("%s está pendiente · corre devclean run primero", id)
+	default:
+		return fmt.Errorf("%s no está lista (estado %s) · corre devclean run primero", id, st.Estado)
+	}
 }
 
 // ultimoModelo devuelve el modelo del último intento, para el trailer
