@@ -188,9 +188,12 @@ devclean ship T-001  # esclusa de salida + PR
 ```
 
 `init` detecta la rama base y el comando de pruebas; si se equivoca, corrígelo
-con `devclean init --pruebas "mi comando"` o editando `.devclean/config.yml`.
-En un repo vacío (`greenfield`) `plan` te pregunta stack y requisitos antes de
-generar.
+con `devclean init --pruebas "mi comando"`, `--pruebas-plantilla go|node|python`
+o editando `.devclean/config.yml`. Al crear una tarea, `task add` sugiere
+ejemplos de `listo_cuando` para el stack detectado (go, node/jest, python/pytest);
+si no hay stack conocido, deja el campo vacío con la regla de oro: un comando
+que **hoy falla**. En un repo vacío (`greenfield`) `plan` te pregunta stack y
+requisitos antes de generar.
 
 ## Adoptarlo en un proyecto real
 

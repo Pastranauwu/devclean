@@ -22,7 +22,7 @@ type initResult struct {
 }
 
 func newInitCmd() *cobra.Command {
-	var pruebas string
+	var pruebas, plantilla string
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "detecta el repo y crea .devclean/",
@@ -32,15 +32,15 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// solo se pregunta si hay alguien para responder
 			var in io.Reader
-			if pruebas == "" && !out.JSON() && isTerminal(os.Stdin) {
+			if pruebas == "" && plantilla == "" && !out.JSON() && isTerminal(os.Stdin) {
 				in = os.Stdin
 			}
-			return runInit(cwd, pruebas, in)
+			return runInit(cwd, pruebas, plantilla, in)
 		},
 	}
 	cmd.Flags().StringVar(&pruebas, "pruebas", "", "comando de pruebas del proyecto, en vez del detectado")
+	cmd.Flags().StringVar(&plantilla, "pruebas-plantilla", "", "stack de pruebas: go, node o python")
 	return cmd
 }
 
@@ -61,7 +61,7 @@ func confirmarPruebas(in io.Reader, detectado string) string {
 	return detectado
 }
 
-func runInit(cwd, pruebasFlag string, in io.Reader) error {
+func runInit(cwd, pruebasFlag, plantilla string, in io.Reader) error {
 	root, err := config.RepoRoot(cwd)
 	if err != nil {
 		return err
@@ -75,6 +75,12 @@ func runInit(cwd, pruebasFlag string, in io.Reader) error {
 	switch {
 	case pruebasFlag != "":
 		pruebas, pruebasOK = pruebasFlag, true
+	case plantilla != "":
+		cmd, ok := config.PlantillaPruebas(plantilla)
+		if !ok {
+			return errors.New("plantilla desconocida: " + plantilla + " · usa go, node o python")
+		}
+		pruebas, pruebasOK = cmd, true
 	case in != nil:
 		pruebas = confirmarPruebas(in, pruebas)
 		pruebasOK = pruebas != ""
@@ -117,5 +123,10 @@ func runInit(cwd, pruebasFlag string, in io.Reader) error {
 		out.Line("· repositorio vacío · devclean plan arrancará desde cero proponiendo un stack")
 	}
 	out.Line("✓ configuración creada en .devclean/")
+	stack := config.StackDePlantilla(plantilla)
+	if stack == "" {
+		stack = config.DetectLanguage(root)
+	}
+	imprimirPlantillasListoCuando(stack)
 	return nil
 }
