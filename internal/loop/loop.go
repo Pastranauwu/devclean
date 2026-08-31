@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/room"
+	"github.com/Pastranauwu/devclean/internal/sealed"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
@@ -126,7 +129,12 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		return Outcome{}, err
 	}
 
-	if o.Examinador != nil {
+	// una suite sellada a mano (devclean task seal) manda sobre el
+	// examinador automático: el usuario ya pagó esas pruebas y volver a
+	// generarlas las pisaría.
+	if sealed.Exists(o.Root, o.Task.ID) {
+		suiteManualEnCuarto(o.Root, o.Task.ID, o.Room.Path)
+	} else if o.Examinador != nil {
 		_, _ = o.Examinador.Run(ctx, o.Room.Path) // graceful degradation: never blocks
 	}
 
@@ -221,6 +229,30 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		UltimoError: prevErr,
 		Pregunta:    pregunta,
 	}, nil
+}
+
+// suiteManualEnCuarto copia al cuarto la suite visible que el usuario
+// selló con `devclean task seal`. Aterriza en la misma ruta que usaría el
+// examinador automático, así que de acá para abajo nadie distingue el
+// origen. Degrada igual que el examinador: si algo falla, el implementador
+// corre sin suite visible, pero nunca se lo frena (§6.8).
+func suiteManualEnCuarto(root, id, roomPath string) {
+	s, err := sealed.Read(root, id)
+	if err != nil || s.Visible == "" || s.ArchivoVisible == "" {
+		return
+	}
+	abs := filepath.Join(roomPath, filepath.FromSlash(s.ArchivoVisible))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return
+	}
+	if err := os.WriteFile(abs, []byte(s.Visible), 0o644); err != nil {
+		return
+	}
+	// commitear o revertFueraDeAlcance (A.3) la borra en el primer
+	// intento: git status lista lo que cambió, no lo ya commiteado.
+	_, _ = gitRun(roomPath, "add", s.ArchivoVisible)
+	_, _ = gitRun(roomPath, "-c", "user.name=devclean", "-c", "user.email=devclean@local",
+		"commit", "-m", "exam: suite visible sellada a mano")
 }
 
 // commitWip guarda el punto de restauración interno: un commit `wip:` en
