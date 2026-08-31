@@ -106,7 +106,7 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 			aprobadas = append(aprobadas, t)
 			continue
 		}
-		results = append(results, runResult{ID: t.ID, Titulo: t.Titulo, Estado: "rechazada", Motivo: res.PrimerMotivo()})
+		results = append(results, runResult{ID: t.ID, Titulo: t.Titulo, Estado: "rechazada", Motivo: motivoRechazo(res)})
 	}
 
 	// §6.10: una tarea no puede consumir una firma que nadie promete.
@@ -129,6 +129,10 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 	}
 
 	if esTUI() {
+		if len(results) > 0 {
+			sortRunResults(results)
+			_ = emitirResultados(results)
+		}
 		_, err := correrConTUI(context.Background(), root, cfg, ex, modelo, constitucion, aprobadas, agentes)
 		return err
 	}
@@ -553,6 +557,24 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		Rama: r.Rama, Puerto: r.Puerto, UltimoError: outcome.UltimoError, Pregunta: outcome.Pregunta,
 	})
 	return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Intentos: outcome.Intentos, Motivo: outcome.Pregunta}
+}
+
+func motivoRechazo(res gate.Result) string {
+	var partes []string
+	for _, c := range res.Chequeos {
+		if c.OK {
+			continue
+		}
+		if c.Motivo != "" {
+			partes = append(partes, c.Nombre+" · "+c.Motivo)
+		} else {
+			partes = append(partes, c.Nombre)
+		}
+	}
+	if len(partes) == 0 {
+		return res.PrimerMotivo()
+	}
+	return strings.Join(partes, " · ")
 }
 
 func sortRunResults(rs []runResult) {
