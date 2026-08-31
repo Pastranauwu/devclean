@@ -68,7 +68,10 @@ la hace código, nunca el modelo**.
    intento, un **examinador ciego** (§6.8) genera la suite de pruebas contra la
    frontera pública (`expone`) — 70% visible para el implementador, 30% sellada
    con hash — sin ver el cuerpo de las funciones. Si la tarea no declara
-   `expone`, no hay examen: no hay frontera que probar.
+   `expone`, no hay examen: no hay frontera que probar. El examinador
+   soporta **go** (validado con `go/parser`) y **python** (validado con
+   `ast.parse` del `python3` del sistema); rust y node todavía no, y en
+   esos stacks el examen se salta en vez de emitir pruebas que no corren.
 3. **Esclusa de salida** — hasta once pasos deterministas en `ship`: rebase,
    historial aplanado, sin ruido, sin secretos, dentro de presupuesto,
    interfaces entregadas, dependencias dentro de las reglas, bisectable,

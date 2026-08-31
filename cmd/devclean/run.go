@@ -524,11 +524,12 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 	}
 
 	exam := examiner.Runner{Options: examiner.Options{
-		Agent:   agenteExecutor{ex},
-		Task:    t,
-		Root:    root,
-		Model:   config.ModeloRol(cfg, "planificador"),
-		Timeout: 3 * time.Minute,
+		Agent:    agenteExecutor{ex},
+		Task:     t,
+		Root:     root,
+		Model:    config.ModeloRol(cfg, "planificador"),
+		Timeout:  3 * time.Minute,
+		Lenguaje: config.DetectLanguage(root),
 	}}
 	outcome, err := loop.Run(ctx, loop.Options{
 		Agent:          agenteExecutor{ex},

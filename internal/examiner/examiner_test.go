@@ -27,14 +27,14 @@ func TestBuildGoFileImports(t *testing.T) {
 	if !strings.Contains(src, `"wakeup/internal/wol"`) {
 		t.Error("falta el paquete bajo prueba")
 	}
-	if !parsea(src) {
-		t.Errorf("el archivo armado no parsea:\n%s", src)
+	if err := validarSintaxis("go", src); err != nil {
+		t.Errorf("el archivo armado no parsea: %v\n%s", err, src)
 	}
 }
 
-func TestParseaRechazaBasura(t *testing.T) {
-	if parsea("package x_test\n\nimport (\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) {\n\tnet.Foo(\n") {
-		t.Error("parsea debió rechazar código con paréntesis sin cerrar")
+func TestValidarSintaxisGoRechazaBasura(t *testing.T) {
+	if validarSintaxis("go", "package x_test\n\nimport (\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) {\n\tnet.Foo(\n") == nil {
+		t.Error("validarSintaxis debió rechazar código con paréntesis sin cerrar")
 	}
 }
 
