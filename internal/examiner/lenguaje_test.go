@@ -1,0 +1,154 @@
+package examiner
+
+import (
+	"os/exec"
+	"strings"
+	"testing"
+
+	"github.com/Pastranauwu/devclean/internal/task"
+)
+
+func TestLenguajeExamen(t *testing.T) {
+	casos := map[string]string{
+		"go":     "go",
+		"":       "go", // repo sin manifiesto: se asume go, como antes
+		"python": "python",
+		"pytest": "python",
+		"PYTHON": "python",
+		"rust":   "", // fase aparte: pide syn o cargo check
+		"node":   "",
+	}
+	for entrada, quiere := range casos {
+		if got := lenguajeExamen(entrada); got != quiere {
+			t.Errorf("lenguajeExamen(%q) = %q, quiere %q", entrada, got, quiere)
+		}
+	}
+}
+
+func TestRutasSuitePorLenguaje(t *testing.T) {
+	tocarSolo := []string{"src/export/**"}
+
+	visible, oculta := RutasSuite(tocarSolo, "python")
+	if visible != "src/export/test_devclean_visible.py" {
+		t.Errorf("visible python = %q", visible)
+	}
+	if oculta != "src/export/test_devclean_hidden.py" {
+		t.Errorf("oculta python = %q", oculta)
+	}
+	// pytest descubre por el prefijo test_, sin configuración extra
+	if !strings.HasPrefix("test_devclean_visible.py", "test_") {
+		t.Error("el nombre de python debe empezar con test_")
+	}
+
+	visible, oculta = RutasSuite(tocarSolo, "go")
+	if visible != "src/export/"+VisibleFileName {
+		t.Errorf("visible go = %q", visible)
+	}
+	if oculta != "src/export/"+HiddenFileName {
+		t.Errorf("oculta go = %q", oculta)
+	}
+}
+
+func TestBuildPyFileImports(t *testing.T) {
+	src := buildPyFile(
+		[]string{"json", "from exportador import a_csv", "json", ""},
+		[]string{"def test_vacio():\n    assert a_csv([]) == \"\""},
+	)
+	if !strings.Contains(src, "import json\n") {
+		t.Errorf("falta el import simple normalizado:\n%s", src)
+	}
+	if !strings.Contains(src, "from exportador import a_csv\n") {
+		t.Errorf("la línea from debe ir tal cual:\n%s", src)
+	}
+	if strings.Count(src, "import json") != 1 {
+		t.Errorf("import duplicado:\n%s", src)
+	}
+	if !strings.Contains(src, "def test_vacio():") {
+		t.Errorf("falta el cuerpo del test:\n%s", src)
+	}
+	if strings.Contains(src, "package ") {
+		t.Errorf("python no lleva declaración de paquete:\n%s", src)
+	}
+}
+
+func TestValidarSintaxisPython(t *testing.T) {
+	sinPython3(t)
+
+	bueno := buildPyFile([]string{"json"}, []string{"def test_ok():\n    assert json.dumps([]) == \"[]\""})
+	if err := validarSintaxis("python", bueno); err != nil {
+		t.Errorf("suite válida rechazada: %v\n%s", err, bueno)
+	}
+
+	malo := "def test_roto(:\n    assert True\n"
+	if validarSintaxis("python", malo) == nil {
+		t.Error("validarSintaxis debió rechazar python con paréntesis roto")
+	}
+}
+
+// sin python3 en el PATH el examinador degrada: deja pasar la suite en vez
+// de frenar al implementador.
+func TestValidarSintaxisPythonSinInterpreteDegrada(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	if err := validarSintaxis("python", "def test_roto(:\n"); err != nil {
+		t.Errorf("sin python3 debe degradar, devolvió: %v", err)
+	}
+}
+
+// rust y node no tienen validador: nunca bloquean.
+func TestValidarSintaxisLenguajeSinValidador(t *testing.T) {
+	if err := validarSintaxis("", "fn main() {}"); err == nil {
+		t.Error("el default valida como go y debió rechazar rust")
+	}
+}
+
+func TestBuildPromptDiceElLenguaje(t *testing.T) {
+	tk := task.Task{ID: "T-001", Titulo: "exportar", Expone: []string{"a_csv(rows) -> str"}}
+
+	py := buildPrompt(tk, "export", "python")
+	if !strings.Contains(py, "Lenguaje de las pruebas: python") {
+		t.Errorf("el prompt de python no declara el lenguaje:\n%s", py)
+	}
+	if !strings.Contains(py, "pytest") {
+		t.Errorf("el prompt de python no menciona pytest:\n%s", py)
+	}
+	for _, deGo := range []string{"stdlib de Go", "Package Go", "*testing.T"} {
+		if strings.Contains(py, deGo) {
+			t.Errorf("el prompt de python arrastra %q:\n%s", deGo, py)
+		}
+	}
+
+	golang := buildPrompt(tk, "export", "go")
+	if !strings.Contains(golang, "Lenguaje de las pruebas: go") {
+		t.Errorf("el prompt de go no declara el lenguaje:\n%s", golang)
+	}
+	if !strings.Contains(golang, "Package Go de las pruebas: export_test") {
+		t.Errorf("el prompt de go perdió el package:\n%s", golang)
+	}
+	if !strings.Contains(golang, "stdlib de Go") {
+		t.Errorf("el prompt de go perdió sus reglas:\n%s", golang)
+	}
+}
+
+// un stack sin examinador salta el examen aunque la tarea declare expone.
+func TestRunSaltaLenguajeSinExaminador(t *testing.T) {
+	for _, lenguaje := range []string{"rust", "node"} {
+		sellada, err := Run(nil, t.TempDir(), Options{
+			Agent:    stubAgent{},
+			Lenguaje: lenguaje,
+			Task: task.Task{
+				ID: "T-001", Titulo: "wol", TocarSolo: []string{"src/**"},
+				Expone: []string{"fn send(mac: &str)"},
+			},
+		})
+		if err != nil || sellada {
+			t.Errorf("%s no debe examinarse: sellada=%v err=%v", lenguaje, sellada, err)
+		}
+	}
+}
+
+func sinPython3(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("sin python3 en el PATH")
+	}
+}
