@@ -47,7 +47,7 @@ func TestConfirmarPruebasMuestraLoDetectado(t *testing.T) {
 func TestRunInitBanderaPruebas(t *testing.T) {
 	root := repoTemporal(t)
 	out = ui.New(io.Discard, false)
-	if err := runInit(root, "pytest -q", nil); err != nil {
+	if err := runInit(root, "pytest -q", "", nil); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	cfg, err := config.Load(root)
@@ -79,4 +79,47 @@ func repoTemporal(t *testing.T) string {
 	}
 	_ = os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	return real
+}
+
+func TestRunInitPlantillaGo(t *testing.T) {
+	root := repoTemporal(t)
+	var b strings.Builder
+	out = ui.New(&b, false)
+	if err := runInit(root, "", "go", nil); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Pruebas != "go test ./..." {
+		t.Errorf("Pruebas = %q, quiere plantilla go", cfg.Pruebas)
+	}
+	if !strings.Contains(b.String(), "go test ./internal/") {
+		t.Errorf("init debió sugerir listo_cuando de go, escribió:\n%s", b.String())
+	}
+}
+
+func TestRunInitPlantillaDesconocida(t *testing.T) {
+	root := repoTemporal(t)
+	out = ui.New(io.Discard, false)
+	err := runInit(root, "", "rust", nil)
+	if err == nil || !strings.Contains(err.Error(), "plantilla desconocida") {
+		t.Fatalf("error = %v, quiere plantilla desconocida", err)
+	}
+}
+
+func TestRunInitPruebasGanaAPlantilla(t *testing.T) {
+	root := repoTemporal(t)
+	out = ui.New(io.Discard, false)
+	if err := runInit(root, "make test", "go", nil); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Pruebas != "make test" {
+		t.Errorf("Pruebas = %q, --pruebas debe ganar", cfg.Pruebas)
+	}
 }
