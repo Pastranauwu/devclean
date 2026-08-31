@@ -91,7 +91,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 		Pruebas:      cfg.Pruebas,
 		Constitucion: constitucion,
 		Vedadas:      append(append([]string{}, zonas...), patrones...),
-		Agentes:      cfg.Agentes,
+		Agentes:      cfg.TodosLosAgentes(),
 	}
 	if esVacio && !aprobar && isTerminal(os.Stdin) {
 		ctx.Stack, ctx.Requisitos = pedirRequisitos(os.Stdin, esTUI())

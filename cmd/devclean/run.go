@@ -509,15 +509,17 @@ func checkOverlapOla(root string, tareas []task.Task) []string {
 	return alertas
 }
 
-// resolverAgenteTarea determina el ejecutor, modelo y skills para una tarea concreta (Fase 2).
+// resolverAgenteTarea determina el ejecutor, modelo y skills para una tarea concreta (Fase 2 / Zero-Config).
 func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagModelo string, t task.Task) (executor.Executor, string, []string) {
 	nombreAgente := t.Agente
 	if nombreAgente == "" {
 		nombreAgente = "ejecutor"
 	}
 
+	ag, ok := cfg.ObtenerAgente(nombreAgente)
+
 	ex := defaultEx
-	if ag, ok := cfg.Agentes[nombreAgente]; ok && ag.Provider != "" {
+	if ok && ag.Provider != "" {
 		if e, err := elegirEjecutor(ag.Provider); err == nil {
 			ex = e
 		}
@@ -525,17 +527,15 @@ func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagMod
 
 	modelo := flagModelo
 	if modelo == "" {
-		if ag, ok := cfg.Agentes[nombreAgente]; ok && ag.Modelo != "" {
+		if ok && ag.Modelo != "" {
 			modelo = ag.Modelo
-		} else if p, ok := cfg.Proveedores[nombreAgente]; ok && p.Modelo != "" {
-			modelo = p.Modelo
 		} else {
 			modelo = modeloParaTarea(cfg, "", t)
 		}
 	}
 
 	var skills []string
-	if ag, ok := cfg.Agentes[nombreAgente]; ok {
+	if ok {
 		skills = ag.Skills
 	}
 

@@ -234,4 +234,14 @@ func TestResolverAgenteTarea(t *testing.T) {
 	if modeloPlan != "claude-haiku" {
 		t.Errorf("modeloPlan = %q, quiero claude-haiku", modeloPlan)
 	}
+
+	// 5. Tarea con arquetipo backend por defecto (sin declarar en config)
+	tBack := task.Task{ID: "T-004", Agente: "backend"}
+	_, modeloBack, skillsBack := resolverAgenteTarea(config.Config{}, nil, "", tBack)
+	if modeloBack != "claude-sonnet" {
+		t.Errorf("modeloBack = %q, quiero claude-sonnet", modeloBack)
+	}
+	if len(skillsBack) == 0 {
+		t.Error("skillsBack no debe estar vacío")
+	}
 }
