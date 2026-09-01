@@ -14,6 +14,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/metrics"
+	"github.com/Pastranauwu/devclean/internal/revisor"
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/ship"
 	"github.com/Pastranauwu/devclean/internal/state"
@@ -25,6 +26,7 @@ func newShipCmd() *cobra.Command {
 	var dryRun bool
 	var todas bool
 	var titulo string
+	var integrar bool
 	cmd := &cobra.Command{
 		Use:   "ship [id]",
 		Short: "esclusa de salida y PR",
@@ -43,7 +45,7 @@ requests que se pisan entre sí.`,
 				if len(args) > 0 {
 					return errors.New("--todas entrega todas las tareas listas · no lleva id")
 				}
-				return runShipTodas(dryRun, titulo)
+				return runShipTodas(dryRun, titulo, integrar)
 			}
 			if len(args) == 0 {
 				return errors.New("falta el id · usa devclean ship T-001 o devclean ship --todas")
@@ -54,6 +56,7 @@ requests que se pisan entre sí.`,
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "corre la esclusa sin abrir el PR")
 	cmd.Flags().BoolVar(&todas, "todas", false, "entrega todas las tareas listas en un solo PR")
 	cmd.Flags().StringVar(&titulo, "titulo", "", "título del PR conjunto (por defecto, el de la primera tarea)")
+	cmd.Flags().BoolVar(&integrar, "integrar", false, "revisa el diff con un modelo y, si aprueba, mergea el PR por rebase")
 	return cmd
 }
 
@@ -61,7 +64,7 @@ requests que se pisan entre sí.`,
 // listas. Cada una pasa su propia esclusa de salida antes de integrarse:
 // el PR conjunto no baja el listón, solo evita repartirlo en N PRs que
 // después hay que mergear en el orden correcto a mano.
-func runShipTodas(dryRun bool, titulo string) error {
+func runShipTodas(dryRun bool, titulo string, integrar bool) error {
 	root, err := projectRoot()
 	if err != nil {
 		return err
@@ -131,6 +134,16 @@ func runShipTodas(dryRun bool, titulo string) error {
 	if cfg.TimeoutPruebas > 0 {
 		opciones.Timeout = time.Duration(cfg.TimeoutPruebas) * time.Second
 	}
+	if integrar {
+		if dryRun {
+			return errors.New("--integrar y --dry-run se contradicen · uno mergea el PR y el otro no lo abre")
+		}
+		rev, err := revisorDelProyecto(root, cfg)
+		if err != nil {
+			return err
+		}
+		opciones.Revisor, opciones.Integrar = rev, true
+	}
 
 	e := ship.EntregarTodas(context.Background(), opciones)
 	if err := out.Data(e); err != nil {
@@ -143,8 +156,46 @@ func runShipTodas(dryRun bool, titulo string) error {
 		out.Line("entregable · %d tareas en la rama %s · --dry-run, sin PR", len(listas), e.Rama)
 		return nil
 	}
+	if e.Integrado {
+		out.Line("integrado · %d tareas en %s · %s", len(listas), cfg.Base, e.PR)
+		return nil
+	}
 	out.Line("entregado · %d tareas en un PR · %s", len(listas), e.PR)
 	return nil
+}
+
+// revisorAgente adapta el ejecutor al generador de texto del revisor,
+// igual que hace el planificador.
+type revisorAgente struct{ gen generadorPlan }
+
+func (r revisorAgente) Revisar(ctx context.Context, diff string, tareas []task.Task) (bool, string, error) {
+	v, err := revisor.Revisar(ctx, revisor.Opciones{
+		Generador: r.gen,
+		Tareas:    tareas,
+		Diff:      diff,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return v.Aprobado, v.Resumen(), nil
+}
+
+// revisorDelProyecto arma el revisor con el modelo del rol `revisor`, o
+// el del planificador si no se declaró uno propio. El rol lleva
+// declarado en config desde el principio y hasta ahora no lo usaba nadie.
+func revisorDelProyecto(root string, cfg config.Config) (ship.Revisor, error) {
+	ex, err := elegirEjecutor(cfg.Cli)
+	if err != nil {
+		return nil, err
+	}
+	modelo := config.ModeloRol(cfg, "revisor")
+	if modelo == "" {
+		modelo = config.ModeloRol(cfg, "planificador")
+	}
+	if modelo == "" {
+		modelo = cfg.ModeloPeso("pesada") // revisar todo el diff no es tarea liviana
+	}
+	return revisorAgente{gen: generadorPlan{ex: ex, modelo: modelo, root: root}}, nil
 }
 
 func runShip(id string, dryRun bool) error {

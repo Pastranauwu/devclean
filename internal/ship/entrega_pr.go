@@ -2,6 +2,7 @@ package ship
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,11 +31,24 @@ type OpcionesEntrega struct {
 	// Es lo que separa su trabajo del que heredó de una oleada anterior,
 	// y a diferencia de los mensajes `wip:` sobrevive a que la esclusa
 	// aplane la rama: sin él, una segunda pasada medía el cuarto entero.
-	Commits  map[string]string
-	Titulo   string // título del PR; vacío usa el de la primera tarea
-	Timeout  time.Duration
+	Commits map[string]string
+	Titulo  string // título del PR; vacío usa el de la primera tarea
+	Timeout time.Duration
+	// Revisor, si no es nil, lee el diff completo antes de integrar y
+	// puede vetar. Es el único paso que juzga intención en vez de
+	// mecánica. Falla cerrado: lo que no se pudo revisar no se integra.
+	Revisor Revisor
+	// Integrar mergea el PR cuando el revisor aprueba. Sin él la entrega
+	// termina con el PR abierto, como siempre.
+	Integrar bool
 	DryRun   bool
 	Progreso func(Paso)
+}
+
+// Revisor juzga si la entrega puede integrarse. La interfaz vive aquí,
+// del lado del consumidor, para no atar ship al paquete revisor.
+type Revisor interface {
+	Revisar(ctx context.Context, diff string, tareas []task.Task) (aprobado bool, resumen string, err error)
 }
 
 // Entrega es el desenlace de entregar varias tareas en un solo PR.
@@ -44,6 +58,9 @@ type Entrega struct {
 	Aprobado bool        `json:"aprobado"`
 	PR       string      `json:"pr,omitempty"`
 	Rama     string      `json:"rama,omitempty"`
+	// Integrado dice si el PR llegó a mergearse. Un PR abierto y sin
+	// integrar es un desenlace válido: el revisor pudo vetarlo.
+	Integrado bool `json:"integrado,omitempty"`
 }
 
 // PrimerMotivo devuelve el motivo del primer paso o tarea que frenó.
@@ -200,12 +217,53 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	apuntar(Paso{"pr", true, url})
 	e.PR, e.Aprobado = url, true
 
+	if o.Integrar {
+		if !integrarPR(ctx, o, path, target, url, ordenadas, apuntar) {
+			// el PR queda abierto con el motivo: no es un fallo de la
+			// entrega, es una integración que no se hizo
+			return e
+		}
+		e.Integrado = true
+	}
+
 	// los cuartos ya entregaron: liberarlos deja el repo limpio
 	for _, t := range ordenadas {
 		_ = room.Destroy(ctx, o.Root, t.ID)
 	}
 	_ = room.Destroy(ctx, o.Root, "_integra")
 	return e
+}
+
+// integrarPR revisa el diff y, si el revisor aprueba, mergea el PR por
+// rebase. Devuelve si se integró; cuando no, el PR queda abierto con el
+// motivo anotado en los pasos y como comentario en el propio PR.
+func integrarPR(ctx context.Context, o OpcionesEntrega, path, target, url string, tareas []task.Task, apuntar func(Paso)) bool {
+	if o.Revisor != nil {
+		diff, err := gitRun(path, "diff", target+"..HEAD")
+		if err != nil {
+			apuntar(Paso{"revisión", false, "no se pudo leer el diff · " + tail(diff)})
+			return false
+		}
+		aprobado, resumen, err := o.Revisor.Revisar(ctx, diff, tareas)
+		if err != nil {
+			// falla cerrado: lo que no se pudo revisar no entra
+			apuntar(Paso{"revisión", false, err.Error() + " · el PR queda abierto"})
+			return false
+		}
+		_ = comentarPR(ctx, o.Root, url, resumen)
+		if !aprobado {
+			apuntar(Paso{"revisión", false, resumen + " · el PR queda abierto"})
+			return false
+		}
+		apuntar(Paso{"revisión", true, resumen})
+	}
+
+	if err := mergearPR(ctx, o.Root, path, o.Base, url); err != nil {
+		apuntar(Paso{"integrar en " + o.Base, false, err.Error()})
+		return false
+	}
+	apuntar(Paso{"integrar en " + o.Base, true, "mergeado por rebase · un commit por tarea"})
+	return true
 }
 
 // baseDelta devuelve el commit desde el que empieza el trabajo propio de
@@ -405,4 +463,76 @@ func abrirPREntrega(ctx context.Context, root, path, base, titulo, cuerpo string
 		return "", fmt.Errorf("gh no pudo abrir el PR · %s", tail(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// mergearPR integra el PR en la rama base por rebase, para que los
+// commits por tarea entren tal cual: es lo que hace que el historial de
+// la rama principal siga siendo bisectable, un commit por tarea.
+//
+// Si la base se movió desde que se abrió el PR, rebasea la rama de
+// entrega sobre la base nueva, vuelve a subirla y reintenta una vez. Un
+// conflicto real se reporta con los archivos, no con "no se pudo".
+func mergearPR(ctx context.Context, root, path, base, url string) error {
+	gh, err := exec.LookPath("gh")
+	if err != nil {
+		return errors.New("gh no está instalado")
+	}
+
+	merge := func() (string, error) {
+		cmd := exec.CommandContext(ctx, gh, "pr", "merge", url, "--rebase", "--delete-branch")
+		cmd.Dir = root
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+
+	salida, err := merge()
+	if err == nil {
+		return nil
+	}
+
+	// segundo intento: la base pudo avanzar entre abrir el PR y mergear
+	if err := realinearConBase(ctx, root, path, base); err != nil {
+		return fmt.Errorf("%s · %s", tail(salida), err)
+	}
+	if salida, err = merge(); err != nil {
+		return fmt.Errorf("no se pudo integrar ni tras realinear con %s · %s", base, tail(salida))
+	}
+	return nil
+}
+
+// realinearConBase rebasea la rama de entrega sobre la base actual y la
+// vuelve a subir. Devuelve un error que nombra los archivos si el
+// conflicto es real.
+func realinearConBase(ctx context.Context, root, path, base string) error {
+	_, _ = gitRun(root, "fetch", "--quiet")
+	target := base
+	if _, err := gitRun(root, "rev-parse", "--verify", "--quiet", "origin/"+base); err == nil {
+		target = "origin/" + base
+	}
+	if salida, err := gitRun(path, "rebase", target); err != nil {
+		conflictos := unmerged(path)
+		_, _ = gitRun(path, "rebase", "--abort")
+		if len(conflictos) > 0 {
+			return fmt.Errorf("%s cambió y choca en %s · resuélvelo a mano", target, unir(conflictos))
+		}
+		return fmt.Errorf("no se pudo rebasear sobre %s · %s", target, tail(salida))
+	}
+	if salida, err := gitRun(path, "push", "--force", "origin", RamaEntrega); err != nil {
+		return fmt.Errorf("no se pudo subir la rama realineada · %s", tail(salida))
+	} else {
+		_ = salida
+	}
+	return nil
+}
+
+// comentarPR deja el veredicto del revisor en el propio PR, para que la
+// razón viva donde alguien la va a leer y no solo en la terminal.
+func comentarPR(ctx context.Context, root, url, cuerpo string) error {
+	gh, err := exec.LookPath("gh")
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, gh, "pr", "comment", url, "--body", cuerpo)
+	cmd.Dir = root
+	return cmd.Run()
 }

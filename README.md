@@ -184,6 +184,11 @@ devclean up "exportar clientes a CSV y arreglar el login con tildes" --agentes 3
 
 `up` planea, ejecuta cada tarea en su propio cuarto aislado y, con `--ship`,
 entrega todo en **un solo PR** con un commit por tarea, en orden de dependencia.
+Con `--integrar` en vez de `--ship`, además lo revisa y lo mergea:
+
+```sh
+devclean up "exportar clientes a CSV" --agentes 3 --integrar
+```
 
 Si quieres revisar el plan antes de que corra nada, quita `--ship` o usa
 `devclean plan`: en terminal te muestra las tareas propuestas con casillas
@@ -213,6 +218,32 @@ devclean standup        # parte de datos: colisiones y atascos
 devclean ship --todas   # un PR con todas las tareas listas
 devclean ship T-001     # o una sola tarea en su propio PR
 ```
+
+### Integrar sin tocar nada
+
+`--integrar` añade dos pasos después de abrir el PR:
+
+1. **Revisión.** Un modelo (el rol `revisor` de `config.yml`, o el del
+   planificador si no declaraste uno) lee el diff completo junto a los
+   contratos y decide. Es lo único que juzga *intención* en vez de mecánica:
+   las esclusas verifican que compila, que pasa y que no hay secretos, no que
+   el código haga lo que la tarea pedía. Su veredicto queda como comentario en
+   el propio PR.
+2. **Merge por rebase.** Los commits entran en la rama base tal cual, uno por
+   tarea, para que el historial siga siendo bisectable. Si la base se movió
+   mientras tanto, la rama de entrega se rebasea sobre la base nueva, se vuelve
+   a subir y se reintenta una vez; un conflicto real se reporta con los
+   archivos implicados.
+
+**Falla cerrado**, al revés que el examinador ciego: si el revisor no responde,
+devuelve algo ilegible, o el diff es más grande de lo que puede cubrir, **no se
+integra** y el PR queda abierto con el motivo. Perder un examen cuesta una
+prueba; integrar sin mirar mete código en la rama principal.
+
+Lo que `--integrar` apaga es tu revisión. Las esclusas siguen ahí, pero el juicio
+de "¿esto es lo que yo quería?" pasa a un modelo. En los stacks sin examinador
+ciego (node, rust) las pruebas las escribió el mismo agente que el código, así
+que ahí el revisor es lo único que mira el diff con otros ojos.
 
 ### Cuando algo falla
 
@@ -617,6 +648,7 @@ devclean up --ejecutor opencode --modelo "opencode/muse-spark-1.2-contributor-fr
 | `devclean standup` | parte de datos: COLISIÓN y ATASCO sin gastar tokens (§6.7) |
 | `devclean ship <id>` | esclusa de salida (hasta 11 pasos) y PR de esa tarea |
 | `devclean ship --todas` | la esclusa de cada tarea lista y **un solo PR** con un commit por tarea |
+| `devclean ship --todas --integrar` | además revisa el diff con un modelo y, si aprueba, mergea el PR por rebase |
 | `devclean logs <id>` | intentos, tokens, y el error del agente si la invocación falló |
 | `devclean report` | métricas del proyecto |
 | `devclean doctor` | verifica configuración, keys, permisos y git |
@@ -670,10 +702,15 @@ debate con dos detectores deterministas que cuestan cero tokens.
 
 ## Estado
 
-**v0.6.2.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
+**v0.6.3.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
 + skills reales, recursividad y fiabilidad de `ship` (v0.5) + de una petición
 a un PR limpio (v0.6), todo en `main` con pruebas verdes.
 
+- **v0.6.3:** `devclean ship --todas --integrar` (y `devclean up "..."
+  --integrar`) cierra el camino entero: revisa el diff con un modelo — el rol
+  `revisor` que llevaba declarado en `config.yml` sin usarse — y, si aprueba,
+  mergea el PR por rebase, conservando el commit por tarea. Falla cerrado: lo
+  que no se pudo revisar no se integra.
 - **v0.6.2:** devclean no servía en un proyecto que ya existe con la suite en
   verde. El planificador copiaba el comando de pruebas del proyecto
   (`npm test`, `go test ./...`) en los `listo_cuando`, y la esclusa de entrada

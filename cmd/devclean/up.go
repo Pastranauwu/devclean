@@ -12,7 +12,7 @@ func newUpCmd() *cobra.Command {
 	var file string
 	var agentes int
 	var modelo, ejecutor, titulo string
-	var reintentar, entregar bool
+	var reintentar, entregar, integrar bool
 
 	cmd := &cobra.Command{
 		Use:   `up ["<petición>"]`,
@@ -26,6 +26,7 @@ las entrega en UN pull request limpio (devclean ship --todas).
 Sin petición, aplica la especificación del repo (devclean.spec.yml) si
 existe y ejecuta las tareas pendientes.`,
 		Example: `  devclean up "cli en go que despierta equipos por wake-on-lan" --ship
+  devclean up "arreglar el login con tildes" --integrar
   devclean up --agentes 4 --ship
   devclean up -f specs/auth.yml`,
 		Args: cobra.ArbitraryArgs,
@@ -66,11 +67,11 @@ existe y ejecuta las tareas pendientes.`,
 			if err := runCmd(agentes, ejecutor, modelo, reintentar); err != nil {
 				return err
 			}
-			if !entregar {
+			if !entregar && !integrar {
 				return nil
 			}
 			out.Line("")
-			return runShipTodas(false, titulo)
+			return runShipTodas(false, titulo, integrar)
 		},
 	}
 
@@ -80,6 +81,7 @@ existe y ejecuta las tareas pendientes.`,
 	cmd.Flags().StringVar(&ejecutor, "ejecutor", "", "opencode o claude")
 	cmd.Flags().BoolVar(&reintentar, "reintentar", false, "vuelve a correr también las tareas detenidas")
 	cmd.Flags().BoolVar(&entregar, "ship", false, "al terminar, entrega todas las tareas listas en un solo PR")
+	cmd.Flags().BoolVar(&integrar, "integrar", false, "además de entregar, revisa el diff con un modelo y mergea el PR si aprueba")
 	cmd.Flags().StringVar(&titulo, "titulo", "", "título del PR (por defecto, la petición)")
 
 	return cmd

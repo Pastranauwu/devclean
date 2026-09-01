@@ -2,6 +2,7 @@ package ship
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -329,5 +330,90 @@ func TestEntregarTodasReconoceRamaYaAplanada(t *testing.T) {
 	if primera.Tareas[0].LineasMas != segunda.Tareas[0].LineasMas {
 		t.Errorf("lineas: con anotación %d, sin ella %d · debe reconocer la rama aplanada",
 			primera.Tareas[0].LineasMas, segunda.Tareas[0].LineasMas)
+	}
+}
+
+// revisorFijo responde siempre lo mismo, para probar las dos ramas del
+// paso de integración sin hablar con un modelo.
+type revisorFijo struct {
+	aprobado bool
+	resumen  string
+	err      error
+}
+
+func (r revisorFijo) Revisar(context.Context, string, []task.Task) (bool, string, error) {
+	return r.aprobado, r.resumen, r.err
+}
+
+// Un veto del revisor deja el PR abierto: la entrega en sí fue correcta,
+// lo que no se hizo es meterla en la rama principal. Se prueba sobre
+// integrarPR directamente porque en --dry-run la entrega ni llega ahí.
+func TestIntegrarPRNoMergeaSiElRevisorVeta(t *testing.T) {
+	root := repoConCommit(t)
+	sinIdentidadGit(t, root)
+
+	var pasos []Paso
+	ok := integrarPR(context.Background(),
+		OpcionesEntrega{Root: root, Base: "main", Revisor: revisorFijo{aprobado: false, resumen: "no valida la entrada"}},
+		root, "main", "http://pr/1", nil, func(p Paso) { pasos = append(pasos, p) })
+
+	if ok {
+		t.Error("un veto no debe integrarse")
+	}
+	// un solo paso: frena en la revisión y ni intenta el merge. Con un
+	// revisor que aprueba habría un segundo paso "integrar en main".
+	if len(pasos) != 1 || pasos[0].Nombre != "revisión" || pasos[0].OK {
+		t.Fatalf("pasos = %+v · debe frenar en la revisión, antes del merge", pasos)
+	}
+	if !strings.Contains(pasos[0].Detalle, "no valida la entrada") {
+		t.Errorf("detalle = %q · debe llevar el motivo del veto", pasos[0].Detalle)
+	}
+}
+
+// Lo que no se pudo revisar tampoco se integra: falla cerrado.
+func TestIntegrarPRFallaCerrado(t *testing.T) {
+	root := repoConCommit(t)
+	sinIdentidadGit(t, root)
+
+	var pasos []Paso
+	ok := integrarPR(context.Background(),
+		OpcionesEntrega{Root: root, Base: "main", Revisor: revisorFijo{err: errors.New("el revisor no respondió")}},
+		root, "main", "http://pr/1", nil, func(p Paso) { pasos = append(pasos, p) })
+
+	if ok {
+		t.Error("una revisión fallida no debe integrarse")
+	}
+	if len(pasos) != 1 || pasos[0].OK {
+		t.Fatalf("pasos = %+v", pasos)
+	}
+	if !strings.Contains(pasos[0].Detalle, "el PR queda abierto") {
+		t.Errorf("detalle = %q · debe decir que el PR sigue ahí", pasos[0].Detalle)
+	}
+}
+
+// --dry-run e --integrar se contradicen: la entrega en seco termina antes
+// de tocar la integración, sin llamar siquiera al revisor.
+func TestDryRunNoIntegraAunqueSePida(t *testing.T) {
+	root := repoConCommit(t)
+	sinIdentidadGit(t, root)
+	cuartoDeTarea(t, root, "T-001", "a.go")
+
+	e := EntregarTodas(context.Background(), OpcionesEntrega{
+		Root:     root,
+		Config:   config.Config{Base: "main", Pruebas: "true"},
+		Base:     "main",
+		Tareas:   []task.Task{tareaEntrega("T-001", "a.go")},
+		Commits:  map[string]string{"T-001": strings.TrimSpace(gitCmd(t, root, "rev-parse", "main"))},
+		Revisor:  revisorFijo{err: errors.New("no debería llamarse")},
+		Integrar: true,
+		DryRun:   true,
+	})
+	t.Cleanup(func() { _ = limpiarEntrega(root, roomPathDe(root, "_entrega")) })
+
+	if !e.Aprobado {
+		t.Fatalf("la entrega en seco debe aprobarse · %s", e.PrimerMotivo())
+	}
+	if e.Integrado {
+		t.Error("--dry-run no integra nada")
 	}
 }
