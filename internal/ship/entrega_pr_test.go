@@ -35,10 +35,20 @@ func tareaEntrega(id, archivo string, deps ...string) task.Task {
 	}
 }
 
+// sinIdentidadGit deja el repo como un runner de CI limpio: sin user.name
+// ni user.email. Cualquier commit que devclean cree ahí tiene que traer su
+// propia identidad, o git responde "empty ident name" y la entrega muere.
+func sinIdentidadGit(t *testing.T, root string) {
+	t.Helper()
+	gitCmd(t, root, "config", "user.name", "")
+	gitCmd(t, root, "config", "user.email", "")
+}
+
 // La entrega conjunta deja UN commit por tarea sobre la base, en orden de
 // dependencia: es lo que separa un PR limpio de N PRs que se pisan.
 func TestEntregarTodasUnCommitPorTarea(t *testing.T) {
 	root := repoConCommit(t)
+	sinIdentidadGit(t, root)
 	cuartoDeTarea(t, root, "T-001", "a.go")
 	cuartoDeTarea(t, root, "T-002", "b.go")
 
@@ -192,5 +202,47 @@ func TestEntregarTodasSegundaOleadaNoArrastraLaPrimera(t *testing.T) {
 		if out := gitCmd(t, root, "ls-tree", "--name-only", RamaEntrega, f); strings.TrimSpace(out) != f {
 			t.Errorf("falta %s en la rama de entrega", f)
 		}
+	}
+}
+
+// Dos tareas que escriben el mismo archivo con contenido distinto: eso sí
+// es un solapamiento de alcances, y el mensaje debe decirlo con el
+// archivo en la mano.
+func TestEntregarTodasReportaElConflictoReal(t *testing.T) {
+	root := repoConCommit(t)
+	sinIdentidadGit(t, root)
+
+	for _, c := range []struct{ id, cuerpo string }{
+		{"T-001", "package a\n\n// version de T-001\n"},
+		{"T-002", "package a\n\n// version distinta de T-002\n"},
+	} {
+		r, err := room.Create(context.Background(), root, c.id, "main")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = room.Destroy(context.Background(), root, c.id) })
+		escribir(t, r.Path, "choque.go", c.cuerpo)
+		gitCmd(t, r.Path, "add", "-A")
+		gitCmd(t, r.Path, "-c", "user.email=d@d", "-c", "user.name=d", "commit", "-m", "wip: "+c.id+" intento 1")
+	}
+
+	e := EntregarTodas(context.Background(), OpcionesEntrega{
+		Root:   root,
+		Config: config.Config{Base: "main", Pruebas: "true"},
+		Base:   "main",
+		Tareas: []task.Task{
+			tareaEntrega("T-001", "choque.go"),
+			tareaEntrega("T-002", "choque.go"),
+		},
+		DryRun: true,
+	})
+	t.Cleanup(func() { _ = limpiarEntrega(root, roomPathDe(root, "_entrega")) })
+
+	if e.Aprobado {
+		t.Fatal("dos tareas sobre el mismo archivo no pueden integrarse solas")
+	}
+	motivo := e.PrimerMotivo()
+	if !strings.Contains(motivo, "choque.go") || !strings.Contains(motivo, "tocar_solo") {
+		t.Errorf("motivo = %q · debe nombrar el archivo y el solapamiento", motivo)
 	}
 }

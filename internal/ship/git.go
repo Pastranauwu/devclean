@@ -79,10 +79,15 @@ type noEntregaError struct{}
 
 func (noEntregaError) Error() string { return "nada que entregar · la rama no tiene cambios" }
 
-// identity devuelve los -c de identidad si el repo no tiene user.email.
+// identity devuelve los -c de identidad cuando el repo no tiene una
+// configurada. Hacen falta LAS DOS: git deduce el correo del sistema
+// cuando falta, pero no el nombre, y entonces cualquier commit muere con
+// "empty ident name (for <user@host>) not allowed". Es lo que pasa en un
+// runner de CI limpio, donde nadie corrió `git config user.name`.
 func identity(roomPath string) []string {
+	nombre, _ := gitRun(roomPath, "config", "user.name")
 	email, _ := gitRun(roomPath, "config", "user.email")
-	if strings.TrimSpace(email) == "" {
+	if strings.TrimSpace(nombre) == "" || strings.TrimSpace(email) == "" {
 		return []string{"-c", "user.name=devclean", "-c", "user.email=devclean@local"}
 	}
 	return nil

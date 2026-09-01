@@ -139,11 +139,23 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 
 	// 3. un commit por tarea, en orden de dependencia
 	for _, t := range ordenadas {
-		if out, err := gitRun(path, "cherry-pick", room.Branch(t.ID)); err != nil {
+		// cherry-pick crea un commit, así que necesita identidad: sin
+		// ella git muere con "empty ident name" en cualquier maquina que
+		// no tenga user.name configurado (un runner de CI, por ejemplo)
+		args := append(identity(path), "cherry-pick", room.Branch(t.ID))
+		if out, err := gitRun(path, args...); err != nil {
+			// un cherry-pick falla por conflicto, pero tambien por
+			// cosas que no tienen nada que ver con el codigo. Culpar
+			// siempre al solapamiento manda al usuario a revisar unos
+			// tocar_solo que estan bien.
+			conflictos := unmerged(path)
 			_, _ = gitRun(path, "cherry-pick", "--abort")
-			apuntar(Paso{"integrar " + t.ID, false,
-				"choca con el trabajo de una tarea anterior · " + tail(out) +
-					" · sus alcances (tocar_solo) se solapan"})
+			detalle := "no se pudo integrar · " + tail(out)
+			if len(conflictos) > 0 {
+				detalle = "choca con el trabajo de una tarea anterior en " + unir(conflictos) +
+					" · sus alcances (tocar_solo) se solapan"
+			}
+			apuntar(Paso{"integrar " + t.ID, false, detalle})
 			return e
 		}
 	}
