@@ -101,6 +101,13 @@ func runDoctor() error {
 		checks = append(checks, chequeoDoctor{"keys", false, "ninguna key de proveedor en el entorno"})
 	}
 
+	// npx: opcional, solo hace falta para devclean skills sync
+	if _, err := exec.LookPath("npx"); err != nil {
+		checks = append(checks, chequeoDoctor{"npx", false, "no instalado · devclean skills sync no va a poder traer skills"})
+	} else {
+		checks = append(checks, chequeoDoctor{"npx", true, ""})
+	}
+
 	if err := out.Data(checks); err != nil {
 		return err
 	}
@@ -110,7 +117,7 @@ func runDoctor() error {
 			out.Line("✓ %s%s", c.Nombre, detalleDoctor(c))
 		} else {
 			out.Line("✗ %s  · %s", c.Nombre, c.Detalle)
-			if c.Nombre != "keys" {
+			if c.Nombre != "keys" && c.Nombre != "npx" {
 				critico = true
 			}
 		}

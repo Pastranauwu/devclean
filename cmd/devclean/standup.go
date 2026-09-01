@@ -1,12 +1,14 @@
 package main
 
 import (
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/loop"
+	"github.com/Pastranauwu/devclean/internal/recurse"
 	"github.com/Pastranauwu/devclean/internal/standup"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
@@ -58,5 +60,40 @@ func runStandup() error {
 		return err
 	}
 	out.Line("%s", standup.Formatear(eventos, time.Now(), nActivas))
+
+	for _, t := range tareas {
+		nodos, err := recurse.LeerArbol(root, t.ID)
+		if err != nil {
+			return err
+		}
+		if len(nodos) == 0 {
+			continue
+		}
+		out.Line("")
+		out.Line("árbol de %s (%s):", t.ID, t.Titulo)
+		imprimirArbolStandup(nodos, t.ID, 1)
+	}
 	return nil
+}
+
+// imprimirArbolStandup imprime, indentado, el estado de cada subtarea de
+// una tarea recursiva — mismo dato que board, en el mismo lugar donde ya
+// se mira el progreso del día.
+func imprimirArbolStandup(nodos []recurse.NodoArbol, padre string, profundidad int) {
+	sangria := strings.Repeat("  ", profundidad)
+	for _, n := range nodos {
+		if n.Padre != padre {
+			continue
+		}
+		marca := "✓"
+		if !n.Verde {
+			marca = "✗"
+		}
+		detalle := ""
+		if n.Motivo != "" {
+			detalle = " · " + n.Motivo
+		}
+		out.Line("%s%s %s  %s (%d intentos)%s", sangria, marca, n.ID, n.Titulo, n.Intentos, detalle)
+		imprimirArbolStandup(nodos, n.ID, profundidad+1)
+	}
 }

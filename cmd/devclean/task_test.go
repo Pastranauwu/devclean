@@ -18,7 +18,7 @@ func TestRunTaskAddSugiereGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	out = ui.New(io.Discard, false)
-	if err := runInit(root, "", "", nil); err != nil {
+	if err := runInit(root, "", "", nil, true); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -46,7 +46,7 @@ func TestRunTaskAddSugiereGo(t *testing.T) {
 func TestRunTaskAddSinStackNoInventa(t *testing.T) {
 	root := repoTemporal(t)
 	out = ui.New(io.Discard, false)
-	if err := runInit(root, "", "", nil); err != nil {
+	if err := runInit(root, "", "", nil, true); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -80,7 +80,7 @@ func TestRunTaskAddSinStackNoInventa(t *testing.T) {
 func TestRunTaskAddConAgente(t *testing.T) {
 	root := repoTemporal(t)
 	out = ui.New(io.Discard, false)
-	if err := runInit(root, "", "", nil); err != nil {
+	if err := runInit(root, "", "", nil, true); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 

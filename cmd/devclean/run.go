@@ -18,7 +18,9 @@ import (
 	"github.com/Pastranauwu/devclean/internal/gate"
 	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/overlap"
+	"github.com/Pastranauwu/devclean/internal/recurse"
 	"github.com/Pastranauwu/devclean/internal/room"
+	"github.com/Pastranauwu/devclean/internal/skills"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/tui"
@@ -509,8 +511,10 @@ func checkOverlapOla(root string, tareas []task.Task) []string {
 	return alertas
 }
 
-// resolverAgenteTarea determina el ejecutor, modelo y skills para una tarea concreta (Fase 2 / Zero-Config).
-func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagModelo string, t task.Task) (executor.Executor, string, []string) {
+// resolverAgenteTarea determina el ejecutor, modelo, skills (etiquetas) y
+// skill_packages (paquetes reales a inyectar) para una tarea concreta
+// (Fase 2 / Zero-Config).
+func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagModelo string, t task.Task) (executor.Executor, string, []string, []string) {
 	nombreAgente := t.Agente
 	if nombreAgente == "" {
 		nombreAgente = "ejecutor"
@@ -552,12 +556,13 @@ func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagMod
 		}
 	}
 
-	var skills []string
+	var etiquetas, paquetes []string
 	if ag, ok := cfg.ObtenerAgente(nombreAgente); ok {
-		skills = ag.Skills
+		etiquetas = ag.Skills
+		paquetes = ag.SkillPackages
 	}
 
-	return ex, modelo, skills
+	return ex, modelo, etiquetas, paquetes
 }
 
 // correrUno ejecuta una tarea completa: cuarto, esclusa de estado,
@@ -574,7 +579,8 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
 	}
 
-	exTarea, modeloTarea, skillsTarea := resolverAgenteTarea(cfg, ex, modelo, t)
+	exTarea, modeloTarea, skillsTarea, skillPkgsTarea := resolverAgenteTarea(cfg, ex, modelo, t)
+	skillsContenido := skills.Content(root, skillPkgsTarea)
 
 	exam := examiner.Runner{Options: examiner.Options{
 		Agent:    agenteExecutor{exTarea},
@@ -584,19 +590,45 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		Timeout:  3 * time.Minute,
 		Lenguaje: config.DetectLanguage(root),
 	}}
+	var agentTimeout, pruebaTimeout time.Duration
+	if cfg.TimeoutAgente > 0 {
+		agentTimeout = time.Duration(cfg.TimeoutAgente) * time.Second
+	}
+	if cfg.TimeoutPruebas > 0 {
+		pruebaTimeout = time.Duration(cfg.TimeoutPruebas) * time.Second
+	}
+
+	var agente loop.Agent = agenteExecutor{exTarea}
+	if cfg.RecursionMax > 0 && t.Recursivo {
+		agente = recurse.Agent{
+			Cfg:            cfg,
+			Constitucion:   constitucion,
+			Planificador:   generadorPlan{ex: ex, modelo: config.ModeloRol(cfg, "planificador"), root: root},
+			ModeloPlan:     config.ModeloRol(cfg, "planificador"),
+			Ejecutor:       agenteExecutor{exTarea},
+			ModeloEjecutor: modeloTarea,
+			Task:           t,
+			Root:           root,
+			RaizID:         t.ID,
+		}
+	}
+
 	outcome, err := loop.Run(ctx, loop.Options{
-		Agent:          agenteExecutor{exTarea},
+		Agent:          agente,
 		Root:           root,
 		Room:           r,
 		Task:           t,
 		Model:          modeloTarea,
 		Base:           base,
 		PatronesPrueba: cfg.PatronesPrueba,
+		AgentTimeout:   agentTimeout,
+		PruebaTimeout:  pruebaTimeout,
 		Env:            []string{fmt.Sprintf("PORT=%d", r.Puerto)},
 		Interfaces:     t.Usa,
-		Constitucion:   constitucion,
-		Skills:         skillsTarea,
-		Examinador:     exam,
+		Constitucion:    constitucion,
+		Skills:          skillsTarea,
+		SkillsContenido: skillsContenido,
+		Examinador:      exam,
 	})
 	if err != nil {
 		_ = state.Save(root, state.State{ID: t.ID, Estado: state.Detenida, Rama: r.Rama, Puerto: r.Puerto, UltimoError: err.Error()})

@@ -201,7 +201,7 @@ func TestResolverAgenteTarea(t *testing.T) {
 
 	// 1. Tarea con agente architect
 	tArch := task.Task{ID: "T-001", Agente: "architect"}
-	ex, modelo, skills := resolverAgenteTarea(cfg, nil, "", tArch)
+	ex, modelo, skills, _ := resolverAgenteTarea(cfg, nil, "", tArch)
 	if ex != nil && ex.Name() != "claude" {
 		t.Errorf("ex.Name() = %q, quiero claude", ex.Name())
 	}
@@ -214,7 +214,7 @@ func TestResolverAgenteTarea(t *testing.T) {
 
 	// 2. Tarea sin agente (cae a ejecutor)
 	tDefault := task.Task{ID: "T-002"}
-	_, modeloDef, skillsDef := resolverAgenteTarea(cfg, nil, "", tDefault)
+	_, modeloDef, skillsDef, _ := resolverAgenteTarea(cfg, nil, "", tDefault)
 	if modeloDef != "glm-5.2" {
 		t.Errorf("modeloDef = %q, quiero glm-5.2", modeloDef)
 	}
@@ -223,25 +223,28 @@ func TestResolverAgenteTarea(t *testing.T) {
 	}
 
 	// 3. flagModelo tiene precedencia
-	_, modeloFlag, _ := resolverAgenteTarea(cfg, nil, "modelo-manual", tArch)
+	_, modeloFlag, _, _ := resolverAgenteTarea(cfg, nil, "modelo-manual", tArch)
 	if modeloFlag != "modelo-manual" {
 		t.Errorf("modeloFlag = %q, quiero modelo-manual", modeloFlag)
 	}
 
 	// 4. Tarea con agente en Proveedores
 	tPlan := task.Task{ID: "T-003", Agente: "planificador"}
-	_, modeloPlan, _ := resolverAgenteTarea(cfg, nil, "", tPlan)
+	_, modeloPlan, _, _ := resolverAgenteTarea(cfg, nil, "", tPlan)
 	if modeloPlan != "claude-haiku" {
 		t.Errorf("modeloPlan = %q, quiero claude-haiku", modeloPlan)
 	}
 
 	// 5. Tarea con arquetipo backend por defecto (sin declarar en config)
 	tBack := task.Task{ID: "T-004", Agente: "backend"}
-	_, modeloBack, skillsBack := resolverAgenteTarea(config.Config{}, nil, "", tBack)
+	_, modeloBack, skillsBack, skillPkgsBack := resolverAgenteTarea(config.Config{}, nil, "", tBack)
 	if modeloBack != "claude-sonnet" {
 		t.Errorf("modeloBack = %q, quiero claude-sonnet", modeloBack)
 	}
 	if len(skillsBack) == 0 {
 		t.Error("skillsBack no debe estar vacío")
+	}
+	if len(skillPkgsBack) == 0 {
+		t.Error("skillPkgsBack no debe estar vacío · el arquetipo backend trae la base + create-a-backend")
 	}
 }

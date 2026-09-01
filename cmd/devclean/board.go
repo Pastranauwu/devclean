@@ -2,19 +2,22 @@ package main
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/recurse"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/tui"
 )
 
 type boardRow struct {
-	ID     string `json:"id"`
-	Titulo string `json:"titulo"`
-	Estado string `json:"estado"`
+	ID     string     `json:"id"`
+	Titulo string     `json:"titulo"`
+	Estado string     `json:"estado"`
+	Hijos  []boardRow `json:"hijos,omitempty"`
 }
 
 func newBoardCmd() *cobra.Command {
@@ -55,7 +58,11 @@ func runBoard() error {
 		if err != nil {
 			return err
 		}
-		row := boardRow{ID: t.ID, Titulo: t.Titulo, Estado: s.Estado}
+		nodos, err := recurse.LeerArbol(root, t.ID)
+		if err != nil {
+			return err
+		}
+		row := boardRow{ID: t.ID, Titulo: t.Titulo, Estado: s.Estado, Hijos: hijosBoardRow(nodos, t.ID)}
 		switch s.Estado {
 		case state.Lista:
 			lista = append(lista, row)
@@ -98,6 +105,24 @@ func byID(rows []boardRow) func(i, j int) bool {
 	return func(i, j int) bool { return rows[i].ID < rows[j].ID }
 }
 
+// hijosBoardRow arma recursivamente el árbol de un padre a partir de los
+// nodos planos de arbol.json (§8.3).
+func hijosBoardRow(nodos []recurse.NodoArbol, padre string) []boardRow {
+	var hijos []boardRow
+	for _, n := range nodos {
+		if n.Padre != padre {
+			continue
+		}
+		estado := state.Detenida
+		if n.Verde {
+			estado = state.Lista
+		}
+		hijos = append(hijos, boardRow{ID: n.ID, Titulo: n.Titulo, Estado: estado, Hijos: hijosBoardRow(nodos, n.ID)})
+	}
+	sort.Slice(hijos, byID(hijos))
+	return hijos
+}
+
 func imprimirGrupo(nombre string, rows []boardRow) {
 	if len(rows) == 0 {
 		out.Line("%-20s —", nombre)
@@ -106,5 +131,17 @@ func imprimirGrupo(nombre string, rows []boardRow) {
 	for _, r := range rows {
 		out.Line("%-20s %s  %s", nombre, r.ID, r.Titulo)
 		nombre = ""
+		imprimirHijos(r.Hijos, 1)
+	}
+}
+
+// imprimirHijos imprime el árbol de subtareas indentado debajo de su
+// padre, recursivo (una subtarea que a su vez recursó también sale
+// anidada).
+func imprimirHijos(rows []boardRow, profundidad int) {
+	sangria := strings.Repeat("  ", profundidad)
+	for _, r := range rows {
+		out.Line("%-20s %s└ %s  %s", "", sangria, r.ID, r.Titulo)
+		imprimirHijos(r.Hijos, profundidad+1)
 	}
 }

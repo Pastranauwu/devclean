@@ -26,10 +26,24 @@ func abrirPR(ctx context.Context, root string, r room.Room, base, titulo, cuerpo
 		return "", errors.New("sin remoto origin · agrégalo con git remote add origin <url> o usa --dry-run")
 	}
 
-	// el error de git trae el motivo en su salida, no en err.Error()
-	// (que es solo "exit status N")
-	if out, err := gitRun(r.Path, "push", "-u", "origin", r.Rama); err != nil {
+	// --force: la rama devclean/<id> es propiedad exclusiva de este cuarto.
+	// Cada `ship` aplana de nuevo sobre la base (aplanar en git.go), así
+	// que un reintento tras un fallo parcial (p. ej. `gh pr create` caído
+	// por red después de que el push ya había salido) produce un commit
+	// hermano del que ya está en origin: mismo padre, hash distinto. Sin
+	// --force ese push se rechaza por non-fast-forward y el reintento
+	// nunca llega a abrir el PR. Nadie más empuja a esta rama.
+	if out, err := gitRun(r.Path, "push", "--force", "-u", "origin", r.Rama); err != nil {
 		return "", fmt.Errorf("no se pudo subir la rama · %s", tail(out))
+	}
+
+	// si un intento previo ya empujó y abrió el PR pero devclean se cortó
+	// antes de reportarlo (o `gh pr create` fue el que falló después de
+	// crearlo, cosa que gh reporta con error igual en algunas versiones),
+	// un reintento no debe duplicar el PR: lo detecta y lo devuelve tal cual.
+	if url := prExistente(ctx, root, gh, r.Rama); url != "" {
+		_ = room.Destroy(ctx, root, r.ID)
+		return url, nil
 	}
 
 	f, err := os.CreateTemp("", "devclean-handoff-*.md")
@@ -47,6 +61,13 @@ func abrirPR(ctx context.Context, root string, r room.Room, base, titulo, cuerpo
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		// gh a veces crea el PR y responde con error igual (timeout tras
+		// crear, rate limit en la respuesta): revisa antes de reportar
+		// fallo, para no bloquear un PR que en realidad ya existe.
+		if url := prExistente(ctx, root, gh, r.Rama); url != "" {
+			_ = room.Destroy(ctx, root, r.ID)
+			return url, nil
+		}
 		return "", fmt.Errorf("gh no pudo abrir el PR · %s", tail(string(out)))
 	}
 
@@ -54,4 +75,16 @@ func abrirPR(ctx context.Context, root string, r room.Room, base, titulo, cuerpo
 	_ = room.Destroy(ctx, root, r.ID)
 
 	return strings.TrimSpace(string(out)), nil
+}
+
+// prExistente devuelve la URL del PR abierto para esta rama, si ya existe.
+// Cadena vacía si no hay ninguno o gh no puede confirmarlo.
+func prExistente(ctx context.Context, root, gh, rama string) string {
+	cmd := exec.CommandContext(ctx, gh, "pr", "view", rama, "--json", "url", "-q", ".url")
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }

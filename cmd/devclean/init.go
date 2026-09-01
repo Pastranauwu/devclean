@@ -13,6 +13,7 @@ import (
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/gate"
+	"github.com/Pastranauwu/devclean/internal/loop"
 )
 
 type initResult struct {
@@ -23,6 +24,7 @@ type initResult struct {
 
 func newInitCmd() *cobra.Command {
 	var pruebas, plantilla string
+	var sinSkills bool
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "detecta el repo y crea .devclean/",
@@ -36,11 +38,12 @@ func newInitCmd() *cobra.Command {
 			if pruebas == "" && plantilla == "" && !out.JSON() && isTerminal(os.Stdin) {
 				in = os.Stdin
 			}
-			return runInit(cwd, pruebas, plantilla, in)
+			return runInit(cwd, pruebas, plantilla, in, sinSkills)
 		},
 	}
 	cmd.Flags().StringVar(&pruebas, "pruebas", "", "comando de pruebas del proyecto, en vez del detectado")
 	cmd.Flags().StringVar(&plantilla, "pruebas-plantilla", "", "stack de pruebas: go, node o python")
+	cmd.Flags().BoolVar(&sinSkills, "sin-skills", false, "no traer las skills por defecto (podés hacerlo luego con devclean skills sync)")
 	return cmd
 }
 
@@ -61,7 +64,7 @@ func confirmarPruebas(in io.Reader, detectado string) string {
 	return detectado
 }
 
-func runInit(cwd, pruebasFlag, plantilla string, in io.Reader) error {
+func runInit(cwd, pruebasFlag, plantilla string, in io.Reader, sinSkills bool) error {
 	root, err := config.RepoRoot(cwd)
 	if err != nil {
 		return err
@@ -100,6 +103,8 @@ func runInit(cwd, pruebasFlag, plantilla string, in io.Reader) error {
 		ZonasProhibidas: config.DefaultForbiddenZones(),
 		PatronesPrueba:  config.DefaultTestPatterns(),
 		TimeoutEsclusa:  int(gate.DefaultTimeout / time.Second),
+		TimeoutAgente:   int(loop.DefaultAgentTimeout / time.Second),
+		TimeoutPruebas:  int(loop.DefaultTimeout / time.Second),
 	}
 	if err := cfg.Save(root); err != nil {
 		return err
@@ -123,6 +128,14 @@ func runInit(cwd, pruebasFlag, plantilla string, in io.Reader) error {
 		out.Line("· repositorio vacío · devclean plan arrancará desde cero proponiendo un stack")
 	}
 	out.Line("✓ configuración creada en .devclean/")
+	if sinSkills {
+		out.Line("· skills sin traer · corre devclean skills sync cuando quieras")
+	} else {
+		out.Line("· trayendo skills por defecto (npx skills add) …")
+		if err := runSkillsSync(); err != nil {
+			out.Line("· no se pudieron traer las skills · %s · reintenta con devclean skills sync", err)
+		}
+	}
 	stack := config.StackDePlantilla(plantilla)
 	if stack == "" {
 		stack = config.DetectLanguage(root)

@@ -6,18 +6,22 @@ import (
 	"github.com/charmbracelet/bubbletea"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/recurse"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
-// Fila es una tarea del tablero.
+// Fila es una tarea del tablero, con sus subtareas si viene de una tarea
+// recursiva (§8.3) — Hijos queda vacío en el caso normal.
 type Fila struct {
 	ID     string
 	Titulo string
 	Estado string
+	Hijos  []Fila
 }
 
-// Tablero lee las tareas y sus estados del disco.
+// Tablero lee las tareas y sus estados del disco, con el árbol de
+// subtareas de cada una que haya recursado (internal/recurse).
 func Tablero(root string) ([]Fila, error) {
 	tasks, err := task.List(config.TasksDir(root))
 	if err != nil {
@@ -29,10 +33,32 @@ func Tablero(root string) ([]Fila, error) {
 		if err != nil {
 			return nil, err
 		}
-		filas = append(filas, Fila{ID: t.ID, Titulo: t.Titulo, Estado: s.Estado})
+		nodos, err := recurse.LeerArbol(root, t.ID)
+		if err != nil {
+			return nil, err
+		}
+		filas = append(filas, Fila{ID: t.ID, Titulo: t.Titulo, Estado: s.Estado, Hijos: hijosDe(nodos, t.ID)})
 	}
 	sort.Slice(filas, func(i, j int) bool { return filas[i].ID < filas[j].ID })
 	return filas, nil
+}
+
+// hijosDe arma recursivamente el árbol de un padre a partir de los nodos
+// planos guardados en arbol.json.
+func hijosDe(nodos []recurse.NodoArbol, padre string) []Fila {
+	var hijos []Fila
+	for _, n := range nodos {
+		if n.Padre != padre {
+			continue
+		}
+		estado := state.Detenida
+		if n.Verde {
+			estado = state.Lista
+		}
+		hijos = append(hijos, Fila{ID: n.ID, Titulo: n.Titulo, Estado: estado, Hijos: hijosDe(nodos, n.ID)})
+	}
+	sort.Slice(hijos, func(i, j int) bool { return hijos[i].ID < hijos[j].ID })
+	return hijos
 }
 
 func cursorInicial(filas []Fila) int {
@@ -54,6 +80,34 @@ func selectedID(filas []Fila, cursor int) string {
 // lineasTablero arma el contenido del sticker: logo, tagline y columnas.
 func lineasTablero(filas []Fila) []lineaSticker {
 	return armarTablero(filas, "", "")
+}
+
+// filaConHijos arma la línea de una fila y, debajo, su árbol de
+// subtareas indentado (§8.3) — recursivo, así que una subtarea que a su
+// vez recursó también se ve anidada.
+func filaConHijos(f Fila, profundidad int, sel string) []lineaSticker {
+	marca, color := "  ", rgbTinta
+	if f.ID == sel {
+		marca, color = "> ", rgbPresion
+	}
+	sangria := ""
+	for i := 0; i < profundidad; i++ {
+		sangria += "  "
+	}
+	glifo := ""
+	if profundidad > 0 {
+		glifo = "└ "
+		if f.Estado == state.Detenida {
+			color = rgbAlerta
+		} else {
+			color = rgbApagado
+		}
+	}
+	ls := []lineaSticker{{texto: marca + sangria + glifo + f.ID + "  " + f.Titulo, color: color}}
+	for _, h := range f.Hijos {
+		ls = append(ls, filaConHijos(h, profundidad+1, sel)...)
+	}
+	return ls
 }
 
 func armarTablero(filas []Fila, sel, aviso string) []lineaSticker {
@@ -95,11 +149,7 @@ func armarTablero(filas []Fila, sel, aviso string) []lineaSticker {
 			ls = append(ls, lineaSticker{texto: "  —", color: rgbApagado})
 		}
 		for _, f := range suyos {
-			marca, color := "  ", rgbTinta
-			if f.ID == sel {
-				marca, color = "> ", rgbPresion
-			}
-			ls = append(ls, lineaSticker{texto: marca + f.ID + "  " + f.Titulo, color: color})
+			ls = append(ls, filaConHijos(f, 0, sel)...)
 		}
 		ls = append(ls, lineaSticker{})
 	}

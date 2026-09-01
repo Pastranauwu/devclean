@@ -47,7 +47,7 @@ func TestConfirmarPruebasMuestraLoDetectado(t *testing.T) {
 func TestRunInitBanderaPruebas(t *testing.T) {
 	root := repoTemporal(t)
 	out = ui.New(io.Discard, false)
-	if err := runInit(root, "pytest -q", "", nil); err != nil {
+	if err := runInit(root, "pytest -q", "", nil, true); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	cfg, err := config.Load(root)
@@ -85,7 +85,7 @@ func TestRunInitPlantillaGo(t *testing.T) {
 	root := repoTemporal(t)
 	var b strings.Builder
 	out = ui.New(&b, false)
-	if err := runInit(root, "", "go", nil); err != nil {
+	if err := runInit(root, "", "go", nil, true); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	cfg, err := config.Load(root)
@@ -103,7 +103,7 @@ func TestRunInitPlantillaGo(t *testing.T) {
 func TestRunInitPlantillaDesconocida(t *testing.T) {
 	root := repoTemporal(t)
 	out = ui.New(io.Discard, false)
-	err := runInit(root, "", "rust", nil)
+	err := runInit(root, "", "rust", nil, true)
 	if err == nil || !strings.Contains(err.Error(), "plantilla desconocida") {
 		t.Fatalf("error = %v, quiere plantilla desconocida", err)
 	}
@@ -112,7 +112,7 @@ func TestRunInitPlantillaDesconocida(t *testing.T) {
 func TestRunInitPruebasGanaAPlantilla(t *testing.T) {
 	root := repoTemporal(t)
 	out = ui.New(io.Discard, false)
-	if err := runInit(root, "make test", "go", nil); err != nil {
+	if err := runInit(root, "make test", "go", nil, true); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	cfg, err := config.Load(root)

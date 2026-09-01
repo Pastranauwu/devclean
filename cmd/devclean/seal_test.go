@@ -24,7 +24,7 @@ func repoConTarea(t *testing.T, manifiesto string) string {
 		}
 	}
 	out = ui.New(io.Discard, false)
-	if err := runInit(root, "", "", nil); err != nil {
+	if err := runInit(root, "", "", nil, true); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	tk := task.Task{

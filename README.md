@@ -282,6 +282,40 @@ riesgos: archivos grandes pueden agotar memoria
 
 Notas libres opcionales debajo del segundo `---`.
 
+### Recursividad: tareas que se reparten solas
+
+Una tarea puede ser demasiado grande para un solo intento de agente. Marcarla
+`recursivo: true` no cambia lo que exige el contrato — sigue necesitando un
+`listo_cuando` real — pero cambia cómo se resuelve el intento:
+
+```yaml
+recursivo: true
+limite_subtareas: 5   # tope de subtareas que puede proponer la descomposición
+```
+
+Con `recursion_max` en `config.yml` (0 = desactivado, el default), el
+intento de esa tarea no lo escribe un solo agente: el rol *planificador*
+(modelo caro) la reparte en subtareas reales, cada una con su propio
+`listo_cuando`, acotadas al `tocar_solo` que ya tenía la tarea padre —
+nunca pueden inventarse alcance nuevo. Cada subtarea corre en un **cuarto
+anidado dentro del cuarto padre**: un cuarto ya es un worktree completo del
+repo, así que adentro de él, otro `worktree add` es, en la práctica, git
+propio para esa subtarea — misma rama, mismo historial, sin nada nuevo que
+mantener. Verde → se integra a la rama del cuarto padre; si una subtarea
+también es `recursivo` y todavía hay profundidad disponible, recursa de
+nuevo. Solo la tarea raíz llega a `ship` y abre PR — las subtareas son
+plomería interna, invisible afuera.
+
+```yaml
+recursion_max: 2   # en config.yml; 0 = sin recursión (default)
+```
+
+**Estado actual:** el bucle, la integración y el árbol funcionan
+(`internal/recurse`). Cada subtarea resuelta (verde o roja, con su motivo)
+queda en `.devclean/runs/<id>/arbol.json`, que sobrevive a que el cuarto se
+destruya. `devclean board` (TUI y `--plain`/`--json`) y `devclean standup`
+muestran ese árbol indentado bajo la tarea raíz.
+
 ---
 
 ## Requerimientos como Código (Declarativo estilo Docker Compose)
@@ -381,6 +415,33 @@ devclean incluye un **catálogo de agentes estándar listos para usar out-of-the
 | **`refactor`** | `cli` (`claude` / `opencode`) | `claude-sonnet` / `glm-5.2` | `["refactoring", "simplificacion", "deuda-tecnica"]` |
 | **`ejecutor`** | `cli` (`claude` / `opencode`) | `claude-sonnet` / `glm-5.2` | `["implementacion", "tdd", "refactor"]` |
 
+`Skills` es solo la etiqueta que ve el prompt. Además, cada arquetipo trae
+`SkillPackages`: nombres de **skills reales** (`SKILL.md`, formato
+skills.sh/Claude Code) cuyo contenido completo se inyecta en el prompt del
+agente, no solo el nombre. Todo arquetipo recibe la base —
+`caveman`, `grill-me`, `improve-codebase-architecture`, `implement`,
+`code-review`, `clean-code`, `clean-architecture`, `agent-development` —
+y además: `backend` → `create-a-backend`, `frontend` → `frontend-design`,
+`tester` → `test-driven-development`.
+
+Traelas una vez con:
+
+```sh
+devclean skills sync
+```
+
+`devclean init` ya lo corre solo al terminar (usa `npx skills add` contra
+cada repo de origen); pasá `--sin-skills` para saltarlo y traerlas después
+a mano. El fetch corre siempre contra la raíz del repo, nunca dentro de un
+cuarto — los cuartos son worktrees separados y no ven archivos sin
+commitear del worktree principal — así que el contenido se inyecta como
+texto en el prompt, no como archivo que el agente deba encontrar. Una skill
+que falta (sin red, o el repo no la tiene) se salta en silencio: nunca
+bloquea al agente, mismo criterio que el examinador y la constitución.
+Corre `git status` tras el primer `sync`: `.agents/skills/` y
+`skills-lock.json` quedan sin trackear — decidí si versionarlos (build
+reproducible) o gitignorarlos (se regeneran con `devclean skills sync`).
+
 ### Configuración Avanzada y Personalización
 
 Si deseas sobreescribir modelos, agregar API keys específicas o definir agentes personalizados, puedes hacerlo en `.devclean/config.yml`:
@@ -392,6 +453,9 @@ cli: claude                     # CLI de agente por defecto: claude | opencode
 zonas_prohibidas: ["go.sum", "migrations/**", ".github/**"]
 patrones_prueba: ["*_test.go", "test/**", "*.spec.ts"]
 timeout_esclusa: 300            # segundos para el chequeo "falla hoy"
+timeout_agente: 1200             # segundos por invocación del agente (bucle real, no la esclusa de entrada)
+timeout_pruebas: 300             # segundos por corrida de listo_cuando y del paso bisectable en ship
+recursion_max: 0                 # profundidad de recursión de tareas `recursivo: true`; 0 = desactivada
 agentes:                        # sobreescribe arquetipos o agrega agentes con nombres propios
   backend:     { provider: opencode, model: opencode/muse-spark-1.2-contributor-free, key_env: OPENCODE_API_KEY, skills: ["go", "sql"] }
   specialist:  { provider: claude, model: claude-sonnet, skills: ["machine-learning", "python"] }
@@ -437,7 +501,8 @@ devclean up --ejecutor opencode --modelo "opencode/muse-spark-1.2-contributor-fr
 
 | Comando | Qué hace |
 |---|---|
-| `devclean init` | detecta repo, rama base y comando de pruebas; crea `.devclean/` |
+| `devclean init [--sin-skills]` | detecta repo, rama base y comando de pruebas; crea `.devclean/`; trae las skills por defecto |
+| `devclean skills sync` | trae con `npx skills add` los paquetes de skill que usan los agentes del catálogo |
 | `devclean constitution [--forzar]` | genera `.devclean/constitution.md` con un modelo (§6.11) |
 | `devclean plan "<texto>"` | convierte lenguaje natural en contratos de tarea (acepta `--export-spec`) |
 | `devclean apply [-f <spec.yml>]` | aplica y valida una especificación declarativa (acepta `--dry-run`, `--run`) |

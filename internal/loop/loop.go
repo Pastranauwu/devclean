@@ -17,8 +17,15 @@ import (
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
-// DefaultTimeout is the fallback when Options no fija un timeout.
+// DefaultTimeout is the fallback for PruebaTimeout when Options no lo fija.
 const DefaultTimeout = 5 * time.Minute
+
+// DefaultAgentTimeout is the fallback for AgentTimeout. Más largo que
+// DefaultTimeout a propósito: una invocación real de agente (edición
+// multi-archivo, no solo correr pruebas) tarda más que una corrida de
+// pruebas, y cortarla a los 5 minutos quemaba el intento antes de que el
+// agente terminara — causa habitual de "se agotaron los intentos" sin PR.
+const DefaultAgentTimeout = 20 * time.Minute
 
 // Agent es lo mínimo que el bucle pide al ejecutor: una invocación por
 // intento y el gasto de tokens que produjo. La interfaz se declara aquí,
@@ -78,8 +85,14 @@ type Options struct {
 	// ya cargado por quien llama. Si está vacío, no se inyecta nada.
 	Constitucion string
 
-	// Skills son las habilidades del rol asignado (§8.1 / Fase 1).
+	// Skills son las habilidades del rol asignado (§8.1 / Fase 1), solo
+	// nombres — etiquetas descriptivas en el prompt.
 	Skills []string
+
+	// SkillsContenido es el cuerpo completo de los paquetes de skill real
+	// (internal/skills) resueltos para este rol, ya cargado por quien
+	// llama. Vacío si no hay ninguno instalado.
+	SkillsContenido string
 
 	// Examinador, si no es nil, se invoca una vez antes del bucle del
 	// implementador para escribir la suite visible y sellar la oculta
@@ -106,7 +119,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		return Outcome{}, errors.New("bucle sin cuarto · crea el worktree antes de correr")
 	}
 	if o.AgentTimeout <= 0 {
-		o.AgentTimeout = DefaultTimeout
+		o.AgentTimeout = DefaultAgentTimeout
 	}
 	if o.PruebaTimeout <= 0 {
 		o.PruebaTimeout = DefaultTimeout
@@ -147,7 +160,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 
 		req := Request{
 			RoomPath:     o.Room.Path,
-			Prompt:       promptPara(o.Task, o.Interfaces, o.Constitucion, o.Skills, prevErr),
+			Prompt:       promptPara(o.Task, o.Interfaces, o.Constitucion, o.Skills, o.SkillsContenido, prevErr),
 			AllowedGlobs: o.Task.TocarSolo,
 			Model:        o.Model,
 			Timeout:      o.AgentTimeout,
@@ -305,13 +318,16 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration) (
 
 // promptPara arma el prompt de un intento: el contrato y, si lo hay, la
 // salida del intento anterior. El agente nunca decide si terminó.
-func promptPara(t task.Task, interfaces []string, constitucion string, skills []string, prevErr string) string {
+func promptPara(t task.Task, interfaces []string, constitucion string, skills []string, skillsContenido string, prevErr string) string {
 	var b strings.Builder
 	if constitucion != "" {
 		fmt.Fprintf(&b, "Constitución del proyecto (convenciones que todos los agentes deben seguir):\n%s\n\n", constitucion)
 	}
 	if len(skills) > 0 {
 		fmt.Fprintf(&b, "Habilidades de este rol: %s\n\n", strings.Join(skills, ", "))
+	}
+	if skillsContenido != "" {
+		fmt.Fprintf(&b, "Skills instaladas para este rol — sigue sus instrucciones:\n%s\n\n", skillsContenido)
 	}
 	fmt.Fprintf(&b, "Tarea %s: %s\n", t.ID, t.Titulo)
 	if t.Porque != "" {

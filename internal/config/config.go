@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/Pastranauwu/devclean/internal/kv"
+	"github.com/Pastranauwu/devclean/internal/skills"
 )
 
 // DirName is the directory devclean creates at the repository root.
@@ -22,20 +23,31 @@ const DirName = ".devclean"
 
 // Config is the content of .devclean/config.yml.
 type Config struct {
-	Base            string               `json:"base"`
-	Pruebas         string               `json:"pruebas"`
+	Base    string `json:"base"`
+	Pruebas string `json:"pruebas"`
 	// Cli fija el CLI de agente por defecto (opencode | claude). Se llama
 	// "cli" y no "ejecutor" a propósito: ese nombre ya lo usa el rol
 	// `ejecutor` dentro de `proveedores` (§8.1), y kv.Pairs no distingue
 	// indentación — dos claves iguales a distinta profundidad se pisan.
-	Cli string `json:"cli,omitempty"`
-	ZonasProhibidas []string             `json:"zonas_prohibidas"`
-	TimeoutEsclusa  int                  `json:"timeout_esclusa"` // segundos para el chequeo "falla hoy"
-	PatronesPrueba  []string             `json:"patrones_prueba"` // rutas que ninguna tarea puede editar
-	Proveedores     map[string]Proveedor `json:"proveedores,omitempty"`
-	Agentes         map[string]Agente    `json:"agentes,omitempty"`
-	Estrategia      string               `json:"estrategia,omitempty"` // ligera | equilibrada | pesada
-	Modelos         map[string]string    `json:"modelos,omitempty"`    // peso -> modelo (liviana/media/pesada)
+	Cli             string   `json:"cli,omitempty"`
+	ZonasProhibidas []string `json:"zonas_prohibidas"`
+	TimeoutEsclusa  int      `json:"timeout_esclusa"` // segundos para el chequeo "falla hoy"
+	// TimeoutAgente y TimeoutPruebas cubren el bucle real y la esclusa de
+	// salida, no la de entrada. Sin esto, ambos caían en el default de 5
+	// minutos: corto para una tarea real de agente y causa habitual de
+	// "se agotaron los intentos" sin que el agente llegara a terminar.
+	TimeoutAgente  int `json:"timeout_agente,omitempty"`  // segundos por invocación del agente
+	TimeoutPruebas int `json:"timeout_pruebas,omitempty"` // segundos por corrida de listo_cuando/pruebas
+	// RecursionMax es la profundidad máxima de recursión (internal/recurse):
+	// 0 (default) = desactivada, una tarea `recursivo: true` corre plana.
+	// Cada nivel abre cuartos anidados dentro del cuarto actual — subirlo
+	// multiplica el gasto de tokens, así que el default es apagado.
+	RecursionMax   int                  `json:"recursion_max,omitempty"`
+	PatronesPrueba []string             `json:"patrones_prueba"` // rutas que ninguna tarea puede editar
+	Proveedores    map[string]Proveedor `json:"proveedores,omitempty"`
+	Agentes        map[string]Agente    `json:"agentes,omitempty"`
+	Estrategia     string               `json:"estrategia,omitempty"` // ligera | equilibrada | pesada
+	Modelos        map[string]string    `json:"modelos,omitempty"`    // peso -> modelo (liviana/media/pesada)
 	// ReglasImport declara la dirección permitida entre módulos (§6.10):
 	// cada string es una cadena como "api → dominio → datos". Se verifica
 	// en la esclusa de salida que ningún import del diff viole el orden.
@@ -57,6 +69,11 @@ type Agente struct {
 	Modelo   string   `json:"model"`
 	KeyEnv   string   `json:"key_env,omitempty"`
 	Skills   []string `json:"skills,omitempty"`
+	// SkillPackages son nombres de paquetes de skill reales (traídos con
+	// `devclean skills sync`, ver internal/skills): a diferencia de
+	// Skills, que son solo etiquetas descriptivas en el prompt, estos
+	// resuelven a un SKILL.md cuyo contenido completo se inyecta.
+	SkillPackages []string `json:"skill_packages,omitempty"`
 }
 
 // DefaultForbiddenZones implements §6.3: lockfiles, migrations, CI and
@@ -133,6 +150,15 @@ func (c Config) Save(root string) error {
 	if c.TimeoutEsclusa > 0 {
 		fmt.Fprintf(&b, "timeout_esclusa: %d\n", c.TimeoutEsclusa)
 	}
+	if c.TimeoutAgente > 0 {
+		fmt.Fprintf(&b, "timeout_agente: %d\n", c.TimeoutAgente)
+	}
+	if c.TimeoutPruebas > 0 {
+		fmt.Fprintf(&b, "timeout_pruebas: %d\n", c.TimeoutPruebas)
+	}
+	if c.RecursionMax > 0 {
+		fmt.Fprintf(&b, "recursion_max: %d\n", c.RecursionMax)
+	}
 	if len(c.Proveedores) > 0 {
 		fmt.Fprintf(&b, "proveedores:\n")
 		for _, rol := range sortedRoles(c.Proveedores) {
@@ -156,6 +182,9 @@ func (c Config) Save(root string) error {
 			}
 			if len(a.Skills) > 0 {
 				parts = append(parts, fmt.Sprintf("skills: %s", kv.MarshalList(a.Skills)))
+			}
+			if len(a.SkillPackages) > 0 {
+				parts = append(parts, fmt.Sprintf("skill_packages: %s", kv.MarshalList(a.SkillPackages)))
 			}
 			fmt.Fprintf(&b, "  %s: { %s }\n", nombre, strings.Join(parts, ", "))
 		}
@@ -275,6 +304,24 @@ func Parse(data []byte) (Config, error) {
 				return cfg, fmt.Errorf("config.yml: línea %d · timeout_esclusa inválido: %s · segundos, mínimo 1", p.Line, p.Value)
 			}
 			cfg.TimeoutEsclusa = seg
+		case "timeout_agente":
+			seg, err := kv.ParseInt(p.Value)
+			if err != nil || seg < 1 {
+				return cfg, fmt.Errorf("config.yml: línea %d · timeout_agente inválido: %s · segundos, mínimo 1", p.Line, p.Value)
+			}
+			cfg.TimeoutAgente = seg
+		case "timeout_pruebas":
+			seg, err := kv.ParseInt(p.Value)
+			if err != nil || seg < 1 {
+				return cfg, fmt.Errorf("config.yml: línea %d · timeout_pruebas inválido: %s · segundos, mínimo 1", p.Line, p.Value)
+			}
+			cfg.TimeoutPruebas = seg
+		case "recursion_max":
+			n, err := kv.ParseInt(p.Value)
+			if err != nil || n < 0 {
+				return cfg, fmt.Errorf("config.yml: línea %d · recursion_max inválido: %s · entero, mínimo 0", p.Line, p.Value)
+			}
+			cfg.RecursionMax = n
 		case "estrategia":
 			cfg.Estrategia = kv.Unquote(p.Value)
 		case "reglas_import":
@@ -385,6 +432,13 @@ func parseAgentes(data []byte) (map[string]Agente, error) {
 			}
 			agente.Skills = skills
 		}
+		if rawPkgs, ok := fields["skill_packages"]; ok && rawPkgs != "" {
+			pkgs, err := kv.ParseList(rawPkgs)
+			if err != nil {
+				return nil, fmt.Errorf("config.yml: línea %d · %s", c.Line, err)
+			}
+			agente.SkillPackages = pkgs
+		}
 		out[c.Key] = agente
 	}
 	return out, nil
@@ -407,42 +461,50 @@ func DefaultAgentes(cli string) map[string]Agente {
 		keyEnv = "OPENCODE_API_KEY"
 	}
 
+	base := skills.BaseSkillNames()
+
 	return map[string]Agente{
 		"ejecutor": {
-			Provider: provider,
-			Modelo:   modeloSonnet,
-			KeyEnv:   keyEnv,
-			Skills:   []string{"implementacion", "tdd", "refactor"},
+			Provider:      provider,
+			Modelo:        modeloSonnet,
+			KeyEnv:        keyEnv,
+			Skills:        []string{"implementacion", "tdd", "refactor"},
+			SkillPackages: base,
 		},
 		"backend": {
-			Provider: provider,
-			Modelo:   modeloSonnet,
-			KeyEnv:   keyEnv,
-			Skills:   []string{"backend", "api", "database", "sql", "performance"},
+			Provider:      provider,
+			Modelo:        modeloSonnet,
+			KeyEnv:        keyEnv,
+			Skills:        []string{"backend", "api", "database", "sql", "performance"},
+			SkillPackages: append(append([]string{}, base...), skills.BackendSkillName()),
 		},
 		"frontend": {
-			Provider: provider,
-			Modelo:   modeloSonnet,
-			KeyEnv:   keyEnv,
-			Skills:   []string{"frontend", "ui", "ux", "components", "css", "state"},
+			Provider:      provider,
+			Modelo:        modeloSonnet,
+			KeyEnv:        keyEnv,
+			Skills:        []string{"frontend", "ui", "ux", "components", "css", "state"},
+			SkillPackages: append(append([]string{}, base...), skills.FrontendSkillName()),
 		},
 		"architect": {
-			Provider: provider,
-			Modelo:   modeloSonnet,
-			KeyEnv:   keyEnv,
-			Skills:   []string{"arquitectura", "diseno", "contratos", "clean-code"},
+			Provider:      provider,
+			Modelo:        modeloSonnet,
+			KeyEnv:        keyEnv,
+			Skills:        []string{"arquitectura", "diseno", "contratos", "clean-code"},
+			SkillPackages: base,
 		},
 		"tester": {
-			Provider: provider,
-			Modelo:   modeloHaiku,
-			KeyEnv:   keyEnv,
-			Skills:   []string{"testing", "cobertura", "edge-cases", "examinador"},
+			Provider:      provider,
+			Modelo:        modeloHaiku,
+			KeyEnv:        keyEnv,
+			Skills:        []string{"testing", "cobertura", "edge-cases", "examinador"},
+			SkillPackages: append(append([]string{}, base...), skills.PMSkillName()),
 		},
 		"refactor": {
-			Provider: provider,
-			Modelo:   modeloSonnet,
-			KeyEnv:   keyEnv,
-			Skills:   []string{"refactoring", "simplificacion", "deuda-tecnica"},
+			Provider:      provider,
+			Modelo:        modeloSonnet,
+			KeyEnv:        keyEnv,
+			Skills:        []string{"refactoring", "simplificacion", "deuda-tecnica"},
+			SkillPackages: base,
 		},
 	}
 }

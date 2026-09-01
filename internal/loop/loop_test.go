@@ -197,7 +197,7 @@ func TestAttemptsJSONListasVacias(t *testing.T) {
 
 func TestPromptIncluyeContratoYErrorPrevio(t *testing.T) {
 	tk := tareaDePrueba()
-	p := promptPara(tk, nil, "", nil, "fallo de prueba")
+	p := promptPara(tk, nil, "", nil, "", "fallo de prueba")
 	for _, want := range []string{"Tarea T-001", "Listo cuando: test -f src/done.txt", "Solo puedes tocar", "El intento anterior falló", "fallo de prueba"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt sin %q:\n%s", want, p)
@@ -207,9 +207,17 @@ func TestPromptIncluyeContratoYErrorPrevio(t *testing.T) {
 
 func TestPromptIncluyeSkills(t *testing.T) {
 	tk := tareaDePrueba()
-	p := promptPara(tk, nil, "", []string{"go", "refactor"}, "")
+	p := promptPara(tk, nil, "", []string{"go", "refactor"}, "", "")
 	want := "Habilidades de este rol: go, refactor"
 	if !strings.Contains(p, want) {
 		t.Errorf("prompt sin %q:\n%s", want, p)
+	}
+}
+
+func TestPromptIncluyeContenidoDeSkills(t *testing.T) {
+	tk := tareaDePrueba()
+	p := promptPara(tk, nil, "", nil, "sé breve y directo", "")
+	if !strings.Contains(p, "sé breve y directo") {
+		t.Errorf("prompt sin el contenido de la skill:\n%s", p)
 	}
 }
