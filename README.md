@@ -393,7 +393,7 @@ zonas_prohibidas: ["go.sum", "migrations/**", ".github/**"]
 patrones_prueba: ["*_test.go", "test/**", "*.spec.ts"]
 timeout_esclusa: 300            # segundos para el chequeo "falla hoy"
 agentes:                        # sobreescribe arquetipos o agrega agentes con nombres propios
-  backend:     { provider: opencode, model: glm-5.2, key_env: OPENCODE_API_KEY, skills: ["go", "sql"] }
+  backend:     { provider: opencode, model: opencode/muse-spark-1.2-contributor-free, key_env: OPENCODE_API_KEY, skills: ["go", "sql"] }
   specialist:  { provider: claude, model: claude-sonnet, skills: ["machine-learning", "python"] }
 estrategia: equilibrada         # ligera | equilibrada | pesada (peso por defecto)
 modelos:                        # modelo por peso de tarea
@@ -403,12 +403,32 @@ modelos:                        # modelo por peso de tarea
 reglas_import: ["api → dominio → datos"]  # opcional: verifica grafo de imports en ship
 ```
 
-Sin `cli`, devclean usa el primer CLI que encuentre instalado. Fíjalo
-cuando tengas los dos y quieras uno concreto (por ejemplo, si se te
-acabó la cuota de uno). `--ejecutor` lo pisa por corrida:
+### Ejecutores soportados: Claude Code y OpenCode
+
+devclean soporta de forma nativa tanto **Claude Code** (`claude`) como **OpenCode** (`opencode`):
+
+- **Claude Code**:
+  - Requiere `ANTHROPIC_API_KEY`.
+  - Modelos estándar: `claude-sonnet`, `claude-haiku`, `claude-opus`.
+- **OpenCode**:
+  - Requiere `OPENCODE_API_KEY`.
+  - Soporta modelos premium (`opencode-go/glm-5.2`, `opencode-go/deepseek-v4-pro`, `opencode-go/qwen3.7-max`) y **modelos gratuitos** como:
+    - `opencode/muse-spark-1.2-contributor-free`
+    - `opencode/mimo-v2.5-free`
+    - `opencode/nemotron-3-ultra-free`
+    - `opencode/ling-3.0-flash-fin-free`
+
+Puedes alternar el ejecutor y modelo dinámicamente con flags:
 
 ```sh
-devclean run --ejecutor claude
+# Usando Claude
+devclean run --ejecutor claude --modelo claude-sonnet
+
+# Usando OpenCode con modelo gratuito
+devclean run --ejecutor opencode --modelo "opencode/muse-spark-1.2-contributor-free"
+
+# O aplicando y corriendo todo en un solo paso
+devclean up --ejecutor opencode --modelo "opencode/muse-spark-1.2-contributor-free"
 ```
 
 ---
