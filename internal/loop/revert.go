@@ -3,7 +3,10 @@ package loop
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+
+	"github.com/Pastranauwu/devclean/internal/config"
 )
 
 // revertFueraDeAlcance revierte los archivos que el agente tocó fuera de
@@ -31,11 +34,23 @@ func revertFueraDeAlcance(roomPath string, tocarSolo, patrones []string) ([]stri
 
 // enAlcance reporta si un archivo cae dentro de tocar_solo. Vacío
 // significa "sin restricción": todo el repo salvo las pruebas.
+//
+// Los lockfiles derivados de un manifiesto en alcance cuentan como
+// dentro: revertirlos dejaba el proyecto sin poder compilar (ver
+// config.LockfilesDerivados).
 func enAlcance(s string, tocarSolo []string) bool {
 	if len(tocarSolo) == 0 {
 		return true
 	}
-	return matchesAny(tocarSolo, s)
+	if matchesAny(tocarSolo, s) {
+		return true
+	}
+	for _, lock := range config.LockfilesDerivados(tocarSolo) {
+		if s == lock || path.Base(s) == lock {
+			return true
+		}
+	}
+	return false
 }
 
 func esPrueba(s string, patrones []string) bool {

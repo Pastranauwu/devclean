@@ -44,14 +44,8 @@ func (s Source) arg() string {
 // que se inyecta en todo agente, más los específicos por rol.
 func DefaultSources() []Source {
 	return []Source{
-		{Nombre: "caveman", Repo: "https://github.com/juliusbrussee/caveman"},
-		{Nombre: "grill-me", Repo: "https://github.com/mattpocock/skills"},
-		{Nombre: "improve-codebase-architecture", Repo: "https://github.com/mattpocock/skills"},
 		{Nombre: "implement", Repo: "https://github.com/mattpocock/skills"},
-		{Nombre: "code-review", Repo: "https://github.com/mattpocock/skills"},
 		{Nombre: "clean-code", Repo: "https://github.com/sickn33/agentic-awesome-skills"},
-		{Nombre: "clean-architecture", Repo: "https://github.com/pproenca/dot-skills"},
-		{Nombre: "agent-development", Repo: "https://github.com/anthropics/claude-code", SkillArg: "Agent Development"},
 		{Nombre: "frontend-design", Repo: "https://github.com/anthropics/skills"},
 		{Nombre: "create-a-backend", Repo: "https://github.com/vercel/vercel-plugin"},
 		{Nombre: "test-driven-development", Repo: "https://github.com/obra/superpowers"},
@@ -60,11 +54,16 @@ func DefaultSources() []Source {
 
 // BaseSkillNames son los paquetes que devclean inyecta en cualquier
 // agente, sea cual sea su rol.
+//
+// La base se paga entera en CADA intento de CADA tarea: el contenido va
+// como texto al principio del prompt. Antes eran ocho paquetes, ~59 KB
+// (~15k tokens) por invocación, con cosas que un implementador no usa
+// ("caveman" es un estilo de prosa, "grill-me" interroga al usuario,
+// "agent-development" escribe agentes). Quedan los dos que sí cambian el
+// código que sale: cómo implementar y cómo dejarlo limpio. El resto se
+// agrega por rol, o a mano en config.yml.
 func BaseSkillNames() []string {
-	return []string{
-		"caveman", "grill-me", "improve-codebase-architecture", "implement",
-		"code-review", "clean-code", "clean-architecture", "agent-development",
-	}
+	return []string{"implement", "clean-code"}
 }
 
 // FrontendSkillName, BackendSkillName y PMSkillName son el paquete extra

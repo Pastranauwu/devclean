@@ -57,6 +57,7 @@ type Request struct {
 // Result es lo que devolvió una invocación.
 type Result struct {
 	Stdout   string
+	Stderr   string // diagnóstico del CLI: por qué no llegó al modelo
 	Text     string // respuesta textual del agente (campo "result" del JSON de claude)
 	ExitCode int
 	Tokens   Tokens
@@ -93,6 +94,12 @@ type Options struct {
 	// (internal/skills) resueltos para este rol, ya cargado por quien
 	// llama. Vacío si no hay ninguno instalado.
 	SkillsContenido string
+
+	// OnIntento, si no es nil, avisa cuándo empieza y termina cada
+	// intento. Es la única señal de vida en modo plano: una invocación
+	// de agente puede tardar veinte minutos y hasta ahora no imprimía
+	// nada hasta el final de la corrida entera.
+	OnIntento func(intento int, fase string)
 
 	// Examinador, si no es nil, se invoca una vez antes del bucle del
 	// implementador para escribir la suite visible y sellar la oculta
@@ -145,18 +152,35 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		return Outcome{}, err
 	}
 
+	// el latido es el único estado en vivo: attempts.jsonl no se escribe
+	// hasta que el intento termina, y un intento puede durar veinte
+	// minutos. Se borra al salir, pase lo que pase.
+	var acumulado Tokens
+	avisar := func(intento int, fase string) {
+		EscribirLatido(o.Root, Latido{
+			ID: o.Task.ID, Intento: intento, Limite: limite, Fase: fase,
+			Modelo: o.Model, DesdeFase: time.Now().UTC(), Tokens: acumulado,
+		})
+		if o.OnIntento != nil {
+			o.OnIntento(intento, fase)
+		}
+	}
+	defer BorrarLatido(o.Root, o.Task.ID)
+
 	// una suite sellada a mano (devclean task seal) manda sobre el
 	// examinador automático: el usuario ya pagó esas pruebas y volver a
 	// generarlas las pisaría.
 	if sealed.Exists(o.Root, o.Task.ID) {
 		suiteManualEnCuarto(o.Root, o.Task.ID, o.Room.Path)
 	} else if o.Examinador != nil {
+		avisar(1, FaseExamen)
 		_, _ = o.Examinador.Run(ctx, o.Room.Path) // graceful degradation: never blocks
 	}
 
 	var prevErr string
 	for intento := 1; intento <= limite; intento++ {
 		inicio := time.Now().UTC()
+		avisar(intento, FaseAgente)
 
 		req := Request{
 			RoomPath:     o.Room.Path,
@@ -167,6 +191,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			Env:          o.Env,
 		}
 		res, agentErr := o.Agent.Run(ctx, req)
+		logRel := guardarLog(o.Root, o.Task.ID, intento, req.Prompt, res, agentErr)
 
 		revertidos, err := revertFueraDeAlcance(o.Room.Path, o.Task.TocarSolo, o.PatronesPrueba)
 		if err != nil {
@@ -196,6 +221,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			return Outcome{}, err
 		}
 
+		avisar(intento, FaseVerificando)
 		salida, code := runPrueba(ctx, o.Room.Path, o.Task.ListoCuando, o.PruebaTimeout)
 		pasaron, fallaron := ParseTestCounts(salida)
 		fin := time.Now().UTC()
@@ -209,6 +235,10 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			revertidos = []string{}
 		}
 
+		acumulado.Entrada += res.Tokens.Entrada
+		acumulado.Salida += res.Tokens.Salida
+
+		codigoAgente := res.ExitCode
 		a := Attempt{
 			Intento:                  intento,
 			Inicio:                   inicio,
@@ -223,6 +253,11 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			RevertidosFueraDeAlcance: revertidos,
 			Tokens:                   res.Tokens,
 			Modelo:                   o.Model,
+			AgenteSalidaCodigo:       &codigoAgente,
+			Log:                      logRel,
+		}
+		if agentErr != nil {
+			a.ErrorAgente = diagnostico(res, agentErr)
 		}
 		if err := s.Append(a); err != nil {
 			return Outcome{}, err
@@ -232,9 +267,19 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			return Outcome{Verde: true, Intentos: intento}, nil
 		}
 
-		prevErr = tailSalida(salida)
+		// el agente no llegó al modelo: reintentar no cambia nada, y
+		// gastar los intentos restantes solo retrasa el diagnóstico
+		if falloDeInfra(res, agentErr, archivos) {
+			motivo := fmt.Sprintf("el agente no pudo ejecutarse (%s) · revisa el modelo y la key con devclean doctor", a.ErrorAgente)
+			if logRel != "" {
+				motivo += " · detalle en " + logRel
+			}
+			return Outcome{Verde: false, Intentos: intento, UltimoError: a.ErrorAgente, Pregunta: motivo}, nil
+		}
+
+		prevErr = resumenFallo(o.Task.ListoCuando, code, salida)
 		if agentErr != nil {
-			prevErr = strings.TrimSpace(agentErr.Error() + " · " + prevErr)
+			prevErr = strings.TrimSpace(a.ErrorAgente + " · " + prevErr)
 		}
 	}
 
@@ -358,24 +403,62 @@ func promptPara(t task.Task, interfaces []string, constitucion string, skills []
 	return b.String()
 }
 
-// tailSalida reduce la salida de listo_cuando a la última línea útil,
-// para devolvérsela al agente y para la pregunta concreta final.
-func tailSalida(s string) string {
+// resumenFallo describe por qué falló listo_cuando, para el agente y para
+// el usuario.
+//
+// Un comando que no imprime nada es normal y frecuente: el planificador
+// escribe cosas como `go run . --help | grep -q -- --mac`, y `grep -q`
+// calla por diseño. Antes eso producía literalmente "sin salida", que no
+// le dice nada a nadie: el agente recibía ese texto como único dato del
+// intento anterior y se quedaba sin saber qué arreglar. Diciendo el
+// comando y su código de salida, al menos hay de dónde agarrarse.
+func resumenFallo(listoCuando string, code *int, salida string) string {
+	if cuerpo := ultimasLineas(salida, 6, 600); cuerpo != "" {
+		return cuerpo
+	}
+	estado := "falló"
+	if code != nil {
+		estado = fmt.Sprintf("salió con código %d", *code)
+	}
+	msg := fmt.Sprintf("listo_cuando %s sin imprimir nada · comando: %s", estado, strings.TrimSpace(listoCuando))
+	if silencioso(listoCuando) {
+		msg += " · el comando silencia su salida, así que no hay pista del fallo: córrelo a mano sin -q para ver qué falta"
+	}
+	return msg
+}
+
+// silencioso reporta si el comando esconde su propia salida.
+func silencioso(cmd string) bool {
+	for _, patron := range []string{"grep -q", "-q --", "--quiet", "> /dev/null", ">/dev/null", "&>/dev/null"} {
+		if strings.Contains(cmd, patron) {
+			return true
+		}
+	}
+	return false
+}
+
+// ultimasLineas devuelve las últimas n líneas no vacías de s, acotadas a
+// max caracteres. Cadena vacía si no hay nada que mostrar.
+func ultimasLineas(s string, n, max int) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "sin salida"
+		return ""
 	}
-	lines := strings.Split(s, "\n")
-	last := strings.TrimSpace(lines[len(lines)-1])
-	if last == "" && len(lines) > 1 {
-		last = strings.TrimSpace(lines[len(lines)-2])
+	var utiles []string
+	for _, l := range strings.Split(s, "\n") {
+		if strings.TrimSpace(l) != "" {
+			utiles = append(utiles, strings.TrimRight(l, " \t"))
+		}
 	}
-	if last == "" {
-		return "sin salida"
+	if len(utiles) == 0 {
+		return ""
 	}
-	const max = 160
-	if len(last) > max {
-		last = last[:max] + "…"
+	if len(utiles) > n {
+		utiles = utiles[len(utiles)-n:]
 	}
-	return last
+	out := strings.Join(utiles, "\n")
+	if len(out) > max {
+		out = "…" + out[len(out)-max:]
+	}
+	return out
 }

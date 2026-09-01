@@ -111,7 +111,7 @@ func runApply(root, filePath string, runImmediately, dryRun bool) error {
 
 	if runImmediately {
 		out.Line("")
-		return runCmd(1, "", "")
+		return runCmd(1, "", "", false)
 	}
 
 	out.Line("\n· corre devclean run (o devclean up) para ejecutarlas en paralelo")

@@ -55,7 +55,11 @@ func runStandup() error {
 		attempts[t.ID] = as
 	}
 
-	eventos := standup.Analizar(tareas, estadosPorID, attempts)
+	ids := make([]string, 0, len(tareas))
+	for _, t := range tareas {
+		ids = append(ids, t.ID)
+	}
+	eventos := standup.Analizar(tareas, estadosPorID, attempts, loop.LeerLatidos(root, ids))
 	if err := out.Data(eventos); err != nil {
 		return err
 	}

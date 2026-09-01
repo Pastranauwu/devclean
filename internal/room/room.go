@@ -124,6 +124,30 @@ func Create(ctx context.Context, root, id, base string) (Room, error) {
 	return r, nil
 }
 
+// Ensure devuelve el cuarto de una tarea, reusándolo si ya existe. Es lo
+// que permite reintentar una tarea detenida sin tirar el trabajo parcial
+// que quedó en su rama: el agente arranca viendo lo que ya escribió, en
+// vez de rehacerlo desde cero y volver a pagar los mismos tokens.
+func Ensure(ctx context.Context, root, id, base string) (Room, error) {
+	r := Room{ID: id, Path: filepath.Join(Dir(root), id), Rama: Branch(id)}
+	if _, err := os.Stat(r.Path); err != nil {
+		return Create(ctx, root, id, base)
+	}
+	// la carpeta está, pero solo sirve si git la reconoce como worktree
+	if _, err := git(ctx, r.Path, "rev-parse", "--git-dir"); err != nil {
+		if err := Destroy(ctx, root, id); err != nil {
+			return Room{}, err
+		}
+		return Create(ctx, root, id, base)
+	}
+	puerto, err := freePort()
+	if err != nil {
+		return Room{}, err
+	}
+	r.Puerto = puerto
+	return r, nil
+}
+
 // Destroy removes the worktree and its branch. Missing pieces are
 // skipped: Destroy always leaves a clean state, even when the room
 // directory was wiped out of band. rooms/ is gitignored, so a `git

@@ -95,3 +95,26 @@ func TestStagedStatsConArchivoNuevo(t *testing.T) {
 		t.Errorf("numstat = +%d/-%d, quiero +2/-0", mas, menos)
 	}
 }
+
+// El lockfile derivado de un manifiesto en alcance no se revierte:
+// hacerlo dejaba "missing go.sum entry" en cada intento, para siempre.
+func TestEnAlcanceLockfileDerivado(t *testing.T) {
+	scope := []string{"go.mod", "cmd/**"}
+	if !enAlcance("go.sum", scope) {
+		t.Error("go.sum debe estar en alcance cuando go.mod lo está")
+	}
+	if !enAlcance("go.mod", scope) {
+		t.Error("go.mod declarado debe estar en alcance")
+	}
+	// sin el manifiesto en alcance, el lockfile sigue vedado
+	if enAlcance("go.sum", []string{"cmd/**"}) {
+		t.Error("go.sum sin go.mod en alcance no debe pasar")
+	}
+	// otro stack, mismo trato
+	if !enAlcance("package-lock.json", []string{"package.json"}) {
+		t.Error("package-lock.json debe seguir a package.json")
+	}
+	if enAlcance("Cargo.lock", []string{"go.mod"}) {
+		t.Error("un lockfile de otro stack no entra por la puerta de atrás")
+	}
+}

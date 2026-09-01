@@ -90,9 +90,13 @@ func NombreDeFirma(firma string) string {
 	if i := strings.Index(s, "("); i >= 0 {
 		s = strings.TrimSpace(s[:i])
 	}
-	// ruta HTTP: "POST /wake" → "/wake"
+	// ruta HTTP: "POST /wake" → "/wake". Una barra suelta no alcanza:
+	// "cmd/sum main package" es prosa, y tomarla por ruta hacía que la
+	// esclusa buscara "/sum main package" en el diff y frenara para
+	// siempre. Una ruta real no lleva espacios.
 	if i := strings.Index(s, "/"); i >= 0 {
-		if ruta := strings.TrimSpace(s[i:]); ruta != "/" {
+		ruta := strings.TrimSpace(s[i:])
+		if ruta != "/" && !strings.ContainsAny(ruta, " \t") {
 			return ruta
 		}
 	}
@@ -293,4 +297,49 @@ func (t Task) Marshal() []byte {
 		fmt.Fprintf(&b, "\n%s\n", t.Notas)
 	}
 	return []byte(b.String())
+}
+
+// FirmaVerificable devuelve el nombre a buscar en el diff y si la firma
+// tiene forma de firma.
+//
+// El planificador es un modelo y a veces escribe descripciones en vez de
+// contratos ("cmd/sum main package", "devclean --mac <MAC>"). Eso no se
+// puede comprobar contra un diff, y frenar la entrega por algo que el
+// código no sabe verificar deja la tarea muerta: el único arreglo sería
+// editar el contrato a mano, justo lo que devclean evita. Lo que no tiene
+// forma de firma se reporta, no bloquea.
+func FirmaVerificable(firma string) (string, bool) {
+	s := strings.TrimSpace(firma)
+	if s == "" {
+		return "", false
+	}
+	// función o método: lo que importa es el identificador antes del (
+	if strings.Contains(s, "(") {
+		n := NombreDeFirma(s)
+		return n, esIdentificador(n)
+	}
+	// ruta HTTP, con o sin verbo delante
+	if n := NombreDeFirma(s); strings.HasPrefix(n, "/") {
+		return n, true
+	}
+	// identificador pelado o cualificado: sin espacios
+	if !strings.ContainsAny(s, " \t") {
+		return NombreDeFirma(s), true
+	}
+	return "", false
+}
+
+// esIdentificador reporta si s puede ser un nombre de función o tipo.
+func esIdentificador(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		letra := r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+		if letra || (i > 0 && r >= '0' && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
 }

@@ -6,7 +6,9 @@ import (
 	"github.com/charmbracelet/bubbletea"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/recurse"
+	"github.com/Pastranauwu/devclean/internal/standup"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
@@ -18,6 +20,13 @@ type Fila struct {
 	Titulo string
 	Estado string
 	Hijos  []Fila
+
+	// Detalle es lo que la tarea está haciendo ahora mismo (intento,
+	// fase, modelo, tiempo en fase). Vacío si no está corriendo.
+	Detalle string
+	// Atascada marca que la fase actual lleva más de standup.UmbralAtasco
+	// sin moverse. No la mata: solo avisa.
+	Atascada bool
 }
 
 // Tablero lee las tareas y sus estados del disco, con el árbol de
@@ -37,7 +46,17 @@ func Tablero(root string) ([]Fila, error) {
 		if err != nil {
 			return nil, err
 		}
-		filas = append(filas, Fila{ID: t.ID, Titulo: t.Titulo, Estado: s.Estado, Hijos: hijosDe(nodos, t.ID)})
+		f := Fila{ID: t.ID, Titulo: t.Titulo, Estado: s.Estado, Hijos: hijosDe(nodos, t.ID)}
+		// el latido es lo único que sabe qué pasa DENTRO de un intento:
+		// attempts.jsonl no se escribe hasta que el intento termina
+		if l, corriendo := loop.LeerLatido(root, t.ID); corriendo {
+			f.Detalle = l.Descripcion() + " · " + reloj(l.EnFaseDesde())
+			if l.EnFaseDesde() >= standup.UmbralAtasco {
+				f.Atascada = true
+				f.Detalle = "ATASCO · " + f.Detalle + " sin señal"
+			}
+		}
+		filas = append(filas, f)
 	}
 	sort.Slice(filas, func(i, j int) bool { return filas[i].ID < filas[j].ID })
 	return filas, nil
@@ -77,11 +96,6 @@ func selectedID(filas []Fila, cursor int) string {
 	return filas[cursor].ID
 }
 
-// lineasTablero arma el contenido del sticker: logo, tagline y columnas.
-func lineasTablero(filas []Fila) []lineaSticker {
-	return armarTablero(filas, "", "")
-}
-
 // filaConHijos arma la línea de una fila y, debajo, su árbol de
 // subtareas indentado (§8.3) — recursivo, así que una subtarea que a su
 // vez recursó también se ve anidada.
@@ -103,7 +117,15 @@ func filaConHijos(f Fila, profundidad int, sel string) []lineaSticker {
 			color = rgbApagado
 		}
 	}
-	ls := []lineaSticker{{texto: marca + sangria + glifo + f.ID + "  " + f.Titulo, color: color}}
+	texto := marca + sangria + glifo + f.ID + "  " + f.Titulo
+	ls := []lineaSticker{{texto: texto, color: color}}
+	if f.Detalle != "" {
+		c := rgbApagado
+		if f.Atascada {
+			c = rgbAlerta
+		}
+		ls = append(ls, lineaSticker{texto: "    " + sangria + f.Detalle, color: c})
+	}
 	for _, h := range f.Hijos {
 		ls = append(ls, filaConHijos(h, profundidad+1, sel)...)
 	}
@@ -156,7 +178,7 @@ func armarTablero(filas []Fila, sel, aviso string) []lineaSticker {
 	if aviso != "" {
 		ls = append(ls, lineaSticker{texto: aviso, color: rgbAlerta})
 	}
-	ls = append(ls, lineaSticker{texto: "s dry-run · j/k mueve · q sale", color: rgbApagado})
+	ls = append(ls, lineaSticker{texto: "s dry-run · j/k mueve · q sale · se refresca solo", color: rgbApagado})
 	return ls
 }
 
@@ -168,7 +190,7 @@ func CorrerBoard(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	m := boardModel{filas: filas, cursor: cursorInicial(filas), params: DefaultPlasma()}
+	m := boardModel{filas: filas, cursor: cursorInicial(filas), params: DefaultPlasma(), root: root}
 	final, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	if err != nil {
 		return "", err
@@ -185,7 +207,17 @@ type boardModel struct {
 	alto   int
 	t      float64
 	params PlasmaParams
+
+	// root y ticks sirven al refresco: el tablero releía disco una sola
+	// vez al abrirse, así que una corrida en paralelo avanzaba entera sin
+	// que se moviera nada en pantalla.
+	root  string
+	ticks int
 }
+
+// ticksPorRefresco: el plasma late cada 100 ms; releer disco a ese ritmo
+// es desperdicio, una vez por segundo alcanza para que se sienta vivo.
+const ticksPorRefresco = 10
 
 func (m boardModel) Init() tea.Cmd {
 	return tickPlasma()
@@ -199,6 +231,10 @@ func (m boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		m.t += 0.1
+		m.ticks++
+		if m.ticks%ticksPorRefresco == 0 {
+			m.refrescar()
+		}
 		return m, tickPlasma()
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -230,6 +266,27 @@ func (m boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// refrescar relee el estado de disco sin perder la selección: el cursor
+// se sigue por id, no por posición, porque una tarea puede cambiar de
+// columna entre dos refrescos.
+func (m *boardModel) refrescar() {
+	sel := selectedID(m.filas, m.cursor)
+	filas, err := Tablero(m.root)
+	if err != nil {
+		return // un fallo de lectura no debe tumbar el tablero
+	}
+	m.filas = filas
+	for i, f := range filas {
+		if f.ID == sel {
+			m.cursor = i
+			return
+		}
+	}
+	if m.cursor >= len(filas) {
+		m.cursor = 0
+	}
 }
 
 func (m boardModel) View() string {

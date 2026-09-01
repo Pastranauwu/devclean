@@ -32,6 +32,16 @@ type Attempt struct {
 	RevertidosFueraDeAlcance []string  `json:"revertidos_fuera_de_alcance"`
 	Tokens                   Tokens    `json:"tokens"`
 	Modelo                   string    `json:"modelo"`
+
+	// AgenteSalidaCodigo y ErrorAgente separan "el agente reventó" de
+	// "el agente trabajó y las pruebas fallaron". Sin esta distinción un
+	// modelo mal configurado se veía igual que un test rojo, y el bucle
+	// quemaba los tres intentos contra un error de infraestructura.
+	AgenteSalidaCodigo *int   `json:"agente_salida_codigo"`
+	ErrorAgente        string `json:"error_agente,omitempty"`
+	// Log es la ruta relativa al volcado completo de la invocación
+	// (prompt, stdout y stderr del CLI).
+	Log string `json:"log,omitempty"`
 }
 
 // Tokens is the token spend of one attempt.

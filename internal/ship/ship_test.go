@@ -183,3 +183,40 @@ func TestRunSeFrenaEnRuido(t *testing.T) {
 		t.Errorf("último paso = %+v, quiero frenarse en ruido", ultimo)
 	}
 }
+
+func TestOrdenTopologico(t *testing.T) {
+	tareas := []task.Task{
+		{ID: "T-003", DependeDe: []string{"T-001", "T-002"}},
+		{ID: "T-001"},
+		{ID: "T-002", DependeDe: []string{"T-001"}},
+	}
+	orden, err := ordenTopologico(tareas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pos := map[string]int{}
+	for i, t := range orden {
+		pos[t.ID] = i
+	}
+	if len(orden) != 3 {
+		t.Fatalf("orden = %d tareas, quiero 3", len(orden))
+	}
+	if pos["T-001"] > pos["T-002"] || pos["T-002"] > pos["T-003"] {
+		t.Errorf("orden incorrecto: %v", pos)
+	}
+
+	// una dependencia fuera del lote ya vive en la base: no bloquea
+	fuera := []task.Task{{ID: "T-009", DependeDe: []string{"T-000"}}}
+	if _, err := ordenTopologico(fuera); err != nil {
+		t.Errorf("dependencia fuera del lote no debe bloquear · %v", err)
+	}
+
+	// un ciclo se reporta, no se cuelga
+	ciclo := []task.Task{
+		{ID: "T-001", DependeDe: []string{"T-002"}},
+		{ID: "T-002", DependeDe: []string{"T-001"}},
+	}
+	if _, err := ordenTopologico(ciclo); err == nil {
+		t.Error("un ciclo debe reportarse")
+	}
+}

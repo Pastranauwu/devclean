@@ -146,3 +146,18 @@ func TestClaudeExtraeTexto(t *testing.T) {
 		t.Errorf("text = %q", got)
 	}
 }
+
+// opencode anida el gasto bajo "part": leerlo solo en la raíz daba
+// siempre 0 tokens.
+func TestParseOpenCodeTokensAnidados(t *testing.T) {
+	stream := `{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":21897,"input":34,"output":67}}}
+{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":6,"output":4}}}
+{"type":"text","part":{"type":"text","text":"listo"}}`
+	_, texto, usage := parseOpenCodeEvents(stream)
+	if usage.Input != 40 || usage.Output != 71 {
+		t.Errorf("usage = %+v, quiero {Input:40 Output:71}", usage)
+	}
+	if texto != "listo" {
+		t.Errorf("texto = %q", texto)
+	}
+}

@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -21,16 +23,125 @@ import (
 
 func newShipCmd() *cobra.Command {
 	var dryRun bool
+	var todas bool
+	var titulo string
 	cmd := &cobra.Command{
-		Use:   "ship <id>",
+		Use:   "ship [id]",
 		Short: "esclusa de salida y PR",
-		Args:  cobra.ExactArgs(1),
+		Long: `Con un id entrega esa tarea en su propio PR.
+
+Con --todas entrega en UN solo PR todas las tareas que quedaron listas:
+cada una pasa su esclusa de salida por separado y aporta exactamente un
+commit, en orden de dependencia. Es la forma de no terminar con N pull
+requests que se pisan entre sí.`,
+		Example: `  devclean ship T-001
+  devclean ship --todas
+  devclean ship --todas --dry-run`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if todas {
+				if len(args) > 0 {
+					return errors.New("--todas entrega todas las tareas listas · no lleva id")
+				}
+				return runShipTodas(dryRun, titulo)
+			}
+			if len(args) == 0 {
+				return errors.New("falta el id · usa devclean ship T-001 o devclean ship --todas")
+			}
 			return runShip(args[0], dryRun)
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "corre la esclusa sin abrir el PR")
+	cmd.Flags().BoolVar(&todas, "todas", false, "entrega todas las tareas listas en un solo PR")
+	cmd.Flags().StringVar(&titulo, "titulo", "", "título del PR conjunto (por defecto, el de la primera tarea)")
 	return cmd
+}
+
+// runShipTodas entrega en un solo PR todas las tareas que quedaron
+// listas. Cada una pasa su propia esclusa de salida antes de integrarse:
+// el PR conjunto no baja el listón, solo evita repartirlo en N PRs que
+// después hay que mergear en el orden correcto a mano.
+func runShipTodas(dryRun bool, titulo string) error {
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+	tareas, err := task.List(config.TasksDir(root))
+	if err != nil {
+		return err
+	}
+
+	var listas []task.Task
+	var pendientes, detenidas []string
+	modelos := map[string]string{}
+	for _, t := range tareas {
+		st, err := state.Get(root, t.ID)
+		if err != nil {
+			return err
+		}
+		switch st.Estado {
+		case state.Lista:
+			listas = append(listas, t)
+			modelos[t.ID] = ultimoModelo(root, t.ID)
+		case state.Detenida:
+			detenidas = append(detenidas, t.ID)
+		case state.Pendiente, state.EnCurso:
+			pendientes = append(pendientes, t.ID)
+		}
+	}
+	if len(listas) == 0 {
+		return errors.New("ninguna tarea está lista · corre devclean run primero")
+	}
+	// entregar la mitad de un plan deja el PR incoherente: las tareas que
+	// faltan son justo las que otras consumen
+	if len(detenidas) > 0 || len(pendientes) > 0 {
+		var partes []string
+		if len(detenidas) > 0 {
+			partes = append(partes, "detenidas: "+strings.Join(detenidas, ", ")+" (revívelas con devclean run --reintentar)")
+		}
+		if len(pendientes) > 0 {
+			partes = append(partes, "sin correr: "+strings.Join(pendientes, ", "))
+		}
+		return fmt.Errorf("no todas las tareas están listas · %s", strings.Join(partes, " · "))
+	}
+
+	opciones := ship.OpcionesEntrega{
+		Root:    root,
+		Config:  cfg,
+		Base:    cfg.Base,
+		Tareas:  listas,
+		Modelos: modelos,
+		Titulo:  titulo,
+		DryRun:  dryRun,
+		Progreso: func(p ship.Paso) {
+			if p.OK {
+				out.Line("✓ %s  · %s", p.Nombre, p.Detalle)
+			} else {
+				out.Line("✗ %s  · %s", p.Nombre, p.Detalle)
+			}
+		},
+	}
+	if cfg.TimeoutPruebas > 0 {
+		opciones.Timeout = time.Duration(cfg.TimeoutPruebas) * time.Second
+	}
+
+	e := ship.EntregarTodas(context.Background(), opciones)
+	if err := out.Data(e); err != nil {
+		return err
+	}
+	if !e.Aprobado {
+		return fmt.Errorf("entrega frenada · %s", e.PrimerMotivo())
+	}
+	if dryRun {
+		out.Line("entregable · %d tareas en la rama %s · --dry-run, sin PR", len(listas), e.Rama)
+		return nil
+	}
+	out.Line("entregado · %d tareas en un PR · %s", len(listas), e.PR)
+	return nil
 }
 
 func runShip(id string, dryRun bool) error {

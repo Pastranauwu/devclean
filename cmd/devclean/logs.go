@@ -62,7 +62,14 @@ func runLogs(id string) error {
 		if archivos == "" {
 			archivos = "—"
 		}
-		out.Line("  intento %d  salida %s  +%d/-%d  %s  modelo %s", a.Intento, code, a.LineasMas, a.LineasMenos, archivos, a.Modelo)
+		out.Line("  intento %d  salida %s  +%d/-%d  %s  modelo %s  tokens %d/%d",
+			a.Intento, code, a.LineasMas, a.LineasMenos, archivos, a.Modelo, a.Tokens.Entrada, a.Tokens.Salida)
+		if a.ErrorAgente != "" {
+			out.Line("    ✗ el agente falló · %s", a.ErrorAgente)
+		}
+		if a.Log != "" {
+			out.Line("    log: %s", a.Log)
+		}
 	}
 	if st.Pregunta != "" {
 		out.Line("  %s", st.Pregunta)

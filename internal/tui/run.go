@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +30,23 @@ type tareaViva struct {
 	motivo   string
 }
 
+// FaseRun es el detalle en vivo de una tarea que trabaja: en qué fase
+// está, desde cuándo y cuánto lleva gastado. Sale del latido que escribe
+// internal/loop, lo único que sabe qué pasa DENTRO de un intento.
+type FaseRun struct {
+	Intento   int
+	Limite    int
+	Fase      string
+	Modelo    string
+	DesdeFase time.Time
+	Entrada   int
+	Salida    int
+	Atascada  bool
+}
+
+// ticksPorLatido: tickCmd late cada 80 ms, así que doce ticks es ~1 s.
+const ticksPorLatido = 12
+
 type runMsg struct {
 	evento *EventoRun
 	fin    bool
@@ -39,13 +57,17 @@ type runModel struct {
 	ch     chan runMsg
 	estado map[string]*tareaViva
 	inicio map[string]time.Time
+	fases  func() map[string]FaseRun // lee los latidos de disco
+	fase   map[string]FaseRun
 	tick   int
 	fin    bool
 }
 
-// CorrerRun muestra la corrida en vivo mientras `lanzar` ejecuta las
-// tareas e informa cada cambio por `emit`.
-func CorrerRun(filas []FilaRun, lanzar func(emit func(EventoRun))) error {
+// CorrerRun muestra la corrida en vivo. `fases` se consulta en cada tick
+// para saber qué está haciendo cada tarea ahora mismo: sin eso el tablero
+// solo sabía "trabajando" y un reloj, y una invocación de veinte minutos
+// se veía igual que una colgada.
+func CorrerRun(filas []FilaRun, fases func() map[string]FaseRun, lanzar func(emit func(EventoRun))) error {
 	ch := make(chan runMsg)
 	go func() {
 		lanzar(func(e EventoRun) { ch <- runMsg{evento: &e} })
@@ -53,11 +75,16 @@ func CorrerRun(filas []FilaRun, lanzar func(emit func(EventoRun))) error {
 		close(ch)
 	}()
 
+	if fases == nil {
+		fases = func() map[string]FaseRun { return nil }
+	}
 	m := runModel{
 		filas:  filas,
 		ch:     ch,
 		estado: map[string]*tareaViva{},
 		inicio: map[string]time.Time{},
+		fases:  fases,
+		fase:   fases(),
 	}
 	_, err := tea.NewProgram(m).Run()
 	return err
@@ -84,6 +111,12 @@ func (m runModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.tick++
+		// el spinner necesita 80 ms; los latidos no. Releerlos a ese
+		// ritmo son doce lecturas de disco por segundo y por tarea para
+		// pintar un reloj que avanza en segundos.
+		if m.tick%ticksPorLatido == 0 {
+			m.fase = m.fases()
+		}
 		return m, tickCmd()
 	case tea.KeyMsg:
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
@@ -129,10 +162,35 @@ func (m runModel) View() string {
 		estiloApagado.Render(strconv.Itoa(hechos)+"/"+strconv.Itoa(len(m.filas))) + "\n\n")
 
 	for _, f := range m.filas {
+		fase, hay := m.fase[f.ID]
 		cuerpo.WriteString(renderFilaRun(f, m.estado[f.ID], m.inicio[f.ID], m.tick))
+		if hay && (m.estado[f.ID] == nil || m.estado[f.ID].estado == "trabajando") {
+			cuerpo.WriteString(renderFase(fase))
+		}
 	}
 
 	return Logo(80) + "\n" + caja(strings.TrimRight(cuerpo.String(), "\n"))
+}
+
+// renderFase pinta la línea de detalle: intento, fase, modelo, tiempo en
+// esa fase y tokens gastados. Es lo que responde "¿sigue viva?".
+func renderFase(f FaseRun) string {
+	txt := fmt.Sprintf("intento %d", f.Intento)
+	if f.Limite > 0 {
+		txt += fmt.Sprintf("/%d", f.Limite)
+	}
+	txt += " · " + f.Fase
+	if f.Modelo != "" {
+		txt += " · " + f.Modelo
+	}
+	txt += " · " + reloj(time.Since(f.DesdeFase))
+	if f.Entrada+f.Salida > 0 {
+		txt += fmt.Sprintf(" · %d↑/%d↓ tokens", f.Entrada, f.Salida)
+	}
+	if f.Atascada {
+		return "      " + estiloAlerta.Render("ATASCO · "+txt+" sin señal") + "\n"
+	}
+	return "      " + estiloApagado.Render(txt) + "\n"
 }
 
 func renderFilaRun(f FilaRun, v *tareaViva, inicio time.Time, tick int) string {

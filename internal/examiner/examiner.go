@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,6 +75,39 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 
 	dir, pkg := inferDirPkg(o.Task.TocarSolo, roomPath)
 
+	// Todo lo que puede invalidar el examen se resuelve ANTES de invocar
+	// al modelo: descubrirlo después es pagar una llamada entera para
+	// tirarla a la basura.
+	var importPath string
+	if lenguaje == "go" {
+		// El paquete real manda sobre el nombre del directorio. Adivinarlo
+		// rompía en el caso más común de Go: `cmd/algo` declara `package
+		// main`, no `package algo`, y la suite terminaba con dos paquetes
+		// en el mismo directorio — un error que el implementador no puede
+		// arreglar, porque las rutas de prueba le están vedadas (A.3).
+		real := paqueteReal(dir)
+		switch real {
+		case "":
+			// todavía no hay código ahí: el nombre que elijamos puede
+			// chocar con el que escriba el implementador
+			return false, nil
+		case "main":
+			// Go no deja importar un paquete main: no hay examen de caja
+			// negra posible sobre un binario desde otro paquete
+			return false, nil
+		}
+		pkg = real
+
+		// El examinador corre ANTES que el implementador, así que en un
+		// repo recién nacido todavía no hay go.mod. Sin ruta de import la
+		// suite llama a `pkg.Func()` sin importar `pkg`: no compila nunca
+		// y nadie puede tocarla. Sin ruta, no hay examen.
+		importPath = resolveImportPath(roomPath, dir)
+		if importPath == "" {
+			return false, nil
+		}
+	}
+
 	prompt := buildPrompt(o.Task, pkg, lenguaje)
 	req := loop.Request{
 		RoomPath: roomPath,
@@ -94,10 +129,6 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		return false, nil
 	}
 
-	var importPath string
-	if lenguaje == "go" {
-		importPath = resolveImportPath(roomPath, dir)
-	}
 	visibleRelPath, hiddenRelPath := RutasSuite(o.Task.TocarSolo, lenguaje)
 
 	visibleContent := armarSuite(lenguaje, pkg, importPath, imports, visible)
@@ -305,6 +336,36 @@ func inferDirPkg(tocarSolo []string, roomPath string) (dir, pkg string) {
 		pkg = "main"
 	}
 	return absDir, pkg
+}
+
+// paqueteReal lee el nombre de paquete declarado en los .go que ya viven
+// en dir. Devuelve "" si el directorio no existe o todavía no tiene
+// código.
+//
+// Adivinarlo desde el nombre del directorio rompía en el caso más común
+// de Go: `cmd/algo` declara `package main`, no `package algo`. La suite
+// salía como `package algo_test` en el mismo directorio y `go build`
+// respondía "found packages algo (…_test.go) and main (main.go)" — un
+// error que el implementador no puede arreglar, porque las rutas de
+// prueba le están vedadas (A.3). La tarea quedaba roja para siempre.
+func paqueteReal(dir string) string {
+	entradas, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	fset := token.NewFileSet()
+	for _, e := range entradas {
+		nombre := e.Name()
+		if e.IsDir() || !strings.HasSuffix(nombre, ".go") || strings.HasSuffix(nombre, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, filepath.Join(dir, nombre), nil, parser.PackageClauseOnly)
+		if err != nil || f.Name == nil {
+			continue
+		}
+		return f.Name.Name
+	}
+	return ""
 }
 
 func toRelPath(p string) string { return filepath.ToSlash(p) }

@@ -260,3 +260,36 @@ func TestAgenteIdaYVuelta(t *testing.T) {
 		t.Errorf("Validate agente inválido = %v", errs)
 	}
 }
+
+func TestFirmaVerificable(t *testing.T) {
+	casos := []struct {
+		firma   string
+		nombre  string
+		ok      bool
+	}{
+		{"wol.Send(mac string) error", "Send", true},
+		{"POST /wake", "/wake", true},
+		{"/wake", "/wake", true},
+		{"Ejecutar", "Ejecutar", true},
+		// prosa: no hay nada que buscar en un diff
+		{"cmd/sum main package", "", false},
+		{"devclean --mac <MAC>", "", false},
+		{"", "", false},
+	}
+	for _, c := range casos {
+		nombre, ok := FirmaVerificable(c.firma)
+		if ok != c.ok || (ok && nombre != c.nombre) {
+			t.Errorf("FirmaVerificable(%q) = (%q, %v), quiero (%q, %v)", c.firma, nombre, ok, c.nombre, c.ok)
+		}
+	}
+}
+
+// Una barra dentro de prosa no es una ruta HTTP.
+func TestNombreDeFirmaNoConfundeProsaConRuta(t *testing.T) {
+	if n := NombreDeFirma("cmd/sum main package"); strings.HasPrefix(n, "/") {
+		t.Errorf("NombreDeFirma = %q · no es una ruta", n)
+	}
+	if n := NombreDeFirma("POST /wake"); n != "/wake" {
+		t.Errorf("NombreDeFirma = %q, quiero /wake", n)
+	}
+}

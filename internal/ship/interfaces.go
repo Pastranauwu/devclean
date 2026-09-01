@@ -14,9 +14,9 @@ import (
 //
 // Devuelve las firmas que faltan; vacío si están todas o si la tarea no
 // declaró ninguna.
-func verificarExpone(firmas []string, diff string) []string {
+func verificarExpone(firmas []string, diff string) (faltan, noVerificables []string) {
 	if len(firmas) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var añadido strings.Builder
@@ -28,13 +28,18 @@ func verificarExpone(firmas []string, diff string) []string {
 	}
 	cuerpo := añadido.String()
 
-	var faltan []string
 	for _, f := range firmas {
-		nombre := task.NombreDeFirma(f)
-		if nombre == "" || strings.Contains(cuerpo, nombre) {
+		nombre, verificable := task.FirmaVerificable(f)
+		if !verificable {
+			// prosa en vez de contrato: no hay nada que buscar en el
+			// diff, y frenar por eso deja la tarea sin salida
+			noVerificables = append(noVerificables, f)
+			continue
+		}
+		if strings.Contains(cuerpo, nombre) {
 			continue
 		}
 		faltan = append(faltan, f)
 	}
-	return faltan
+	return faltan, noVerificables
 }

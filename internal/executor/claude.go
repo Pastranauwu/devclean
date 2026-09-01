@@ -24,6 +24,13 @@ func (Claude) Available() error {
 	return nil
 }
 
+// Models devuelve los alias de modelo que acepta `claude --model`. El
+// CLI no expone un subcomando para listarlos, así que van fijos: son
+// alias estables, no ids de versión.
+func (Claude) Models(context.Context) ([]string, error) {
+	return []string{"opus", "sonnet", "haiku"}, nil
+}
+
 func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	// bypassPermissions: el agente no puede preguntar nada (modo -p) y
 	// el contenedor real es el cuarto + la reversión de devclean (§11)
@@ -31,8 +38,8 @@ func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
-	stdout, code, err := run(ctx, req, "claude", args...)
-	res := Result{Stdout: stdout, ExitCode: code}
+	stdout, stderr, code, err := run(ctx, req, "claude", args...)
+	res := Result{Stdout: stdout, Stderr: stderr, ExitCode: code}
 	res.Text = parseClaudeText(stdout)
 	res.Tokens = parseClaudeUsage(stdout)
 	return res, err
