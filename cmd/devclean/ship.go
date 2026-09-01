@@ -71,6 +71,9 @@ func runShip(id string, dryRun bool) error {
 		Base:   cfg.Base,
 		DryRun: dryRun,
 	}
+	if cfg.TimeoutPruebas > 0 {
+		opciones.Timeout = time.Duration(cfg.TimeoutPruebas) * time.Second
+	}
 
 	var res ship.Resultado
 	if esTUI() {

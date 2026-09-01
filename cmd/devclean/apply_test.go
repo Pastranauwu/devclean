@@ -33,7 +33,7 @@ tasks:
 func TestRunApply(t *testing.T) {
 	root := repoTemporal(t)
 	out = ui.New(io.Discard, false)
-	if err := runInit(root, "", "", nil); err != nil {
+	if err := runInit(root, "", "", nil, true); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -86,7 +86,7 @@ func TestRunApply(t *testing.T) {
 func TestRunPs(t *testing.T) {
 	root := repoTemporal(t)
 	out = ui.New(io.Discard, false)
-	if err := runInit(root, "", "", nil); err != nil {
+	if err := runInit(root, "", "", nil, true); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 

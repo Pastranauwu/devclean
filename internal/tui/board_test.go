@@ -27,6 +27,27 @@ func TestLineasTablero(t *testing.T) {
 	}
 }
 
+func TestLineasTableroMuestraArbolDeSubtareas(t *testing.T) {
+	filas := []Fila{
+		{ID: "T-001", Titulo: "feature grande", Estado: state.Lista, Hijos: []Fila{
+			{ID: "T-001001", Titulo: "parte uno", Estado: state.Lista},
+			{ID: "T-001002", Titulo: "parte dos", Estado: state.Detenida, Hijos: []Fila{
+				{ID: "T-001002001", Titulo: "sub de la parte dos", Estado: state.Lista},
+			}},
+		}},
+	}
+	ls := lineasTablero(filas)
+	texto := ""
+	for _, l := range ls {
+		texto += l.texto + "\n"
+	}
+	for _, want := range []string{"T-001", "  └ T-001001", "  └ T-001002", "    └ T-001002001"} {
+		if !strings.Contains(texto, want) {
+			t.Errorf("tablero sin %q:\n%s", want, texto)
+		}
+	}
+}
+
 func TestLineasTableroVacio(t *testing.T) {
 	ls := lineasTablero(nil)
 	texto := ""

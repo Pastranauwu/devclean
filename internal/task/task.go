@@ -14,8 +14,9 @@ import (
 
 // Defaults for the optional contract fields (§6.1).
 const (
-	DefaultLimiteIntentos = 3
-	DefaultLimiteLineas   = 200
+	DefaultLimiteIntentos  = 3
+	DefaultLimiteLineas    = 200
+	DefaultLimiteSubtareas = 5
 )
 
 // Version is the contract version this binary understands (adenda A.1).
@@ -28,14 +29,14 @@ var idPattern = regexp.MustCompile(`^T-\d{3,}$`)
 // Task is the task contract. ListoCuando is the only mandatory field
 // beyond id and titulo; the rest carry defaults.
 type Task struct {
-	Version        int      `json:"version"`
-	ID             string   `json:"id"`
-	Titulo         string   `json:"titulo"`
-	Porque         string   `json:"porque"`
-	ListoCuando    string   `json:"listo_cuando"`
-	TocarSolo      []string `json:"tocar_solo"`
-	NoTocar        []string `json:"no_tocar"`
-	DependeDe      []string `json:"depende_de,omitempty"`
+	Version     int      `json:"version"`
+	ID          string   `json:"id"`
+	Titulo      string   `json:"titulo"`
+	Porque      string   `json:"porque"`
+	ListoCuando string   `json:"listo_cuando"`
+	TocarSolo   []string `json:"tocar_solo"`
+	NoTocar     []string `json:"no_tocar"`
+	DependeDe   []string `json:"depende_de,omitempty"`
 
 	// Expone son las firmas públicas que esta tarea produce y que otras
 	// consumen: "wol.Send(mac, addr string) error", "POST /wake".
@@ -45,11 +46,23 @@ type Task struct {
 	Expone []string `json:"expone,omitempty"`
 	Usa    []string `json:"usa,omitempty"`
 
-	LimiteIntentos int      `json:"limite_intentos"`
-	LimiteLineas   int      `json:"limite_lineas"`
-	Riesgos        string   `json:"riesgos"`
-	Peso           string   `json:"peso,omitempty"` // liviana | media | pesada ("" = estrategia global)
-	Agente         string   `json:"agente,omitempty"` // agente asignado (Fase 2)
+	LimiteIntentos int    `json:"limite_intentos"`
+	LimiteLineas   int    `json:"limite_lineas"`
+	Riesgos        string `json:"riesgos"`
+	Peso           string `json:"peso,omitempty"`   // liviana | media | pesada ("" = estrategia global)
+	Agente         string `json:"agente,omitempty"` // agente asignado (Fase 2)
+
+	// Recursivo marca una tarea como demasiado grande para un solo
+	// intento de agente: en vez de escribir código directo, el bucle la
+	// reparte en subtareas reales (mismo contrato, mismo listo_cuando
+	// obligatorio) que corren en cuartos anidados dentro de este mismo
+	// cuarto (internal/recurse). Sin esta marca, cero recursión — nunca
+	// es una decisión del modelo, siempre del contrato.
+	Recursivo bool `json:"recursivo,omitempty"`
+	// LimiteSubtareas topa cuántas subtareas puede proponer la
+	// descomposición, mismo espíritu que LimiteIntentos: sin techo, una
+	// tarea recursiva puede gastar tokens sin límite.
+	LimiteSubtareas int `json:"limite_subtareas,omitempty"`
 
 	// Notas is the free body after the frontmatter.
 	Notas string `json:"notas,omitempty"`
@@ -165,6 +178,17 @@ func Parse(data []byte) (Task, error) {
 			t.Peso = kv.Unquote(p.Value)
 		case "agente":
 			t.Agente = kv.Unquote(p.Value)
+		case "recursivo":
+			switch kv.Unquote(p.Value) {
+			case "true":
+				t.Recursivo = true
+			case "false":
+				t.Recursivo = false
+			default:
+				err = fmt.Errorf("recursivo inválido: %s · usa true o false", p.Value)
+			}
+		case "limite_subtareas":
+			t.LimiteSubtareas, err = kv.ParseInt(p.Value)
 		default:
 			// campos del futuro: se ignoran solo si el archivo lo es
 			if t.Aviso != "" {
@@ -219,6 +243,9 @@ func (t Task) Validate() []error {
 	if t.Agente != "" && strings.ContainsAny(t.Agente, " \t\n\r:") {
 		errs = append(errs, fmt.Errorf("agente inválido: %q · usa un nombre sin espacios", t.Agente))
 	}
+	if t.Recursivo && t.LimiteSubtareas < 1 {
+		errs = append(errs, fmt.Errorf("limite_subtareas inválido: %d · mínimo 1 en una tarea recursiva", t.LimiteSubtareas))
+	}
 	return errs
 }
 
@@ -256,6 +283,10 @@ func (t Task) Marshal() []byte {
 	}
 	if t.Agente != "" {
 		fmt.Fprintf(&b, "agente: %s\n", t.Agente)
+	}
+	if t.Recursivo {
+		fmt.Fprintf(&b, "recursivo: true\n")
+		fmt.Fprintf(&b, "limite_subtareas: %d\n", t.LimiteSubtareas)
 	}
 	b.WriteString("---\n")
 	if t.Notas != "" {

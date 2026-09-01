@@ -94,6 +94,26 @@ func TestParseTimeoutEsclusa(t *testing.T) {
 	}
 }
 
+func TestParseTimeoutAgenteYPruebas(t *testing.T) {
+	cfg, err := Parse([]byte("timeout_agente: 900\ntimeout_pruebas: 600\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.TimeoutAgente != 900 {
+		t.Errorf("TimeoutAgente = %d, quiero 900", cfg.TimeoutAgente)
+	}
+	if cfg.TimeoutPruebas != 600 {
+		t.Errorf("TimeoutPruebas = %d, quiero 600", cfg.TimeoutPruebas)
+	}
+	for _, campo := range []string{"timeout_agente", "timeout_pruebas"} {
+		for _, bad := range []string{"0", "-5", "mucho"} {
+			if _, err := Parse([]byte(campo + ": " + bad + "\n")); err == nil {
+				t.Errorf("Parse debió rechazar %s: %s", campo, bad)
+			}
+		}
+	}
+}
+
 func TestLoadMissing(t *testing.T) {
 	_, err := Load(t.TempDir())
 	if err == nil {
