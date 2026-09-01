@@ -8,6 +8,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -50,7 +52,12 @@ func run(ctx context.Context, req Request, name string, args ...string) (string,
 	ctx, cancel := context.WithTimeout(ctx, req.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, name, args...)
+	bin, err := findBinary(name)
+	if err != nil {
+		bin = name
+	}
+
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = req.RoomPath
 	cmd.Env = append(os.Environ(), req.Env...)
 
@@ -66,4 +73,34 @@ func run(ctx context.Context, req Request, name string, args ...string) (string,
 		return string(out), -1, err
 	}
 	return string(out), 0, nil
+}
+
+func init() {
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		cur := os.Getenv("PATH")
+		paths := []string{
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, ".opencode", "bin"),
+			filepath.Join(home, ".npm-global", "bin"),
+			filepath.Join(home, "bin"),
+		}
+		for _, p := range paths {
+			if !strings.Contains(cur, p) {
+				if info, err := os.Stat(p); err == nil && info.IsDir() {
+					cur = p + string(os.PathListSeparator) + cur
+				}
+			}
+		}
+		_ = os.Setenv("PATH", cur)
+	}
+}
+
+// findBinary busca un binario ejecutable en el PATH.
+func findBinary(name string) (string, error) {
+	bin, err := exec.LookPath(name)
+	if err != nil {
+		return "", errors.New(name + " no está instalado · instálalo o elige otro ejecutor")
+	}
+	return bin, nil
 }

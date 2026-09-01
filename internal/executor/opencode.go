@@ -15,9 +15,9 @@ type OpenCode struct{}
 func (OpenCode) Name() string { return "opencode" }
 
 func (OpenCode) Available() error {
-	bin, err := exec.LookPath("opencode")
+	bin, err := findBinary("opencode")
 	if err != nil {
-		return errors.New("opencode no está instalado · instálalo o elige otro ejecutor")
+		return err
 	}
 	if out, err := exec.Command(bin, "--version").Output(); err != nil || len(strings.TrimSpace(string(out))) == 0 {
 		return errors.New("opencode no responde a --version · verifica la instalación")
@@ -26,7 +26,7 @@ func (OpenCode) Available() error {
 }
 
 func (e OpenCode) Run(ctx context.Context, req Request) (Result, error) {
-	args := []string{"run", req.Prompt, "--dir", req.RoomPath, "--format", "json"}
+	args := []string{"run", req.Prompt, "--dir", req.RoomPath, "--format", "json", "--auto"}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}

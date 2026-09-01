@@ -516,26 +516,44 @@ func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagMod
 		nombreAgente = "ejecutor"
 	}
 
-	ag, ok := cfg.ObtenerAgente(nombreAgente)
+	cli := cfg.Cli
+	if defaultEx != nil {
+		cli = defaultEx.Name()
+	}
+
+	customAg, isCustom := cfg.Agentes[nombreAgente]
 
 	ex := defaultEx
-	if ok && ag.Provider != "" {
-		if e, err := elegirEjecutor(ag.Provider); err == nil {
+	if isCustom && customAg.Provider != "" {
+		if e, err := elegirEjecutor(customAg.Provider); err == nil {
 			ex = e
+		}
+	} else if ex == nil {
+		if ag, ok := cfg.ObtenerAgente(nombreAgente); ok && ag.Provider != "" {
+			if e, err := elegirEjecutor(ag.Provider); err == nil {
+				ex = e
+			}
 		}
 	}
 
 	modelo := flagModelo
 	if modelo == "" {
-		if ok && ag.Modelo != "" {
-			modelo = ag.Modelo
+		if isCustom && customAg.Modelo != "" {
+			modelo = customAg.Modelo
+		} else if p, ok := cfg.Proveedores[nombreAgente]; ok && p.Modelo != "" {
+			modelo = p.Modelo
 		} else {
-			modelo = modeloParaTarea(cfg, "", t)
+			defaults := config.DefaultAgentes(cli)
+			if def, ok := defaults[nombreAgente]; ok && def.Modelo != "" {
+				modelo = def.Modelo
+			} else {
+				modelo = modeloParaTarea(cfg, "", t)
+			}
 		}
 	}
 
 	var skills []string
-	if ok {
+	if ag, ok := cfg.ObtenerAgente(nombreAgente); ok {
 		skills = ag.Skills
 	}
 
