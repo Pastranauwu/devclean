@@ -670,11 +670,41 @@ debate con dos detectores deterministas que cuestan cero tokens.
 
 ## Estado
 
-**v0.5.0.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
-+ skills reales, recursividad y fiabilidad de `ship` (v0.5), todo en `main`
-con pruebas verdes.
+**v0.6.0.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
++ skills reales, recursividad y fiabilidad de `ship` (v0.5) + de una petición
+a un PR limpio (v0.6), todo en `main` con pruebas verdes.
 
-- **v0.5 (esta release):**
+- **v0.6 (esta release):**
+  - **El motor invoca modelos de verdad.** Los arquetipos traían ids
+    inventados (`glm-5.2`, `claude-sonnet`) que ningún CLI acepta: cada
+    invocación moría en dos segundos sin gastar un token y la corrida entera
+    caía en cascada. Ahora `init` le pregunta al ejecutor qué modelos existe
+    y `doctor` los valida antes de gastar nada.
+  - **Se puede saber qué falló.** `stderr` del CLI ya no se descarta; cada
+    invocación deja su volcado en `.devclean/runs/<id>/intento-N.log`; el
+    bucle distingue "el agente reventó" de "las pruebas fallaron" y corta en
+    vez de quemar los tres intentos contra un error de infraestructura.
+  - **De una petición a un PR limpio:** `devclean up "<petición>" --ship`
+    encadena plan, corrida y entrega; `devclean ship --todas` junta un commit
+    por tarea en un solo PR, en orden de dependencia, con la suite del
+    proyecto corriendo sobre el conjunto integrado.
+  - **Progreso y atascos en todo momento:** el bucle escribe su estado vivo
+    en `latido.json` en cada cambio de fase, así `board` (que ahora se
+    refresca solo) y `standup` ven qué pasa DENTRO de un intento. Una fase
+    parada más de diez minutos se marca como ATASCO.
+  - **Elecciones del humano:** `plan` deja marcar qué tareas se crean (y
+    arrastra las dependientes de una descartada), `init` deja elegir el
+    modelo de cada peso sobre el catálogo real, y el tablero gana `r`
+    (reintentar) y `d` (detalle) junto a `s`.
+  - **Menos tokens:** la base de skills inyectaba ~59 KB (~15k tokens) en
+    cada prompt de cada intento; quedan `implement` y `clean-code`. El gasto
+    de OpenCode, que se leía mal, ahora se contabiliza.
+  - **Desbloqueos:** `go.sum` acompaña a `go.mod` cuando está en alcance (sin
+    eso ningún proyecto Go con dependencias compilaba), el examinador ya no
+    emite suites que nadie puede arreglar, `fmt.Println` en un `main.go` dejó
+    de contar como ruido, y `run --reintentar` revive tareas detenidas
+    reusando su cuarto.
+- **v0.5:**
   - **Skills reales por agente:** cada arquetipo trae paquetes de skill de
     verdad (`SKILL.md`, no solo una etiqueta) traídos con `devclean skills
     sync` e inyectados completos en el prompt — ver [Arquetipos de Agentes
@@ -703,7 +733,9 @@ con pruebas verdes.
 
 **Pendiente real:** duplicación entre ramas, solapamiento funcional completo
 (merge en seco + correr suites), mutation testing del examinador, y sumar el
-costo en tokens de la recursión a `devclean report`.
+costo en tokens de la recursión a `devclean report`. El camino de `gh pr
+create` está probado en su mecánica de git (ramas, commits, suite integrada)
+pero todavía no contra un repositorio de GitHub real de punta a punta.
 
 > El GIF (`docs/demo.gif`) se graba con `vhs docs/demo.tape`; el tape usa
 > `scripts/demo-env.sh` (agente falso para no gastar tokens) y muestra la TUI.
