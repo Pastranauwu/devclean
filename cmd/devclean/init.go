@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/gate"
 	"github.com/Pastranauwu/devclean/internal/loop"
+	"github.com/Pastranauwu/devclean/internal/tui"
 )
 
 type initResult struct {
@@ -110,7 +112,17 @@ func runInit(cwd, pruebasFlag, plantilla string, in io.Reader, sinSkills bool) e
 	// El CLI y sus modelos se descubren aquí, una sola vez, y quedan
 	// escritos en config.yml: es la única forma de que los ids sean
 	// reales y de que el usuario los pueda cambiar sin leer el código.
-	cliDetectado, modelos := detectarModelos()
+	cliDetectado, catalogo := detectarCatalogo()
+	modelos := config.ElegirModelos(catalogo)
+	// la heurística acierta el tamaño por el nombre, no la calidad ni la
+	// velocidad: en terminal el humano ve el catálogo real y decide
+	if in != nil && esTUI() && len(catalogo) > 0 {
+		if m, err := elegirModelosAMano(modelos, catalogo); err != nil {
+			return err
+		} else if m != nil {
+			modelos = m
+		}
+	}
 	cfg.Cli, cfg.Modelos = cliDetectado, modelos
 	if err := cfg.Save(root); err != nil {
 		return err
@@ -162,11 +174,11 @@ func runInit(cwd, pruebasFlag, plantilla string, in io.Reader, sinSkills bool) e
 	return nil
 }
 
-// detectarModelos elige el primer ejecutor instalado y reparte su
-// catálogo real de modelos entre los tres pesos. Sin ejecutor, o si el
-// CLI no sabe listar modelos, devuelve vacío: `modelos:` queda fuera de
-// config.yml y cada invocación usa el modelo por defecto del CLI.
-func detectarModelos() (string, map[string]string) {
+// detectarCatalogo elige el primer ejecutor instalado y le pide su
+// catálogo real de modelos. Sin ejecutor, o si el CLI no sabe listarlos,
+// devuelve vacío: `modelos:` queda fuera de config.yml y cada invocación
+// usa el modelo por defecto del CLI, que siempre existe.
+func detectarCatalogo() (string, []string) {
 	ex, err := elegirEjecutor("")
 	if err != nil {
 		return "", nil
@@ -177,5 +189,42 @@ func detectarModelos() (string, map[string]string) {
 	if err != nil {
 		return ex.Name(), nil
 	}
-	return ex.Name(), config.ElegirModelos(catalogo)
+	return ex.Name(), catalogo
+}
+
+// elegirModelosAMano deja al humano fijar el modelo de cada peso sobre el
+// catálogo real del CLI. Devuelve nil si prefiere quedarse con la
+// propuesta automática.
+func elegirModelosAMano(propuesta map[string]string, catalogo []string) (map[string]string, error) {
+	var resumen []string
+	for _, peso := range config.Pesos {
+		resumen = append(resumen, peso+": "+propuesta[peso])
+	}
+	quiere, err := tui.Elegir("MODELOS POR PESO DE TAREA",
+		"j/k mueve · enter elige · q deja la propuesta",
+		[]tui.Opcion{
+			{ID: "auto", Etiqueta: "usar la propuesta", Detalle: strings.Join(resumen, " · ")},
+			{ID: "mano", Etiqueta: "elegir yo", Detalle: fmt.Sprintf("%d modelos disponibles en el CLI", len(catalogo))},
+		})
+	if err != nil || quiere != "mano" {
+		return nil, err
+	}
+
+	ops := make([]tui.Opcion, 0, len(catalogo))
+	for _, m := range catalogo {
+		ops = append(ops, tui.Opcion{ID: m, Etiqueta: m})
+	}
+	elegidos := map[string]string{}
+	for _, peso := range config.Pesos {
+		id, err := tui.Elegir("MODELO PARA TAREAS DE PESO "+strings.ToUpper(peso),
+			"j/k mueve · enter elige · q deja "+propuesta[peso], ops)
+		if err != nil {
+			return nil, err
+		}
+		if id == "" {
+			id = propuesta[peso] // canceló: se queda el propuesto
+		}
+		elegidos[peso] = id
+	}
+	return elegidos, nil
 }

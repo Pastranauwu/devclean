@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -37,14 +38,21 @@ func runBoard() error {
 		return err
 	}
 	if esTUI() {
-		id, err := tui.CorrerBoard(root)
+		accion, err := tui.CorrerBoard(root)
 		if err != nil {
 			return err
 		}
-		if id == "" {
-			return nil
+		// el tablero solo decide; lo que corre lo corre el comando, para
+		// que la salida sea la misma que si se hubiera tecleado
+		switch accion.Tipo {
+		case tui.AccionEntregar:
+			return runShip(accion.ID, true)
+		case tui.AccionReintentar:
+			return reintentarTarea(root, accion.ID)
+		case tui.AccionDetalle:
+			return runLogs(accion.ID)
 		}
-		return runShip(id, true)
+		return nil
 	}
 
 	tasks, err := task.List(config.TasksDir(root))
@@ -144,4 +152,26 @@ func imprimirHijos(rows []boardRow, profundidad int) {
 		out.Line("%-20s %s└ %s  %s", "", sangria, r.ID, r.Titulo)
 		imprimirHijos(r.Hijos, profundidad+1)
 	}
+}
+
+// reintentarTarea vuelve a correr una sola tarea detenida, reusando su
+// cuarto y el trabajo parcial que quedó dentro. Es la tecla r del
+// tablero: sin esto, revivir una tarea obligaba a correr `run
+// --reintentar` sobre todas.
+func reintentarTarea(root, id string) error {
+	st, err := state.Get(root, id)
+	if err != nil {
+		return err
+	}
+	if st.Estado != state.Detenida {
+		return fmt.Errorf("%s no está detenida (estado %s) · nada que reintentar", id, st.Estado)
+	}
+	// volver a pendiente es lo que hace que `run` la recoja; el cuarto y
+	// su rama siguen ahí, así que el agente arranca viendo lo que ya
+	// escribió en vez de rehacerlo y pagar los mismos tokens otra vez
+	if err := state.Save(root, state.State{ID: id, Estado: state.Pendiente, Rama: st.Rama, Puerto: st.Puerto}); err != nil {
+		return err
+	}
+	out.Line("· %s vuelve a la cola · se reusa su cuarto y su trabajo parcial", id)
+	return runCmd(1, "", "", true)
 }

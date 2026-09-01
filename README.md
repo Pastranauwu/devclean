@@ -185,6 +185,13 @@ devclean up "exportar clientes a CSV y arreglar el login con tildes" --agentes 3
 `up` planea, ejecuta cada tarea en su propio cuarto aislado y, con `--ship`,
 entrega todo en **un solo PR** con un commit por tarea, en orden de dependencia.
 
+Si quieres revisar el plan antes de que corra nada, quita `--ship` o usa
+`devclean plan`: en terminal te muestra las tareas propuestas con casillas
+(`espacio` marca, `a` todas, `n` ninguna, `enter` confirma) y solo crea las que
+dejes marcadas. Descartar una tarea arrastra a las que dependían de ella —
+crearlas sueltas dejaría un plan que nunca puede correr — y te dice cuáles se
+cayeron con ella.
+
 El camino largo, si quieres revisar entre paso y paso:
 
 ```sh
@@ -212,8 +219,40 @@ devclean ship T-001     # o una sola tarea en su propio PR
 ```sh
 devclean logs T-001     # intentos, tokens y el error exacto del agente
 devclean doctor         # ¿existe el modelo configurado? ¿hay key? ¿hay ejecutor?
+devclean standup        # atascos y colisiones, sin gastar tokens
 devclean run --reintentar   # revive las tareas detenidas sin perder su trabajo
 ```
+
+O desde el tablero, sin recordar comandos:
+
+```sh
+devclean board
+```
+
+| tecla | qué hace |
+|---|---|
+| `j` / `k` | mueve el cursor |
+| `s` | entrega la tarea (`ship --dry-run`) · solo sobre LISTO |
+| `r` | revive la tarea reusando su cuarto y su trabajo parcial · solo sobre DETENIDO |
+| `d` | detalle: intentos, tokens, el error del agente y la ruta de su volcado |
+| `q` | sale |
+
+El tablero se refresca solo y, bajo cada tarea en curso, muestra qué está
+haciendo ahora mismo: `intento 2/3 · agente · opencode/glm-5.3 · 3m12s`.
+Si una fase lleva más de diez minutos sin moverse, la marca en rojo como
+**ATASCO** — avisa, no la mata; tú decides si cortas.
+
+### Saber qué pasa mientras corre
+
+El bucle escribe el estado vivo en `.devclean/runs/<id>/latido.json` en cada
+cambio de fase (`examen`, `agente`, `verificando`), con intento, modelo y
+tokens acumulados. `attempts.jsonl` solo se escribe cuando un intento
+*termina*, y un intento puede durar veinte minutos: sin el latido, una tarea
+colgada era indistinguible de una que trabaja.
+
+Como el estado está en disco, `devclean board` o `devclean standup` desde otra
+terminal ven una corrida en curso, aunque la hayas lanzado con `--plain` en un
+script o en CI.
 
 Cada invocación del agente deja su volcado completo (prompt, stdout y stderr del
 CLI) en `.devclean/runs/<id>/intento-N.log`. Si el agente ni siquiera llegó al
@@ -506,8 +545,10 @@ reglas_import: ["api → dominio → datos"]  # opcional: verifica grafo de impo
 
 `devclean init` le pregunta al ejecutor qué modelos acepta de verdad
 (`opencode models`; para `claude`, los alias `opus`/`sonnet`/`haiku`) y reparte
-tres por peso de tarea en `modelos:`. Cambialos a gusto — mandan sobre todo lo
-demás — y verificalos antes de gastar un token:
+tres por peso de tarea en `modelos:`. En terminal te enseña lo que eligió y te
+deja quedarte con eso o elegir cada peso a mano sobre el catálogo real. Cambialos
+después a gusto — mandan sobre todo lo demás — y verificalos antes de gastar un
+token:
 
 ```sh
 devclean doctor     # avisa si algún modelo de config.yml no existe en el CLI
@@ -572,7 +613,7 @@ devclean up --ejecutor opencode --modelo "opencode/muse-spark-1.2-contributor-fr
 | `devclean check <id>` | corre la esclusa de entrada sobre una tarea |
 | `devclean run [--agentes N]` | ejecuta las tareas pendientes en paralelo (detecta solapamiento) |
 | `devclean run --reintentar` | vuelve a correr las tareas detenidas, reusando su cuarto y su trabajo parcial |
-| `devclean board` | tablero de estado · en TUI, `s` dispara `ship --dry-run` sobre la tarea lista |
+| `devclean board` | tablero en vivo · se refresca solo y muestra intento, fase, modelo y atascos |
 | `devclean standup` | parte de datos: COLISIÓN y ATASCO sin gastar tokens (§6.7) |
 | `devclean ship <id>` | esclusa de salida (hasta 11 pasos) y PR de esa tarea |
 | `devclean ship --todas` | la esclusa de cada tarea lista y **un solo PR** con un commit por tarea |

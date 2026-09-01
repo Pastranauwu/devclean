@@ -198,18 +198,54 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 		}
 	}
 
+	// qué tareas se crean: en terminal el humano elige una por una, sin
+	// terminal solo cabe todo o nada. El planificador es un modelo y
+	// propone de más; aceptar el lote entero obligaba a borrar a mano
+	// después, que es justo lo que devclean evita.
+	elegidas := map[string]bool{}
+	for _, p := range props {
+		elegidas[p.ID] = true
+	}
 	if !aprobar {
 		if !isTerminal(os.Stdin) {
 			out.Line("sin confirmación interactiva · usa --aprobar para crearlas")
 			return nil
 		}
-		if !confirmar(os.Stdin) {
+		if esTUI() {
+			marcadas, ok, err := tui.Marcar("¿QUÉ TAREAS CREO?", "", opcionesDePlan(props))
+			if err != nil {
+				return err
+			}
+			if !ok {
+				out.Line("plan descartado")
+				return nil
+			}
+			elegidas = map[string]bool{}
+			for _, id := range marcadas {
+				elegidas[id] = true
+			}
+			// descartar una tarea deja huérfanas a las que dependían de
+			// ella: se quedarían "bloqueadas · depende de T-00X" para
+			// siempre. Se caen con ella, y se dice cuáles.
+			if arrastradas := cerrarDependencias(props, elegidas); len(arrastradas) > 0 {
+				out.Line("· también quito %s · dependen de una tarea descartada", strings.Join(arrastradas, ", "))
+			}
+			if len(elegidas) == 0 {
+				out.Line("ninguna tarea marcada · plan descartado")
+				return nil
+			}
+		} else if !confirmar(os.Stdin) {
 			out.Line("plan descartado")
 			return nil
 		}
 	}
 
+	var creadas []string
 	for i, b := range borradores {
+		if !elegidas[ids[i]] {
+			continue
+		}
+		creadas = append(creadas, ids[i])
 		t := task.Task{
 			Version:        task.Version,
 			ID:             ids[i],
@@ -231,7 +267,14 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 			return err
 		}
 	}
-	out.Line("✓ %s creadas · revisa con devclean check %s", strings.Join(ids, ", "), ids[0])
+	if len(creadas) == 0 {
+		out.Line("ninguna tarea creada")
+		return nil
+	}
+	out.Line("✓ %s creadas · revisa con devclean check %s", strings.Join(creadas, ", "), creadas[0])
+	if len(creadas) < len(ids) {
+		out.Line("· descartadas: %s", strings.Join(descartadas(ids, creadas), ", "))
+	}
 
 	// `pruebas` es lo que corre el paso bisectable de la esclusa de
 	// salida. Si está vacío, ship falla recién al final, cuando el
@@ -351,4 +394,77 @@ func (g generadorPlan) Generar(ctx context.Context, prompt string) (string, erro
 		return "", err
 	}
 	return res.Text, nil
+}
+
+// opcionesDePlan arma la lista que ve el humano antes de aprobar. El
+// detalle lleva lo que decide si una tarea vale: por qué, cómo se
+// comprueba y qué archivos toca.
+func opcionesDePlan(props []propuesta) []tui.Opcion {
+	ops := make([]tui.Opcion, 0, len(props))
+	for _, p := range props {
+		etiqueta := p.ID + "  " + p.Titulo
+		if p.Agente != "" {
+			etiqueta += "  [" + p.Agente + "]"
+		}
+		detalle := "listo cuando: " + p.ListoCuando
+		if len(p.TocarSolo) > 0 {
+			detalle += " · toca: " + strings.Join(p.TocarSolo, ", ")
+		}
+		if len(p.DependeDe) > 0 {
+			detalle += " · depende de: " + strings.Join(p.DependeDe, ", ")
+		}
+		ops = append(ops, tui.Opcion{ID: p.ID, Etiqueta: etiqueta, Detalle: detalle, Marcada: true})
+	}
+	return ops
+}
+
+// descartadas devuelve los ids propuestos que el humano no marcó.
+func descartadas(todos, creados []string) []string {
+	hecho := make(map[string]bool, len(creados))
+	for _, id := range creados {
+		hecho[id] = true
+	}
+	var fuera []string
+	for _, id := range todos {
+		if !hecho[id] {
+			fuera = append(fuera, id)
+		}
+	}
+	return fuera
+}
+
+// cerrarDependencias quita de `elegidas` toda tarea que dependa de una
+// descartada, en cascada. Devuelve las que se cayeron por arrastre.
+//
+// Sin esto, descartar una tarea del plan producía un plan imposible: sus
+// dependientes se creaban igual y `run` las rechazaba en cada corrida con
+// "bloqueada · depende de T-00X que no salió verde", sin más arreglo que
+// editar los contratos a mano.
+func cerrarDependencias(props []propuesta, elegidas map[string]bool) []string {
+	propuestas := make(map[string]bool, len(props))
+	for _, p := range props {
+		propuestas[p.ID] = true
+	}
+
+	var arrastradas []string
+	for {
+		cayo := false
+		for _, p := range props {
+			if !elegidas[p.ID] {
+				continue
+			}
+			for _, d := range p.DependeDe {
+				// una dependencia fuera del plan ya existe en el repo
+				if propuestas[d] && !elegidas[d] {
+					delete(elegidas, p.ID)
+					arrastradas = append(arrastradas, p.ID)
+					cayo = true
+					break
+				}
+			}
+		}
+		if !cayo {
+			return arrastradas
+		}
+	}
 }
