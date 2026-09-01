@@ -155,7 +155,7 @@ func TestEntregarTodasSegundaOleadaNoArrastraLaPrimera(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(r2.Path, "a.go")); err != nil {
 		t.Fatalf("el cuarto de la oleada 2 debería traer a.go · %v", err)
 	}
-	escribir(t, r2.Path, "b.go", "package a\n\n// T-002\n")  // 3 líneas, contra las 10 de a.go
+	escribir(t, r2.Path, "b.go", "package a\n\n// T-002\n") // 3 líneas, contra las 10 de a.go
 	gitCmd(t, r2.Path, "add", "-A")
 	gitCmd(t, r2.Path, "-c", "user.email=d@d", "-c", "user.name=d", "commit", "-m", "wip: T-002 intento 1")
 
@@ -244,5 +244,90 @@ func TestEntregarTodasReportaElConflictoReal(t *testing.T) {
 	motivo := e.PrimerMotivo()
 	if !strings.Contains(motivo, "choque.go") || !strings.Contains(motivo, "tocar_solo") {
 		t.Errorf("motivo = %q · debe nombrar el archivo y el solapamiento", motivo)
+	}
+}
+
+// La esclusa tiene que dar el mismo presupuesto la segunda vez. Tras la
+// primera pasada la rama queda aplanada y ya no hay commits `wip:` que
+// mirar: sin el commit de arranque anotado en el estado, la segunda medía
+// el cuarto entero contra la rama base y frenaba por un presupuesto
+// inflado que nadie habia excedido.
+func TestEntregarTodasEsIdempotente(t *testing.T) {
+	root := repoConCommit(t)
+	sinIdentidadGit(t, root)
+	cuartoDeTarea(t, root, "T-001", "a.go")
+
+	arranque := strings.TrimSpace(gitCmd(t, root, "rev-parse", "main"))
+	opciones := func(commits map[string]string) OpcionesEntrega {
+		return OpcionesEntrega{
+			Root:    root,
+			Config:  config.Config{Base: "main", Pruebas: "true"},
+			Base:    "main",
+			Tareas:  []task.Task{tareaEntrega("T-001", "a.go")},
+			Commits: commits,
+			DryRun:  true,
+		}
+	}
+	conCommit := map[string]string{"T-001": arranque}
+
+	correr := func(commits map[string]string) Entrega {
+		e := EntregarTodas(context.Background(), opciones(commits))
+		_ = limpiarEntrega(root, roomPathDe(root, "_entrega"))
+		return e
+	}
+
+	primera := correr(conCommit)
+	if !primera.Aprobado {
+		t.Fatalf("primera pasada · %s", primera.PrimerMotivo())
+	}
+	// la rama quedó aplanada: ya no hay marcadores wip que mirar
+	if log := gitCmd(t, root, "log", "--format=%s", "main..devclean/T-001"); strings.Contains(log, "wip:") {
+		t.Fatalf("la primera pasada debió aplanar la rama · %q", log)
+	}
+
+	segunda := correr(conCommit)
+	if !segunda.Aprobado {
+		t.Fatalf("segunda pasada · %s", segunda.PrimerMotivo())
+	}
+	if primera.Tareas[0].LineasMas != segunda.Tareas[0].LineasMas {
+		t.Errorf("lineas: primera %d, segunda %d · la esclusa debe medir lo mismo",
+			primera.Tareas[0].LineasMas, segunda.Tareas[0].LineasMas)
+	}
+}
+
+// Un cuarto de antes de que se anotara el commit de arranque: su rama ya
+// viene aplanada por una pasada previa y no tiene marcadores `wip:`. La
+// esclusa tiene que reconocer esa forma en vez de medir contra la base.
+func TestEntregarTodasReconoceRamaYaAplanada(t *testing.T) {
+	root := repoConCommit(t)
+	sinIdentidadGit(t, root)
+	cuartoDeTarea(t, root, "T-001", "a.go")
+	arranque := strings.TrimSpace(gitCmd(t, root, "rev-parse", "main"))
+
+	base := OpcionesEntrega{
+		Root:   root,
+		Config: config.Config{Base: "main", Pruebas: "true"},
+		Base:   "main",
+		Tareas: []task.Task{tareaEntrega("T-001", "a.go")},
+		DryRun: true,
+	}
+
+	conAnotacion := base
+	conAnotacion.Commits = map[string]string{"T-001": arranque}
+	primera := EntregarTodas(context.Background(), conAnotacion)
+	_ = limpiarEntrega(root, roomPathDe(root, "_entrega"))
+	if !primera.Aprobado {
+		t.Fatalf("primera pasada · %s", primera.PrimerMotivo())
+	}
+
+	// segunda pasada SIN anotación, como un cuarto viejo
+	segunda := EntregarTodas(context.Background(), base)
+	t.Cleanup(func() { _ = limpiarEntrega(root, roomPathDe(root, "_entrega")) })
+	if !segunda.Aprobado {
+		t.Fatalf("segunda pasada · %s", segunda.PrimerMotivo())
+	}
+	if primera.Tareas[0].LineasMas != segunda.Tareas[0].LineasMas {
+		t.Errorf("lineas: con anotación %d, sin ella %d · debe reconocer la rama aplanada",
+			primera.Tareas[0].LineasMas, segunda.Tareas[0].LineasMas)
 	}
 }

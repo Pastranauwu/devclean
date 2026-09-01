@@ -29,6 +29,12 @@ type Borrador struct {
 	Riesgos     string   `json:"riesgos"`
 	Peso        string   `json:"peso"`
 	Agente      string   `json:"agente,omitempty"`
+	// LimiteLineas es el presupuesto de líneas añadidas que el
+	// planificador estima para esta tarea. Antes era una constante de
+	// 200 para todo, que no mira el alcance: una tarea de empaquetado
+	// con documentación nunca cabe en 200 líneas, y la esclusa de salida
+	// la frenaba después de que el trabajo ya estaba hecho.
+	LimiteLineas int `json:"limite_lineas"`
 }
 
 // Generador pide texto a un modelo. El comando lo adapta desde el
@@ -41,13 +47,13 @@ type Generador interface {
 // planear. Se lo pasa al modelo para que no adivine el stack ni
 // invente comandos que no existen en el proyecto (§8.2).
 type Contexto struct {
-	Lenguaje     string                  // go, node, python, rust, "" si no se detecta
-	EsVacio      bool                    // repo sin código fuente todavía
-	Pruebas      string                  // comando de pruebas detectado ("" si no hay)
-	Stack        string                  // stack elegido por el humano ("" si lo decide el modelo)
-	Requisitos   string                  // requisitos extra que dijo el humano, en texto libre
-	Constitucion string                  // contenido de .devclean/constitution.md (§6.11), "" si no existe
-	Vedadas      []string                // globs que tocar_solo nunca puede incluir (zonas prohibidas + rutas de prueba)
+	Lenguaje     string                   // go, node, python, rust, "" si no se detecta
+	EsVacio      bool                     // repo sin código fuente todavía
+	Pruebas      string                   // comando de pruebas detectado ("" si no hay)
+	Stack        string                   // stack elegido por el humano ("" si lo decide el modelo)
+	Requisitos   string                   // requisitos extra que dijo el humano, en texto libre
+	Constitucion string                   // contenido de .devclean/constitution.md (§6.11), "" si no existe
+	Vedadas      []string                 // globs que tocar_solo nunca puede incluir (zonas prohibidas + rutas de prueba)
 	Agentes      map[string]config.Agente // agentes disponibles en config.yml (§8.1 / Fase 2)
 }
 
@@ -76,6 +82,7 @@ func Prompt(frase string, c Contexto) string {
 	b.WriteString("- \"expone\": array de firmas públicas que esta tarea produce y otra consume (ej. \"wol.Send(mac, addr string) error\", \"POST /wake\"); vacío si no produce ninguna\n")
 	b.WriteString("- \"usa\": array de firmas de OTRAS tareas que esta consume, copiadas palabra por palabra del \"expone\" de aquella; vacío si no consume ninguna\n")
 	b.WriteString("- \"peso\": \"liviana\", \"media\" o \"pesada\" según la complejidad de la tarea (por defecto \"media\")\n")
+	b.WriteString("- \"limite_lineas\": cuántas líneas de código NUEVO crees que necesita esta tarea, con algo de margen. Estímalo por el alcance real: un archivo de configuración son decenas, un módulo con su lógica unos cientos, empaquetado con documentación puede ser más de mil. Es un tope que se verifica al entregar: quedarse corto frena la entrega de trabajo correcto, y pasarse de largo deja de avisar cuando una tarea se desborda. Si no cabe en unas 600 líneas, probablemente son dos tareas: pártela.\n")
 	if len(c.Agentes) > 0 {
 		var ags []string
 		for nombre, a := range c.Agentes {
@@ -91,8 +98,8 @@ func Prompt(frase string, c Contexto) string {
 	b.WriteString("- \"riesgos\": riesgos o limitaciones, o \"\" si no hay\n\n")
 	b.WriteString("Las tareas corren en paralelo y aisladas: no pueden leerse el código entre sí. Si una produce algo que otra necesita, la firma DEBE aparecer igual en el \"expone\" de la que la produce y en el \"usa\" de la que la consume; si no, cada una inventará la suya y no van a encajar.\n\n")
 	b.WriteString("Ejemplo:\n[\n")
-	b.WriteString("  {\"titulo\": \"enviar magic packet\", \"porque\": \"es la acción central\", \"listo_cuando\": \"go test ./internal/wol/...\", \"tocar_solo\": [\"internal/wol/**\"], \"expone\": [\"wol.Send(mac, addr string) error\"], \"usa\": [], \"riesgos\": \"\"},\n")
-	b.WriteString("  {\"titulo\": \"endpoint http que dispara wol\", \"porque\": \"lo invoca la automatización\", \"listo_cuando\": \"go test ./internal/api/...\", \"tocar_solo\": [\"internal/api/**\"], \"expone\": [\"POST /wake\"], \"usa\": [\"wol.Send(mac, addr string) error\"], \"riesgos\": \"\"}\n")
+	b.WriteString("  {\"titulo\": \"enviar magic packet\", \"porque\": \"es la acción central\", \"listo_cuando\": \"go test ./internal/wol/...\", \"tocar_solo\": [\"internal/wol/**\"], \"expone\": [\"wol.Send(mac, addr string) error\"], \"usa\": [], \"peso\": \"media\", \"limite_lineas\": 250, \"riesgos\": \"\"},\n")
+	b.WriteString("  {\"titulo\": \"endpoint http que dispara wol\", \"porque\": \"lo invoca la automatización\", \"listo_cuando\": \"go test ./internal/api/...\", \"tocar_solo\": [\"internal/api/**\"], \"expone\": [\"POST /wake\"], \"usa\": [\"wol.Send(mac, addr string) error\"], \"peso\": \"media\", \"limite_lineas\": 180, \"riesgos\": \"\"}\n")
 	b.WriteString("]")
 	return b.String()
 }
@@ -165,4 +172,28 @@ func Generar(ctx context.Context, g Generador, c Contexto, frase string) ([]Borr
 		return nil, err
 	}
 	return Parse(texto)
+}
+
+// Límites del presupuesto que propone el planificador. Es un modelo:
+// puede devolver 0 (no lo estimó), un número absurdo, o uno tan generoso
+// que la esclusa deje de avisar de nada.
+const (
+	LimiteLineasMin = 40
+	LimiteLineasMax = 2000
+)
+
+// AcotarLimiteLineas devuelve el presupuesto que se escribe en el
+// contrato: el propuesto si es razonable, o el más cercano que lo sea.
+// Un 0 significa "el modelo no lo estimó" y cae en porDefecto.
+func AcotarLimiteLineas(propuesto, porDefecto int) int {
+	if propuesto <= 0 {
+		return porDefecto
+	}
+	if propuesto < LimiteLineasMin {
+		return LimiteLineasMin
+	}
+	if propuesto > LimiteLineasMax {
+		return LimiteLineasMax
+	}
+	return propuesto
 }

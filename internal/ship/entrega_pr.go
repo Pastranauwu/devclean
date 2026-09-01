@@ -21,12 +21,17 @@ const RamaEntrega = "devclean/_entrega"
 
 // OpcionesEntrega lleva las dependencias de la entrega conjunta.
 type OpcionesEntrega struct {
-	Root     string
-	Config   config.Config
-	Base     string
-	Tareas   []task.Task       // todas en estado lista
-	Modelos  map[string]string // id de tarea -> modelo del último intento
-	Titulo   string            // título del PR; vacío usa el de la primera tarea
+	Root    string
+	Config  config.Config
+	Base    string
+	Tareas  []task.Task       // todas en estado lista
+	Modelos map[string]string // id de tarea -> modelo del último intento
+	// Commits lleva, por tarea, el commit desde el que se creó su cuarto.
+	// Es lo que separa su trabajo del que heredó de una oleada anterior,
+	// y a diferencia de los mensajes `wip:` sobrevive a que la esclusa
+	// aplane la rama: sin él, una segunda pasada medía el cuarto entero.
+	Commits  map[string]string
+	Titulo   string // título del PR; vacío usa el de la primera tarea
 	Timeout  time.Duration
 	DryRun   bool
 	Progreso func(Paso)
@@ -92,7 +97,10 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 		roomPath := roomPathDe(o.Root, t.ID)
 		// cada tarea se aplana contra su propio punto de partida, no
 		// contra la rama base: así su commit lleva solo lo suyo
-		baseTarea := baseDelta(roomPath, t.ID)
+		baseTarea := o.Commits[t.ID]
+		if baseTarea == "" {
+			baseTarea = baseDelta(roomPath, t.ID, o.Base) // cuartos anteriores a que se anotara
+		}
 		if baseTarea == "" {
 			baseTarea = o.Base
 		}
@@ -210,7 +218,7 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 // propio commit, y al juntar los commits en la rama de entrega el segundo
 // volvería a añadir los archivos del primero: conflicto garantizado.
 // Cadena vacía si no se puede determinar; el llamador cae en la base.
-func baseDelta(roomPath, id string) string {
+func baseDelta(roomPath, id, base string) string {
 	out, err := gitRun(roomPath, "log", "--reverse", "--format=%H%x00%s", "HEAD")
 	if err != nil {
 		return ""
@@ -230,7 +238,27 @@ func baseDelta(roomPath, id string) string {
 		}
 		return strings.TrimSpace(padre)
 	}
+
+	// Sin marcadores, la esclusa ya paso por aqui y aplano la rama en un
+	// solo commit: el trabajo propio de la tarea es justo ese commit. Sin
+	// este caso, una segunda pasada media el cuarto entero contra la rama
+	// base y frenaba por un presupuesto que nadie habia excedido.
+	if unSoloCommit(roomPath, base) {
+		if padre, err := gitRun(roomPath, "rev-parse", "--verify", "--quiet", "HEAD^"); err == nil {
+			return strings.TrimSpace(padre)
+		}
+	}
 	return ""
+}
+
+// unSoloCommit reporta si la rama tiene exactamente un commit por encima
+// de base, que es la forma que deja `aplanar`.
+func unSoloCommit(roomPath, base string) bool {
+	out, err := gitRun(roomPath, "rev-list", "--count", base+"..HEAD")
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(out) == "1"
 }
 
 // roomPathDe devuelve la ruta del cuarto de un id.

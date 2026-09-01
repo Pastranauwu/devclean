@@ -119,3 +119,47 @@ func TestParseBorradorConAgente(t *testing.T) {
 		t.Fatalf("bs = %+v", bs)
 	}
 }
+
+func TestAcotarLimiteLineas(t *testing.T) {
+	// el modelo no lo estimó: se usa el default del proyecto
+	if got := AcotarLimiteLineas(0, 200); got != 200 {
+		t.Errorf("sin propuesta = %d, quiero 200", got)
+	}
+	if got := AcotarLimiteLineas(-50, 200); got != 200 {
+		t.Errorf("negativo = %d, quiero 200", got)
+	}
+	// una estimación razonable manda sobre el default
+	if got := AcotarLimiteLineas(1200, 200); got != 1200 {
+		t.Errorf("propuesto = %d, quiero 1200 · el planificador decide", got)
+	}
+	// absurdos acotados por los dos lados
+	if got := AcotarLimiteLineas(3, 200); got != LimiteLineasMin {
+		t.Errorf("minimo = %d, quiero %d", got, LimiteLineasMin)
+	}
+	if got := AcotarLimiteLineas(999999, 200); got != LimiteLineasMax {
+		t.Errorf("maximo = %d, quiero %d", got, LimiteLineasMax)
+	}
+}
+
+// El prompt tiene que pedir el presupuesto, o el modelo nunca lo manda y
+// todas las tareas vuelven a caer en la constante.
+func TestPromptPideLimiteLineas(t *testing.T) {
+	p := Prompt("lo que sea", Contexto{Lenguaje: "go"})
+	if !strings.Contains(p, `"limite_lineas"`) {
+		t.Error("el prompt no pide limite_lineas")
+	}
+	// y el ejemplo debe traerlo, que es de donde el modelo copia el formato
+	if !strings.Contains(p, `"limite_lineas": 250`) {
+		t.Error("el ejemplo del prompt no incluye limite_lineas")
+	}
+}
+
+func TestParseLeeLimiteLineas(t *testing.T) {
+	bs, err := Parse(`[{"titulo":"x","listo_cuando":"go test ./...","limite_lineas":1200}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bs[0].LimiteLineas != 1200 {
+		t.Errorf("limite_lineas = %d, quiero 1200", bs[0].LimiteLineas)
+	}
+}

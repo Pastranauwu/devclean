@@ -604,7 +604,7 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
 	}
 
-	if err := state.Save(root, state.State{ID: t.ID, Estado: state.EnCurso, Rama: r.Rama, Puerto: r.Puerto}); err != nil {
+	if err := state.Save(root, state.State{ID: t.ID, Estado: state.EnCurso, Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit}); err != nil {
 		_ = room.Destroy(ctx, root, t.ID)
 		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
 	}
@@ -661,17 +661,18 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		Examinador:      exam,
 	})
 	if err != nil {
-		_ = state.Save(root, state.State{ID: t.ID, Estado: state.Detenida, Rama: r.Rama, Puerto: r.Puerto, UltimoError: err.Error()})
+		_ = state.Save(root, state.State{ID: t.ID, Estado: state.Detenida, Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit, UltimoError: err.Error()})
 		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
 	}
 
 	if outcome.Verde {
-		_ = state.Save(root, state.State{ID: t.ID, Estado: state.Lista, Intentos: outcome.Intentos, Rama: r.Rama, Puerto: r.Puerto})
+		_ = state.Save(root, state.State{ID: t.ID, Estado: state.Lista, Intentos: outcome.Intentos, Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit})
 		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "lista", Intentos: outcome.Intentos}
 	}
 	_ = state.Save(root, state.State{
 		ID: t.ID, Estado: state.Detenida, Intentos: outcome.Intentos,
-		Rama: r.Rama, Puerto: r.Puerto, UltimoError: outcome.UltimoError, Pregunta: outcome.Pregunta,
+		Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit,
+		UltimoError: outcome.UltimoError, Pregunta: outcome.Pregunta,
 	})
 	return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Intentos: outcome.Intentos, Motivo: outcome.Pregunta}
 }

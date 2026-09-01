@@ -169,7 +169,7 @@ func reintentarTarea(root, id string) error {
 	// volver a pendiente es lo que hace que `run` la recoja; el cuarto y
 	// su rama siguen ahí, así que el agente arranca viendo lo que ya
 	// escribió en vez de rehacerlo y pagar los mismos tokens otra vez
-	if err := state.Save(root, state.State{ID: id, Estado: state.Pendiente, Rama: st.Rama, Puerto: st.Puerto}); err != nil {
+	if err := state.Save(root, state.State{ID: id, Estado: state.Pendiente, Rama: st.Rama, Puerto: st.Puerto, Commit: st.Commit}); err != nil {
 		return err
 	}
 	out.Line("· %s vuelve a la cola · se reusa su cuarto y su trabajo parcial", id)

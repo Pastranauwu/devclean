@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/Pastranauwu/devclean/internal/state"
 )
 
 // Room is an isolated worktree for one task.
@@ -21,6 +23,9 @@ type Room struct {
 	Path   string `json:"path"`
 	Rama   string `json:"rama"`
 	Puerto int    `json:"puerto"`
+	// Commit es el commit desde el que arrancó el cuarto, ya resuelto a
+	// hash. Marca dónde empieza el trabajo propio de la tarea.
+	Commit string `json:"commit,omitempty"`
 }
 
 // Dir returns the rooms directory of the repository at root.
@@ -107,6 +112,9 @@ func Create(ctx context.Context, root, id, base string) (Room, error) {
 	if out, err := git(ctx, root, "worktree", "add", r.Path, "-b", r.Rama, base); err != nil {
 		return Room{}, fmt.Errorf("no se pudo crear el cuarto %s · %s", id, strings.TrimSpace(out))
 	}
+	if hash, err := git(ctx, root, "rev-parse", base+"^{commit}"); err == nil {
+		r.Commit = strings.TrimSpace(hash)
+	}
 
 	fail := func(err error) (Room, error) {
 		_ = Destroy(context.Background(), root, id)
@@ -139,6 +147,12 @@ func Ensure(ctx context.Context, root, id, base string) (Room, error) {
 			return Room{}, err
 		}
 		return Create(ctx, root, id, base)
+	}
+	// el cuarto se reusa, así que su punto de partida es el que ya
+	// tenía: recalcularlo desde `base` contaría como propio el trabajo
+	// que hereda de una oleada anterior
+	if st, err := state.Get(root, id); err == nil && st.Commit != "" {
+		r.Commit = st.Commit
 	}
 	puerto, err := freePort()
 	if err != nil {
