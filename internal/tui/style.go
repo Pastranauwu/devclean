@@ -95,12 +95,11 @@ func Caja(s string) string { return caja(s) }
 
 // Titulo y Apagado exponen los dos estilos de texto más usados fuera de
 // este paquete, sin tener que exportar la paleta entera.
-func Titulo(s string) string      { return estiloTitulo.Render(s) }
-func Apagado(s string) string     { return estiloApagado.Render(s) }
-func Presion(s string) string     { return estiloPresion.Render(s) }
-func Alerta(s string) string      { return estiloAlerta.Render(s) }
-func Espera(s string) string      { return estiloEspera.Render(s) }
-func GlifoEstado(estado string) string { return glifoEstado(estado) }
+func Titulo(s string) string  { return estiloTitulo.Render(s) }
+func Apagado(s string) string { return estiloApagado.Render(s) }
+func Presion(s string) string { return estiloPresion.Render(s) }
+func Alerta(s string) string  { return estiloAlerta.Render(s) }
+func Espera(s string) string  { return estiloEspera.Render(s) }
 
 // caja envuelve contenido en una tarjeta con borde recto (§16.2).
 func caja(s string) string {
@@ -125,20 +124,6 @@ func barra(hecho, total, ancho int) string {
 	}
 	return estiloPresion.Render(strings.Repeat("█", lleno)) +
 		estiloApagado.Render(strings.Repeat("░", ancho-lleno))
-}
-
-// glifoEstado devuelve el glifo de un estado de tarea (§16.2).
-func glifoEstado(estado string) string {
-	switch estado {
-	case "lista":
-		return estiloPresion.Render("✓")
-	case "detenida":
-		return estiloAlerta.Render("⏸")
-	case "en_curso":
-		return estiloEspera.Render("◐")
-	default:
-		return estiloApagado.Render("·")
-	}
 }
 
 // reloj formatea una duración como 1m14s o 3s.

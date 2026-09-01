@@ -126,17 +126,6 @@ func TestParseInlineMap(t *testing.T) {
 	}
 }
 
-func TestMarshalInlineMapIdaYVuelta(t *testing.T) {
-	quiere := map[string]string{"modelo": "claude-sonnet", "key_env": "ANTHROPIC_API_KEY"}
-	got, err := ParseInlineMap(MarshalInlineMap(quiere))
-	if err != nil {
-		t.Fatalf("ParseInlineMap: %v", err)
-	}
-	if got["modelo"] != quiere["modelo"] || got["key_env"] != quiere["key_env"] {
-		t.Errorf("ida y vuelta = %v, quiere %v", got, quiere)
-	}
-}
-
 func TestNested(t *testing.T) {
 	doc := strings.Split("base: main\n\nproveedores:\n  planificador: { modelo: a }\n  ejecutor: { modelo: b }\nzonas: [\"x\"]\n", "\n")
 	children, err := Nested(doc, "proveedores", 1)

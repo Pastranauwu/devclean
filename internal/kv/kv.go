@@ -8,7 +8,6 @@ package kv
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -145,21 +144,6 @@ func ParseInlineMap(v string) (map[string]string, error) {
 		out[strings.TrimSpace(k)] = Unquote(strings.TrimSpace(val))
 	}
 	return out, nil
-}
-
-// MarshalInlineMap renders a map the way ParseInlineMap reads it, keys
-// sorted for a stable output.
-func MarshalInlineMap(m map[string]string) string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, k+": "+Quote(m[k]))
-	}
-	return "{" + strings.Join(parts, ", ") + "}"
 }
 
 // Pair is one `clave: valor` line, with the 1-based line number it came

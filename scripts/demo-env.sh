@@ -41,6 +41,7 @@ cd /tmp/devclean-demo
 git init -b main -q
 git -c user.email=t@t -c user.name=t commit --allow-empty -m init -q
 PATH="/tmp/fakebin:$PATH" /tmp/fakebin/devclean init --pruebas true --plain >/dev/null
+echo "recursion_max: 1" >> .devclean/config.yml
 
 cat > .devclean/tasks/T-001.md <<'EOF'
 ---
@@ -62,6 +63,24 @@ listo_cuando: test -f docs/api.md
 tocar_solo: ["docs/**"]
 limite_intentos: 3
 limite_lineas: 200
+---
+EOF
+
+# T-003 recursiva: llega como .pendiente, el tape la activa (mv) después
+# de que T-001/T-002 ya corrieron — si entrara pendiente desde el arranque,
+# la esclusa de entrada la rechaza por cruce de tocar_solo con T-001/T-002
+# en la misma oleada (§6.9), que es un chequeo real y correcto, no un bug.
+cat > .devclean/tasks/T-003.md.pendiente <<'EOF'
+---
+version: 1
+id: T-003
+titulo: preparar exportación completa (módulo + docs)
+listo_cuando: test -f src/export.go && test -f docs/api.md
+tocar_solo: ["src/**", "docs/**"]
+limite_intentos: 3
+limite_lineas: 200
+recursivo: true
+limite_subtareas: 2
 ---
 EOF
 echo "demo lista en /tmp/devclean-demo"

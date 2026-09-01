@@ -34,8 +34,7 @@ type Agent struct {
 	Cfg            config.Config
 	Constitucion   string
 	Planificador   plan.Generador // rol planificador (modelo caro): decompone
-	ModeloPlan     string
-	Ejecutor       loop.Agent // agente hoja (modelo barato) para subtareas no recursivas
+	Ejecutor       loop.Agent     // agente hoja (modelo barato) para subtareas no recursivas
 	ModeloEjecutor string
 	Task           task.Task // la tarea recursiva que este Agent resuelve
 	Profundidad    int       // 0 = raíz
@@ -139,8 +138,8 @@ func (a Agent) correrSubtarea(ctx context.Context, req loop.Request, r room.Room
 	if sub.Recursivo && a.Profundidad+1 < a.Cfg.RecursionMax {
 		agente = Agent{
 			Cfg: a.Cfg, Constitucion: a.Constitucion,
-			Planificador: a.Planificador, ModeloPlan: a.ModeloPlan,
-			Ejecutor: a.Ejecutor, ModeloEjecutor: a.ModeloEjecutor,
+			Planificador: a.Planificador,
+			Ejecutor:     a.Ejecutor, ModeloEjecutor: a.ModeloEjecutor,
 			Task: sub, Profundidad: a.Profundidad + 1,
 			Root: a.Root, RaizID: a.RaizID,
 		}
