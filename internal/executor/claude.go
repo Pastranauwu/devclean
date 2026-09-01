@@ -14,9 +14,9 @@ type Claude struct{}
 func (Claude) Name() string { return "claude" }
 
 func (Claude) Available() error {
-	bin, err := exec.LookPath("claude")
+	bin, err := findBinary("claude")
 	if err != nil {
-		return errors.New("claude no está instalado · instálalo o elige otro ejecutor")
+		return err
 	}
 	if out, err := exec.Command(bin, "--version").Output(); err != nil || len(strings.TrimSpace(string(out))) == 0 {
 		return errors.New("claude no responde a --version · verifica la instalación")
