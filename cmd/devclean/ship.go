@@ -78,6 +78,7 @@ func runShipTodas(dryRun bool, titulo string) error {
 	var listas []task.Task
 	var pendientes, detenidas []string
 	modelos := map[string]string{}
+	commits := map[string]string{}
 	for _, t := range tareas {
 		st, err := state.Get(root, t.ID)
 		if err != nil {
@@ -87,6 +88,7 @@ func runShipTodas(dryRun bool, titulo string) error {
 		case state.Lista:
 			listas = append(listas, t)
 			modelos[t.ID] = ultimoModelo(root, t.ID)
+			commits[t.ID] = st.Commit
 		case state.Detenida:
 			detenidas = append(detenidas, t.ID)
 		case state.Pendiente, state.EnCurso:
@@ -115,6 +117,7 @@ func runShipTodas(dryRun bool, titulo string) error {
 		Base:    cfg.Base,
 		Tareas:  listas,
 		Modelos: modelos,
+		Commits: commits,
 		Titulo:  titulo,
 		DryRun:  dryRun,
 		Progreso: func(p ship.Paso) {

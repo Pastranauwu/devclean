@@ -25,17 +25,18 @@ import (
 
 // propuesta es una tarea del plan, ya con id asignado.
 type propuesta struct {
-	ID          string   `json:"id"`
-	Titulo      string   `json:"titulo"`
-	Porque      string   `json:"porque,omitempty"`
-	ListoCuando string   `json:"listo_cuando"`
-	TocarSolo   []string `json:"tocar_solo,omitempty"`
-	DependeDe   []string `json:"depende_de,omitempty"`
-	Expone      []string `json:"expone,omitempty"`
-	Usa         []string `json:"usa,omitempty"`
-	Riesgos     string   `json:"riesgos,omitempty"`
-	Peso        string   `json:"peso,omitempty"`
-	Agente      string   `json:"agente,omitempty"`
+	ID           string   `json:"id"`
+	Titulo       string   `json:"titulo"`
+	Porque       string   `json:"porque,omitempty"`
+	ListoCuando  string   `json:"listo_cuando"`
+	TocarSolo    []string `json:"tocar_solo,omitempty"`
+	DependeDe    []string `json:"depende_de,omitempty"`
+	Expone       []string `json:"expone,omitempty"`
+	Usa          []string `json:"usa,omitempty"`
+	Riesgos      string   `json:"riesgos,omitempty"`
+	Peso         string   `json:"peso,omitempty"`
+	Agente       string   `json:"agente,omitempty"`
+	LimiteLineas int      `json:"limite_lineas"`
 }
 
 func newPlanCmd() *cobra.Command {
@@ -121,17 +122,18 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 	props := make([]propuesta, len(borradores))
 	for i, b := range borradores {
 		props[i] = propuesta{
-			ID:          ids[i],
-			Titulo:      b.Titulo,
-			Porque:      b.Porque,
-			ListoCuando: b.ListoCuando,
-			TocarSolo:   b.TocarSolo,
-			DependeDe:   b.DependeDe,
-			Expone:      b.Expone,
-			Usa:         b.Usa,
-			Riesgos:     b.Riesgos,
-			Peso:        b.Peso,
-			Agente:      b.Agente,
+			ID:           ids[i],
+			Titulo:       b.Titulo,
+			Porque:       b.Porque,
+			ListoCuando:  b.ListoCuando,
+			TocarSolo:    b.TocarSolo,
+			DependeDe:    b.DependeDe,
+			Expone:       b.Expone,
+			Usa:          b.Usa,
+			Riesgos:      b.Riesgos,
+			Peso:         b.Peso,
+			Agente:       b.Agente,
+			LimiteLineas: plan.AcotarLimiteLineas(b.LimiteLineas, task.DefaultLimiteLineas),
 		}
 	}
 
@@ -146,7 +148,8 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 			if p.Agente != "" {
 				ag = " [" + p.Agente + "]"
 			}
-			cuerpo.WriteString(p.ID + "  " + p.Titulo + ag + "  " + tui.Apagado("· listo cuando: "+p.ListoCuando) + "\n")
+			cuerpo.WriteString(p.ID + "  " + p.Titulo + ag + "  " +
+				tui.Apagado(fmt.Sprintf("· %d líneas · listo cuando: %s", p.LimiteLineas, p.ListoCuando)) + "\n")
 		}
 		out.Line("%s", tui.Caja(strings.TrimRight(cuerpo.String(), "\n")))
 	} else {
@@ -156,7 +159,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 			if p.Agente != "" {
 				ag = " [" + p.Agente + "]"
 			}
-			out.Line("%s  %s%s  · listo cuando: %s", p.ID, p.Titulo, ag, p.ListoCuando)
+			out.Line("%s  %s%s  · %d líneas · listo cuando: %s", p.ID, p.Titulo, ag, p.LimiteLineas, p.ListoCuando)
 		}
 	}
 
@@ -181,7 +184,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 				Peso:           b.Peso,
 				Agente:         b.Agente,
 				LimiteIntentos: task.DefaultLimiteIntentos,
-				LimiteLineas:   task.DefaultLimiteLineas,
+				LimiteLineas:   props[i].LimiteLineas,
 			})
 		}
 		s := spec.Spec{
@@ -261,7 +264,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 			Peso:           b.Peso,
 			Agente:         b.Agente,
 			LimiteIntentos: task.DefaultLimiteIntentos,
-			LimiteLineas:   task.DefaultLimiteLineas,
+			LimiteLineas:   props[i].LimiteLineas,
 		}
 		if err := task.Save(dir, t); err != nil {
 			return err
@@ -406,7 +409,7 @@ func opcionesDePlan(props []propuesta) []tui.Opcion {
 		if p.Agente != "" {
 			etiqueta += "  [" + p.Agente + "]"
 		}
-		detalle := "listo cuando: " + p.ListoCuando
+		detalle := fmt.Sprintf("listo cuando: %s · presupuesto: %d líneas", p.ListoCuando, p.LimiteLineas)
 		if len(p.TocarSolo) > 0 {
 			detalle += " · toca: " + strings.Join(p.TocarSolo, ", ")
 		}

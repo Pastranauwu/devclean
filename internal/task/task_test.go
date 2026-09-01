@@ -199,12 +199,12 @@ func TestPeso(t *testing.T) {
 
 func TestNombreDeFirma(t *testing.T) {
 	casos := map[string]string{
-		"wol.Send(mac, addr string) error": "Send",
-		"POST /wake":                       "/wake",
-		"GET /api/devices":                 "/api/devices",
+		"wol.Send(mac, addr string) error":          "Send",
+		"POST /wake":                                "/wake",
+		"GET /api/devices":                          "/api/devices",
 		"func Cargar(path string) (*Config, error)": "Cargar",
-		"Enviar":  "Enviar",
-		"":        "",
+		"Enviar": "Enviar",
+		"":       "",
 		"hue.NewBridge(addr string, l ...*Light) *Bridge": "NewBridge",
 	}
 	for firma, want := range casos {
@@ -263,9 +263,9 @@ func TestAgenteIdaYVuelta(t *testing.T) {
 
 func TestFirmaVerificable(t *testing.T) {
 	casos := []struct {
-		firma   string
-		nombre  string
-		ok      bool
+		firma  string
+		nombre string
+		ok     bool
 	}{
 		{"wol.Send(mac string) error", "Send", true},
 		{"POST /wake", "/wake", true},

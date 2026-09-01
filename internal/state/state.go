@@ -30,6 +30,12 @@ type State struct {
 	Puerto      int    `json:"puerto,omitempty"`
 	UltimoError string `json:"ultimo_error,omitempty"`
 	Pregunta    string `json:"pregunta,omitempty"`
+	// Commit es el commit desde el que se creó el cuarto. Es lo que
+	// separa el trabajo propio de la tarea del que heredó de una oleada
+	// anterior, y sobrevive a que `ship` aplane su rama: sin él, una
+	// segunda pasada de la esclusa medía el cuarto entero contra la rama
+	// base y el presupuesto salía inflado.
+	Commit string `json:"commit,omitempty"`
 }
 
 // Dir returns the state directory of the repository at root.
