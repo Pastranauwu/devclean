@@ -2,6 +2,8 @@ package examiner
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -63,4 +65,61 @@ func TestParseRespTextImports(t *testing.T) {
 	if len(v) != 1 || len(h) != 0 || len(imp) != 1 || imp[0] != "net" {
 		t.Errorf("parse = v%v h%v imp%v", v, h, imp)
 	}
+}
+
+func TestPaqueteReal(t *testing.T) {
+	dir := t.TempDir()
+	if p := paqueteReal(dir); p != "" {
+		t.Errorf("directorio vacío = %q, quiero \"\"", p)
+	}
+	if p := paqueteReal(filepath.Join(dir, "nope")); p != "" {
+		t.Errorf("directorio inexistente = %q", p)
+	}
+
+	// cmd/<algo> declara package main, no package <algo>: adivinarlo por
+	// el nombre del directorio dejaba dos paquetes en la misma carpeta
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if p := paqueteReal(dir); p != "main" {
+		t.Errorf("paqueteReal = %q, quiero main", p)
+	}
+
+	// los _test.go no cuentan: declaran pkg_test, no el paquete real
+	otro := t.TempDir()
+	if err := os.WriteFile(filepath.Join(otro, "x_test.go"), []byte("package wol_test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if p := paqueteReal(otro); p != "" {
+		t.Errorf("solo con _test.go = %q, quiero \"\"", p)
+	}
+	if err := os.WriteFile(filepath.Join(otro, "wol.go"), []byte("package wol\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if p := paqueteReal(otro); p != "wol" {
+		t.Errorf("paqueteReal = %q, quiero wol", p)
+	}
+}
+
+// Sin paquete real en el directorio no se emite suite: escribirla
+// garantizaba un rojo permanente que nadie podía arreglar.
+func TestRunSaltaSinPaqueteReal(t *testing.T) {
+	dir := t.TempDir()
+	sellada, err := Run(context.Background(), dir, Options{
+		Agent: agenteQueFalla{},
+		Task:  task.Task{ID: "T-001", Expone: []string{"wol.Send(m string) error"}, TocarSolo: []string{"internal/wol/**"}},
+		Root:  dir,
+	})
+	if err != nil || sellada {
+		t.Errorf("sellada = %v, err = %v · debe degradar sin examen", sellada, err)
+	}
+}
+
+// agenteQueFalla verifica de paso que ni siquiera se invoca al modelo
+// cuando el examen es imposible.
+type agenteQueFalla struct{}
+
+func (agenteQueFalla) Name() string { return "falla" }
+func (agenteQueFalla) Run(context.Context, loop.Request) (loop.Result, error) {
+	panic("no se debe invocar al modelo si el examen es imposible")
 }

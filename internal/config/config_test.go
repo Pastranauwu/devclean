@@ -457,8 +457,8 @@ func TestObtenerAgente(t *testing.T) {
 
 	// 2. Arquetipo por defecto (frontend) se resuelve automáticamente
 	front, ok := cfg.ObtenerAgente("frontend")
-	if !ok || front.Provider != "claude" || front.Modelo != "claude-sonnet" || len(front.Skills) == 0 {
-		t.Errorf("frontend = %+v, ok = %v", front, ok)
+	if !ok || front.Provider != "claude" || front.Modelo != "" || len(front.Skills) == 0 {
+		t.Errorf("frontend = %+v, ok = %v · el arquetipo no debe traer modelo propio", front, ok)
 	}
 
 	// 3. Arquetipo architect

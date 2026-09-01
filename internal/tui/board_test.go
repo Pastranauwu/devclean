@@ -9,13 +9,13 @@ import (
 	"github.com/Pastranauwu/devclean/internal/state"
 )
 
-func TestLineasTablero(t *testing.T) {
+func TestArmarTableroColumnas(t *testing.T) {
 	filas := []Fila{
 		{ID: "T-001", Titulo: "exportar", Estado: state.Lista},
 		{ID: "T-002", Titulo: "login", Estado: state.EnCurso},
 		{ID: "T-003", Titulo: "docs", Estado: state.Pendiente},
 	}
-	ls := lineasTablero(filas)
+	ls := armarTablero(filas, "", "")
 	texto := ""
 	for _, l := range ls {
 		texto += l.texto + "\n"
@@ -27,7 +27,7 @@ func TestLineasTablero(t *testing.T) {
 	}
 }
 
-func TestLineasTableroMuestraArbolDeSubtareas(t *testing.T) {
+func TestArmarTableroMuestraArbolDeSubtareas(t *testing.T) {
 	filas := []Fila{
 		{ID: "T-001", Titulo: "feature grande", Estado: state.Lista, Hijos: []Fila{
 			{ID: "T-001001", Titulo: "parte uno", Estado: state.Lista},
@@ -36,7 +36,7 @@ func TestLineasTableroMuestraArbolDeSubtareas(t *testing.T) {
 			}},
 		}},
 	}
-	ls := lineasTablero(filas)
+	ls := armarTablero(filas, "", "")
 	texto := ""
 	for _, l := range ls {
 		texto += l.texto + "\n"
@@ -48,8 +48,8 @@ func TestLineasTableroMuestraArbolDeSubtareas(t *testing.T) {
 	}
 }
 
-func TestLineasTableroVacio(t *testing.T) {
-	ls := lineasTablero(nil)
+func TestArmarTableroVacio(t *testing.T) {
+	ls := armarTablero(nil, "", "")
 	texto := ""
 	for _, l := range ls {
 		texto += l.texto + "\n"
@@ -163,4 +163,63 @@ func TestFondoPlasma(t *testing.T) {
 	if !strings.Contains(frame, "devclean") {
 		t.Error("el sticker debió tapar con el texto")
 	}
+}
+
+// El tablero tiene que decir qué está haciendo una tarea ahora mismo,
+// no solo que está "en curso": una invocación de veinte minutos se veía
+// igual que una colgada.
+func TestArmarTableroMuestraFaseViva(t *testing.T) {
+	filas := []Fila{
+		{ID: "T-002", Titulo: "login", Estado: state.EnCurso,
+			Detalle: "intento 2/3 · agente · opencode/glm-5.3 · 3m12s"},
+	}
+	texto := textoTablero(armarTablero(filas, "", ""))
+	for _, want := range []string{"T-002", "intento 2/3", "agente", "opencode/glm-5.3", "3m12s"} {
+		if !strings.Contains(texto, want) {
+			t.Errorf("tablero sin %q:\n%s", want, texto)
+		}
+	}
+}
+
+func TestArmarTableroMarcaAtasco(t *testing.T) {
+	filas := []Fila{
+		{ID: "T-003", Titulo: "cli", Estado: state.EnCurso, Atascada: true,
+			Detalle: "ATASCO · intento 1/3 · agente · 42m0s sin señal"},
+	}
+	ls := armarTablero(filas, "", "")
+	if !strings.Contains(textoTablero(ls), "ATASCO") {
+		t.Error("el tablero debe marcar el atasco")
+	}
+	// y en color de alerta, no apagado: es lo que hace que se vea
+	var visto bool
+	for _, l := range ls {
+		if strings.Contains(l.texto, "ATASCO") {
+			visto = true
+			if l.color != rgbAlerta {
+				t.Errorf("color = %v, quiero rgbAlerta", l.color)
+			}
+		}
+	}
+	if !visto {
+		t.Error("no se encontró la línea del atasco")
+	}
+}
+
+// Una tarea que no corre no lleva línea de detalle.
+func TestArmarTableroSinDetalleSiNoCorre(t *testing.T) {
+	filas := []Fila{{ID: "T-001", Titulo: "docs", Estado: state.Pendiente}}
+	ls := armarTablero(filas, "", "")
+	for _, l := range ls {
+		if strings.Contains(l.texto, "intento") {
+			t.Errorf("línea de detalle inesperada: %q", l.texto)
+		}
+	}
+}
+
+func textoTablero(ls []lineaSticker) string {
+	var b strings.Builder
+	for _, l := range ls {
+		b.WriteString(l.texto + "\n")
+	}
+	return b.String()
 }

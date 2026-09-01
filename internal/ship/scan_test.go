@@ -176,16 +176,112 @@ func TestVerificarExpone(t *testing.T) {
 +}
 `
 	// el nombre está aunque los parámetros se llamen distinto
-	if faltan := verificarExpone([]string{"wol.Send(mac, addr string) error"}, diff); len(faltan) != 0 {
+	if faltan, _ := verificarExpone([]string{"wol.Send(mac, addr string) error"}, diff); len(faltan) != 0 {
 		t.Errorf("faltan = %v, la firma sí está entregada", faltan)
 	}
 	// sin firmas declaradas, no hay nada que verificar
-	if faltan := verificarExpone(nil, diff); len(faltan) != 0 {
+	if faltan, _ := verificarExpone(nil, diff); len(faltan) != 0 {
 		t.Errorf("faltan = %v, quiero vacío", faltan)
 	}
 	// prometida y no entregada
-	faltan := verificarExpone([]string{"POST /wake"}, diff)
+	faltan, _ := verificarExpone([]string{"POST /wake"}, diff)
 	if len(faltan) != 1 || faltan[0] != "POST /wake" {
 		t.Errorf("faltan = %v, quiero [POST /wake]", faltan)
+	}
+}
+
+// El planificador es un modelo y a veces escribe descripciones donde va
+// una firma. Eso no se puede buscar en un diff, y frenar la entrega por
+// ello dejaba la tarea muerta: el único arreglo era editar el contrato a
+// mano, justo lo que devclean evita.
+func TestVerificarExponeNoBloqueaPorProsa(t *testing.T) {
+	diff := `--- a/cmd/sum/main.go
++++ b/cmd/sum/main.go
++func main() {}
+`
+	prosa := []string{"cmd/sum main package", "devclean --mac <MAC>"}
+	faltan, sinForma := verificarExpone(prosa, diff)
+	if len(faltan) != 0 {
+		t.Errorf("faltan = %v · la prosa no se puede verificar, no debe bloquear", faltan)
+	}
+	if len(sinForma) != 2 {
+		t.Errorf("sinForma = %v, quiero las dos reportadas", sinForma)
+	}
+}
+
+// Pero una firma de verdad que no se entregó sigue frenando.
+func TestVerificarExponeSigueBloqueandoFirmaReal(t *testing.T) {
+	diff := `--- a/x.go
++++ b/x.go
++func Otra() {}
+`
+	faltan, sinForma := verificarExpone([]string{"wol.Send(mac string) error"}, diff)
+	if len(faltan) != 1 {
+		t.Errorf("faltan = %v, quiero la firma incumplida", faltan)
+	}
+	if len(sinForma) != 0 {
+		t.Errorf("sinForma = %v, quiero vacío", sinForma)
+	}
+}
+
+// Un CLI cuyo trabajo es imprimir no puede quedar bloqueado para siempre
+// porque su main.go llama a fmt.Println.
+func TestEscanearRuidoNoMarcaLaSalidaDelPrograma(t *testing.T) {
+	diff := `diff --git a/cmd/sum/main.go b/cmd/sum/main.go
+--- a/cmd/sum/main.go
++++ b/cmd/sum/main.go
+@@ -0,0 +1,3 @@
++func main() {
++	fmt.Println(calc.Sum(a, b))
++}
+`
+	if h := escanearRuido(diff, []string{"cmd/sum/main.go"}); len(h) != 0 {
+		t.Errorf("hallazgos = %+v · imprimir es lo que hace un CLI", h)
+	}
+}
+
+// Fuera del punto de entrada, el print sigue siendo ruido.
+func TestEscanearRuidoMarcaPrintEnLibreria(t *testing.T) {
+	diff := `diff --git a/internal/calc/sum.go b/internal/calc/sum.go
+--- a/internal/calc/sum.go
++++ b/internal/calc/sum.go
+@@ -0,0 +1,2 @@
++func Sum(a, b int) int {
++	fmt.Println("debug:", a, b)
+`
+	h := escanearRuido(diff, []string{"internal/calc/sum.go"})
+	if len(h) != 1 || h[0].Tipo != "print de debug" {
+		t.Errorf("hallazgos = %+v, quiero un print de debug", h)
+	}
+}
+
+// Un depurador es ruido en cualquier archivo, punto de entrada incluido.
+func TestEscanearRuidoMarcaDepuradorEnPuntoDeEntrada(t *testing.T) {
+	diff := `diff --git a/cmd/app/main.py b/cmd/app/main.py
+--- a/cmd/app/main.py
++++ b/cmd/app/main.py
+@@ -0,0 +1,2 @@
++print("resultado", x)
++breakpoint()
+`
+	h := escanearRuido(diff, []string{"cmd/app/main.py"})
+	if len(h) != 1 {
+		t.Fatalf("hallazgos = %+v, quiero solo el breakpoint", h)
+	}
+	if !strings.Contains(h[0].Detalle, "breakpoint") {
+		t.Errorf("detalle = %q", h[0].Detalle)
+	}
+}
+
+func TestEsPuntoDeEntrada(t *testing.T) {
+	for _, ruta := range []string{"cmd/sum/main.go", "main.go", "bin/tool.js", "src/cli/run.ts", "app/__main__.py"} {
+		if !esPuntoDeEntrada(ruta) {
+			t.Errorf("%q debería ser punto de entrada", ruta)
+		}
+	}
+	for _, ruta := range []string{"internal/calc/sum.go", "src/lib/helper.js", "pkg/wol/send.go", "commander/x.go"} {
+		if esPuntoDeEntrada(ruta) {
+			t.Errorf("%q NO debería ser punto de entrada", ruta)
+		}
 	}
 }

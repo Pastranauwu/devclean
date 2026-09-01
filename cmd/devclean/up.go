@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/spec"
@@ -9,42 +11,66 @@ import (
 func newUpCmd() *cobra.Command {
 	var file string
 	var agentes int
-	var modelo, ejecutor string
+	var modelo, ejecutor, titulo string
+	var reintentar, entregar bool
 
 	cmd := &cobra.Command{
-		Use:   "up",
-		Short: "aplica la especificación y ejecuta todas las tareas en paralelo (estilo compose)",
-		Long: `Si existe un archivo de especificación (devclean.spec.yml), lo aplica
-sincronizando las tareas, y a continuación ejecuta todas las tareas
-pendientes en paralelo en cuartos aislados.`,
-		Example: `  devclean up
-  devclean up -f specs/auth.yml
-  devclean up --agentes 4`,
+		Use:   `up ["<petición>"]`,
+		Short: "de una petición a un PR limpio, sin pasos intermedios",
+		Long: `Encadena todo el trabajo de devclean en un solo comando.
+
+Con una petición en lenguaje natural, la parte en tareas (devclean plan),
+las ejecuta en paralelo en cuartos aislados (devclean run) y, con --ship,
+las entrega en UN pull request limpio (devclean ship --todas).
+
+Sin petición, aplica la especificación del repo (devclean.spec.yml) si
+existe y ejecuta las tareas pendientes.`,
+		Example: `  devclean up "cli en go que despierta equipos por wake-on-lan" --ship
+  devclean up --agentes 4 --ship
+  devclean up -f specs/auth.yml`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := projectRoot()
 			if err != nil {
 				return err
 			}
 
-			// Intentar aplicar la spec si existe
-			specFile := file
-			if specFile == "" {
-				if found, err := spec.Find(root); err == nil {
-					specFile = found
-				}
-			}
-			if specFile != "" {
-				if err := runApply(root, specFile, false, false); err != nil {
+			if frase := strings.TrimSpace(strings.Join(args, " ")); frase != "" {
+				// una petición manda sobre la spec: es lo que el humano
+				// acaba de pedir, aquí y ahora
+				if err := runPlan(frase, modelo, ejecutor, "", true); err != nil {
 					return err
 				}
 				out.Line("")
+				if titulo == "" {
+					titulo = frase
+				}
+			} else {
+				specFile := file
+				if specFile == "" {
+					if found, err := spec.Find(root); err == nil {
+						specFile = found
+					}
+				}
+				if specFile != "" {
+					if err := runApply(root, specFile, false, false); err != nil {
+						return err
+					}
+					out.Line("")
+				}
 			}
 
 			if agentes < 1 {
 				agentes = 1
 			}
-
-			return runCmd(agentes, ejecutor, modelo)
+			if err := runCmd(agentes, ejecutor, modelo, reintentar); err != nil {
+				return err
+			}
+			if !entregar {
+				return nil
+			}
+			out.Line("")
+			return runShipTodas(false, titulo)
 		},
 	}
 
@@ -52,6 +78,9 @@ pendientes en paralelo en cuartos aislados.`,
 	cmd.Flags().IntVar(&agentes, "agentes", 1, "número de trabajadores en paralelo (por defecto, 1)")
 	cmd.Flags().StringVar(&modelo, "modelo", "", "fuerza un modelo para todas las tareas")
 	cmd.Flags().StringVar(&ejecutor, "ejecutor", "", "opencode o claude")
+	cmd.Flags().BoolVar(&reintentar, "reintentar", false, "vuelve a correr también las tareas detenidas")
+	cmd.Flags().BoolVar(&entregar, "ship", false, "al terminar, entrega todas las tareas listas en un solo PR")
+	cmd.Flags().StringVar(&titulo, "titulo", "", "título del PR (por defecto, la petición)")
 
 	return cmd
 }

@@ -235,11 +235,21 @@ func TestResolverAgenteTarea(t *testing.T) {
 		t.Errorf("modeloPlan = %q, quiero claude-haiku", modeloPlan)
 	}
 
-	// 5. Tarea con arquetipo backend por defecto (sin declarar en config)
+	// 5. Tarea con arquetipo backend por defecto (sin declarar en config):
+	// el arquetipo NO fija modelo, así que sin `modelos:` en config queda
+	// vacío y el CLI usa el suyo. Inventar un id aquí era lo que mataba
+	// cada corrida antes de gastar un token.
 	tBack := task.Task{ID: "T-004", Agente: "backend"}
 	_, modeloBack, skillsBack, skillPkgsBack := resolverAgenteTarea(config.Config{}, nil, "", tBack)
-	if modeloBack != "claude-sonnet" {
-		t.Errorf("modeloBack = %q, quiero claude-sonnet", modeloBack)
+	if modeloBack != "" {
+		t.Errorf("modeloBack = %q, quiero \"\" · el arquetipo no debe inventar un id de modelo", modeloBack)
+	}
+
+	// 5b. Con `modelos:` declarado, el peso de la tarea manda
+	cfgPesos := config.Config{Modelos: map[string]string{"liviana": "chico", "media": "mediano", "pesada": "grande"}}
+	_, modeloPesado, _, _ := resolverAgenteTarea(cfgPesos, nil, "", task.Task{ID: "T-005", Agente: "backend", Peso: "pesada"})
+	if modeloPesado != "grande" {
+		t.Errorf("modeloPesado = %q, quiero grande", modeloPesado)
 	}
 	if len(skillsBack) == 0 {
 		t.Error("skillsBack no debe estar vacío")

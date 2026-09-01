@@ -126,11 +126,16 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	}
 
 	// 6. interfaces — entregó lo que sus hermanas consumen (§6.10)
-	if faltan := verificarExpone(o.Task.Expone, diff); len(faltan) > 0 {
+	faltan, sinForma := verificarExpone(o.Task.Expone, diff)
+	if len(faltan) > 0 {
 		apuntar(Paso{"interfaces", false, "no expone lo prometido: " + strings.Join(faltan, "; ")})
 		return res
 	}
-	apuntar(Paso{"interfaces", true, "expone lo prometido"})
+	detalleIfaces := "expone lo prometido"
+	if len(sinForma) > 0 {
+		detalleIfaces = "sin verificar (no son firmas, revísalo a ojo): " + strings.Join(sinForma, "; ")
+	}
+	apuntar(Paso{"interfaces", true, detalleIfaces})
 
 	// 6.5 dependencias — verifica el grafo de imports del diff (§6.10)
 	if detalle, ok := verificarDependencias(diff, o.Config.ReglasImport); !ok {

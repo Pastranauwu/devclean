@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -106,6 +107,11 @@ func runInit(cwd, pruebasFlag, plantilla string, in io.Reader, sinSkills bool) e
 		TimeoutAgente:   int(loop.DefaultAgentTimeout / time.Second),
 		TimeoutPruebas:  int(loop.DefaultTimeout / time.Second),
 	}
+	// El CLI y sus modelos se descubren aquí, una sola vez, y quedan
+	// escritos en config.yml: es la única forma de que los ids sean
+	// reales y de que el usuario los pueda cambiar sin leer el código.
+	cliDetectado, modelos := detectarModelos()
+	cfg.Cli, cfg.Modelos = cliDetectado, modelos
 	if err := cfg.Save(root); err != nil {
 		return err
 	}
@@ -127,6 +133,18 @@ func runInit(cwd, pruebasFlag, plantilla string, in io.Reader, sinSkills bool) e
 	if config.DetectEmpty(root) {
 		out.Line("· repositorio vacío · devclean plan arrancará desde cero proponiendo un stack")
 	}
+	if cliDetectado != "" {
+		out.Line("✓ ejecutor: %s", cliDetectado)
+	} else {
+		out.Line("· ningún ejecutor instalado · instala opencode o claude")
+	}
+	if len(modelos) > 0 {
+		for _, peso := range config.Pesos {
+			out.Line("✓ modelo %s: %s", peso, modelos[peso])
+		}
+	} else if cliDetectado != "" {
+		out.Line("· sin catálogo de modelos · se usará el modelo por defecto de %s", cliDetectado)
+	}
 	out.Line("✓ configuración creada en .devclean/")
 	if sinSkills {
 		out.Line("· skills sin traer · corre devclean skills sync cuando quieras")
@@ -142,4 +160,22 @@ func runInit(cwd, pruebasFlag, plantilla string, in io.Reader, sinSkills bool) e
 	}
 	imprimirPlantillasListoCuando(stack)
 	return nil
+}
+
+// detectarModelos elige el primer ejecutor instalado y reparte su
+// catálogo real de modelos entre los tres pesos. Sin ejecutor, o si el
+// CLI no sabe listar modelos, devuelve vacío: `modelos:` queda fuera de
+// config.yml y cada invocación usa el modelo por defecto del CLI.
+func detectarModelos() (string, map[string]string) {
+	ex, err := elegirEjecutor("")
+	if err != nil {
+		return "", nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	catalogo, err := ex.Models(ctx)
+	if err != nil {
+		return ex.Name(), nil
+	}
+	return ex.Name(), config.ElegirModelos(catalogo)
 }

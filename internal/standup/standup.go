@@ -30,15 +30,47 @@ type Evento struct {
 	Detalle string     `json:"detalle"`
 }
 
+// detectarFaseLenta marca una tarea cuya fase actual lleva más de
+// UmbralAtasco sin cambiar. Es lo único que ve una invocación colgada:
+// mientras el agente no vuelve, no hay intento que registrar.
+func detectarFaseLenta(l loop.Latido) (Evento, bool) {
+	if l.ID == "" {
+		return Evento{}, false
+	}
+	transcurrido := l.EnFaseDesde()
+	if transcurrido < UmbralAtasco {
+		return Evento{}, false
+	}
+	return Evento{
+		Tipo:    EventoAtasco,
+		TareaID: l.ID,
+		Detalle: fmt.Sprintf("%s lleva %s en %s (intento %d) sin dar señal · mira devclean logs %s",
+			l.ID, redondear(transcurrido), l.Fase, l.Intento, l.ID),
+	}, true
+}
+
+// redondear deja la duración en minutos enteros, que es la unidad en la
+// que uno decide si algo está colgado.
+func redondear(d time.Duration) string {
+	return d.Round(time.Minute).String()
+}
+
 // UmbralAtasco is the maximum duration without test-count improvement
 // before flagging a task as stuck.
 const UmbralAtasco = 10 * time.Minute
 
 // Analizar derives all standup events from disk state. No model is used.
+//
+// latidos es el estado vivo de las tareas que corren ahora mismo
+// (internal/loop). Sin él, el parte solo veía intentos ya terminados: una
+// tarea llevaba cuarenta minutos colgada en una sola invocación y el
+// informe decía "dentro de contrato", porque attempts.jsonl todavía no
+// tenía nada que contar. Puede venir nil (comandos que no lo cargan).
 func Analizar(
 	tareas []task.Task,
 	estados map[string]state.State,
 	attempts map[string][]loop.Attempt,
+	latidos map[string]loop.Latido,
 ) []Evento {
 	activas := activasCon(tareas, estados)
 	var eventos []Evento
@@ -46,8 +78,18 @@ func Analizar(
 	// 1. colisión: shared exported symbols between in-progress tasks
 	eventos = append(eventos, detectarColisiones(activas, attempts)...)
 
-	// 2. atasco: no test progress for > UmbralAtasco
+	// 2. atasco en vivo: la fase actual lleva demasiado sin moverse
 	for _, t := range activas {
+		if e, ok := detectarFaseLenta(latidos[t.ID]); ok {
+			eventos = append(eventos, e)
+		}
+	}
+
+	// 3. atasco entre intentos: no test progress for > UmbralAtasco
+	for _, t := range activas {
+		if _, corriendo := latidos[t.ID]; corriendo {
+			continue // ya se juzgó por su fase en vivo
+		}
 		if e, ok := detectarAtasco(t.ID, attempts[t.ID]); ok {
 			eventos = append(eventos, e)
 		}

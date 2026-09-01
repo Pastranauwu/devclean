@@ -21,6 +21,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/recurse"
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/skills"
+	"github.com/Pastranauwu/devclean/internal/standup"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/tui"
@@ -39,21 +40,23 @@ func newRunCmd() *cobra.Command {
 	var agentes int
 	var ejecutor string
 	var modelo string
+	var reintentar bool
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "ejecuta las tareas pendientes en paralelo",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCmd(agentes, ejecutor, modelo)
+			return runCmd(agentes, ejecutor, modelo, reintentar)
 		},
 	}
 	cmd.Flags().IntVar(&agentes, "agentes", 1, "tareas en paralelo")
 	cmd.Flags().StringVar(&ejecutor, "ejecutor", "", "opencode o claude (por defecto, el primero disponible)")
 	cmd.Flags().StringVar(&modelo, "modelo", "", "modelo del ejecutor (por defecto, el suyo)")
+	cmd.Flags().BoolVar(&reintentar, "reintentar", false, "vuelve a correr también las tareas detenidas, reusando su cuarto")
 	return cmd
 }
 
-func runCmd(agentes int, ejecutor, modelo string) error {
+func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
 	if agentes < 1 {
 		return errors.New("--agentes inválido · mínimo 1")
 	}
@@ -75,6 +78,7 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 	}
 
 	var pendientes, existentes []task.Task
+	var detenidas []string
 	for _, t := range tareas {
 		s, err := state.Get(root, t.ID)
 		if err != nil {
@@ -85,11 +89,25 @@ func runCmd(agentes int, ejecutor, modelo string) error {
 			pendientes = append(pendientes, t)
 		case state.EnCurso:
 			existentes = append(existentes, t)
+		case state.Detenida:
+			// una tarea detenida quedaba muerta para siempre: `run` solo
+			// miraba las pendientes y no había comando que la reviviera.
+			if reintentar {
+				detenidas = append(detenidas, t.ID)
+				pendientes = append(pendientes, t)
+			}
 		}
 	}
 	if len(pendientes) == 0 {
+		if len(detenidas) == 0 && tieneDetenidas(root, tareas) {
+			out.Line("sin tareas pendientes · hay tareas detenidas · revíveles con devclean run --reintentar")
+			return nil
+		}
 		out.Line("sin tareas pendientes · empieza con devclean task add \"lo que necesitas\"")
 		return nil
+	}
+	if len(detenidas) > 0 {
+		out.Line("· reintentando %s · se reusa el cuarto y el trabajo parcial de cada una", strings.Join(detenidas, ", "))
 	}
 
 	timeout := gate.DefaultTimeout
@@ -151,10 +169,16 @@ func correrConTUI(ctx context.Context, root string, cfg config.Config, ex execut
 	for _, t := range aprobadas {
 		filas = append(filas, tui.FilaRun{ID: t.ID, Titulo: t.Titulo, Limite: t.LimiteIntentos})
 	}
+	ids := make([]string, 0, len(aprobadas))
+	for _, t := range aprobadas {
+		ids = append(ids, t.ID)
+	}
+
 	var results []runResult
-	err := tui.CorrerRun(filas, func(emit func(tui.EventoRun)) {
-		results = ejecutarOlas(ctx, root, cfg, ex, modelo, constitucion, aprobadas, agentes, emit)
-	})
+	err := tui.CorrerRun(filas, func() map[string]tui.FaseRun { return fasesVivas(root, ids) },
+		func(emit func(tui.EventoRun)) {
+			results = ejecutarOlas(ctx, root, cfg, ex, modelo, constitucion, aprobadas, agentes, emit)
+		})
 	return results, err
 }
 
@@ -256,7 +280,9 @@ func rechazarUsaHuerfano(aprobadas, todas []task.Task, results []runResult) ([]t
 	expuestas := map[string]bool{}
 	for _, t := range todas {
 		for _, f := range t.Expone {
-			expuestas[task.NombreDeFirma(f)] = true
+			if n, ok := task.FirmaVerificable(f); ok {
+				expuestas[n] = true
+			}
 		}
 	}
 
@@ -264,7 +290,10 @@ func rechazarUsaHuerfano(aprobadas, todas []task.Task, results []runResult) ([]t
 	for _, t := range aprobadas {
 		var huerfanas []string
 		for _, f := range t.Usa {
-			if n := task.NombreDeFirma(f); n != "" && !expuestas[n] {
+			// una descripción en prosa no se puede casar con ningún
+			// expone: rechazar por eso mataría un plan por la redacción
+			n, verificable := task.FirmaVerificable(f)
+			if verificable && !expuestas[n] {
 				huerfanas = append(huerfanas, f)
 			}
 		}
@@ -448,6 +477,7 @@ func (a agenteExecutor) Run(ctx context.Context, req loop.Request) (loop.Result,
 	})
 	return loop.Result{
 		Stdout:   res.Stdout,
+		Stderr:   res.Stderr,
 		Text:     res.Text,
 		ExitCode: res.ExitCode,
 		Tokens:   loop.Tokens{Entrada: res.Tokens.Input, Salida: res.Tokens.Output},
@@ -569,7 +599,7 @@ func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagMod
 // bucle, y deja el estado final (lista o detenida). El cuarto no se
 // destruye aquí: ship lo libera al entregar.
 func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, base, constitucion string, t task.Task) runResult {
-	r, err := room.Create(ctx, root, t.ID, base)
+	r, err := room.Ensure(ctx, root, t.ID, base)
 	if err != nil {
 		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
 	}
@@ -604,7 +634,6 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 			Cfg:            cfg,
 			Constitucion:   constitucion,
 			Planificador:   generadorPlan{ex: ex, modelo: config.ModeloRol(cfg, "planificador"), root: root},
-			ModeloPlan:     config.ModeloRol(cfg, "planificador"),
 			Ejecutor:       agenteExecutor{exTarea},
 			ModeloEjecutor: modeloTarea,
 			Task:           t,
@@ -614,17 +643,18 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 	}
 
 	outcome, err := loop.Run(ctx, loop.Options{
-		Agent:          agente,
-		Root:           root,
-		Room:           r,
-		Task:           t,
-		Model:          modeloTarea,
-		Base:           base,
-		PatronesPrueba: cfg.PatronesPrueba,
-		AgentTimeout:   agentTimeout,
-		PruebaTimeout:  pruebaTimeout,
-		Env:            []string{fmt.Sprintf("PORT=%d", r.Puerto)},
-		Interfaces:     t.Usa,
+		Agent:           agente,
+		OnIntento:       progresoIntento(t.ID, modeloTarea),
+		Root:            root,
+		Room:            r,
+		Task:            t,
+		Model:           modeloTarea,
+		Base:            base,
+		PatronesPrueba:  cfg.PatronesPrueba,
+		AgentTimeout:    agentTimeout,
+		PruebaTimeout:   pruebaTimeout,
+		Env:             []string{fmt.Sprintf("PORT=%d", r.Puerto)},
+		Interfaces:      t.Usa,
 		Constitucion:    constitucion,
 		Skills:          skillsTarea,
 		SkillsContenido: skillsContenido,
@@ -683,4 +713,53 @@ func emitirResultados(results []runResult) error {
 		}
 	}
 	return nil
+}
+
+// tieneDetenidas reporta si alguna tarea quedó detenida, para poder
+// sugerir --reintentar en vez de dejar al usuario sin salida.
+func tieneDetenidas(root string, tareas []task.Task) bool {
+	for _, t := range tareas {
+		if s, err := state.Get(root, t.ID); err == nil && s.Estado == state.Detenida {
+			return true
+		}
+	}
+	return false
+}
+
+// progresoIntento imprime el avance de una tarea cuando no hay tablero.
+// En modo plano una corrida podía pasar una hora sin escribir una línea:
+// el usuario no tenía forma de saber si seguía viva ni en qué iba.
+func progresoIntento(id, modelo string) func(int, string) {
+	if esTUI() {
+		return nil // el tablero ya muestra el estado en vivo
+	}
+	return func(intento int, fase string) {
+		switch fase {
+		case "agente":
+			out.Line("▸ %s  intento %d · %s trabajando", id, intento, modelo)
+		case "verificando":
+			out.Line("▸ %s  intento %d · verificando", id, intento)
+		}
+	}
+}
+
+// fasesVivas traduce los latidos de disco a lo que el tablero pinta. Es
+// la única fuente que sabe qué pasa DENTRO de un intento: attempts.jsonl
+// no se escribe hasta que el intento termina.
+func fasesVivas(root string, ids []string) map[string]tui.FaseRun {
+	latidos := loop.LeerLatidos(root, ids)
+	fases := make(map[string]tui.FaseRun, len(latidos))
+	for id, l := range latidos {
+		fases[id] = tui.FaseRun{
+			Intento:   l.Intento,
+			Limite:    l.Limite,
+			Fase:      l.Fase,
+			Modelo:    l.Modelo,
+			DesdeFase: l.DesdeFase,
+			Entrada:   l.Tokens.Entrada,
+			Salida:    l.Tokens.Salida,
+			Atascada:  l.EnFaseDesde() >= standup.UmbralAtasco,
+		}
+	}
+	return fases
 }

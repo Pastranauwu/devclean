@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -77,6 +79,13 @@ func runDoctor() error {
 		checks = append(checks, chequeoDoctor{"ejecutores", false, "ninguno instalado · instala opencode o claude"})
 	}
 
+	// modelos: los ids configurados deben existir en el catálogo del CLI.
+	// Es el chequeo que faltaba: un id inventado no falla en doctor, falla
+	// en mitad de la corrida, después de crear cuartos y quemar intentos.
+	if len(disponibles) > 0 {
+		checks = append(checks, chequearModelos(cfg, disponibles))
+	}
+
 	// keys: al menos una variable de proveedor en el entorno
 	keys := []string{"OPENCODE_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY"}
 	for _, p := range cfg.Proveedores {
@@ -143,4 +152,50 @@ func mustGetwd() string {
 		return "."
 	}
 	return wd
+}
+
+// chequearModelos contrasta cada modelo declarado en config.yml contra
+// el catálogo real del CLI por defecto.
+func chequearModelos(cfg config.Config, disponibles []string) chequeoDoctor {
+	nombre := cfg.Cli
+	if nombre == "" {
+		nombre = disponibles[0]
+	}
+	ex, err := elegirEjecutor(nombre)
+	if err != nil {
+		return chequeoDoctor{"modelos", false, err.Error()}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	catalogo, err := ex.Models(ctx)
+	if err != nil {
+		return chequeoDoctor{"modelos", true, "catálogo no consultable · se usará el modelo por defecto de " + ex.Name()}
+	}
+
+	var configurados []string
+	for _, peso := range config.Pesos {
+		configurados = append(configurados, cfg.Modelos[peso])
+	}
+	for _, a := range cfg.Agentes {
+		configurados = append(configurados, a.Modelo)
+	}
+	for _, p := range cfg.Proveedores {
+		configurados = append(configurados, p.Modelo)
+	}
+
+	if malos := config.ModelosValidos(configurados, catalogo); len(malos) > 0 {
+		return chequeoDoctor{"modelos", false,
+			"no existen en " + ex.Name() + ": " + strings.Join(malos, ", ") +
+				" · corrígelos en .devclean/config.yml (ver `" + ex.Name() + " models`)"}
+	}
+	var declarados []string
+	for _, peso := range config.Pesos {
+		if m := cfg.Modelos[peso]; m != "" {
+			declarados = append(declarados, peso+"="+m)
+		}
+	}
+	if len(declarados) == 0 {
+		return chequeoDoctor{"modelos", true, "sin `modelos:` · se usará el modelo por defecto de " + ex.Name()}
+	}
+	return chequeoDoctor{"modelos", true, strings.Join(declarados, ", ")}
 }

@@ -25,13 +25,21 @@ func (OpenCode) Available() error {
 	return nil
 }
 
+// Models devuelve el catálogo real de `opencode models`, en el formato
+// provider/model que el CLI exige. Sin esto devclean inventaba ids como
+// "glm-5.2" que el servidor rechaza: cada invocación moría en dos
+// segundos sin gastar un token y sin dejar rastro.
+func (OpenCode) Models(ctx context.Context) ([]string, error) {
+	return modelosDeCLI(ctx, "opencode", "models")
+}
+
 func (e OpenCode) Run(ctx context.Context, req Request) (Result, error) {
 	args := []string{"run", req.Prompt, "--dir", req.RoomPath, "--format", "json", "--auto"}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
-	stdout, code, err := run(ctx, req, "opencode", args...)
-	res := Result{Stdout: stdout, ExitCode: code}
+	stdout, stderr, code, err := run(ctx, req, "opencode", args...)
+	res := Result{Stdout: stdout, Stderr: stderr, ExitCode: code}
 	res.FilesChanged, res.Text, res.Tokens = parseOpenCodeEvents(stdout)
 	return res, err
 }
@@ -58,12 +66,24 @@ func parseOpenCodeEvents(stdout string) ([]string, string, Usage) {
 		}
 		collectPaths(event, "", 0, seen, &files)
 		collectText(event, &textos)
-		if tokens, ok := event["tokens"].(map[string]any); ok {
-			usage.Input += intValue(tokens, "input")
-			usage.Output += intValue(tokens, "output")
-		}
+		collectTokens(event, &usage)
 	}
 	return files, strings.Join(textos, "\n"), usage
+}
+
+// collectTokens suma el gasto de cada evento step_finish. opencode lo
+// anida bajo "part", no en la raíz del evento: mirando solo la raíz el
+// gasto salía siempre 0, lo que además hacía indistinguible una
+// invocación que nunca llegó al modelo de una que sí trabajó.
+func collectTokens(m map[string]any, usage *Usage) {
+	if tokens, ok := m["tokens"].(map[string]any); ok {
+		usage.Input += intValue(tokens, "input")
+		usage.Output += intValue(tokens, "output")
+		return
+	}
+	if part, ok := m["part"].(map[string]any); ok {
+		collectTokens(part, usage)
+	}
 }
 
 // collectText finds every "text" string field in the event, best-effort.

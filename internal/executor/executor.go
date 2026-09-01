@@ -4,8 +4,10 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +20,10 @@ type Executor interface {
 	Name() string
 	Available() error // verifica binario y versión
 	Run(ctx context.Context, req Request) (Result, error)
+	// Models lista los ids de modelo que este CLI acepta de verdad.
+	// devclean nunca inventa ids: los pide al CLI y valida contra esta
+	// lista antes de gastar un token.
+	Models(ctx context.Context) ([]string, error)
 }
 
 // Request is one agent invocation.
@@ -36,7 +42,8 @@ type Result struct {
 	FilesChanged []string `json:"files_changed"`
 	Tokens       Usage    `json:"tokens"`
 	Stdout       string   `json:"stdout"`
-	Text         string   `json:"text"` // la respuesta textual del agente, si el adaptador la saca
+	Stderr       string   `json:"stderr"` // diagnóstico del CLI: sin esto un fallo de infra es invisible
+	Text         string   `json:"text"`   // la respuesta textual del agente, si el adaptador la saca
 	ExitCode     int      `json:"exit_code"`
 }
 
@@ -46,9 +53,15 @@ type Usage struct {
 	Output int `json:"output"`
 }
 
-// run executes a CLI with timeout and returns its stdout, exit code
-// and error. A timeout yields exit code 124.
-func run(ctx context.Context, req Request, name string, args ...string) (string, int, error) {
+// run executes a CLI with timeout and returns its stdout, stderr, exit
+// code and error. A timeout yields exit code 124.
+//
+// stderr se captura aparte a propósito: es donde los CLIs de agente
+// escriben el motivo real de un fallo (modelo inexistente, key ausente,
+// rate limit). Descartarlo dejaba al usuario con "exit status 1" y nada
+// más, que es indistinguible de "el agente trabajó y las pruebas
+// fallaron".
+func run(ctx context.Context, req Request, name string, args ...string) (string, string, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, req.Timeout)
 	defer cancel()
 
@@ -61,18 +74,47 @@ func run(ctx context.Context, req Request, name string, args ...string) (string,
 	cmd.Dir = req.RoomPath
 	cmd.Env = append(os.Environ(), req.Env...)
 
-	out, err := cmd.Output()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	// Sin WaitDelay, matar el proceso por timeout no basta: si el CLI
+	// dejó un nieto vivo con el pipe abierto, cmd.Wait se queda esperando
+	// para siempre y `timeout_agente` deja de ser un límite. Con esto se
+	// cierran los pipes y la invocación vuelve, colgada o no.
+	cmd.WaitDelay = 10 * time.Second
+
+	err = cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return string(out), 124, err
+		return stdout.String(), stderr.String(), 124, err
 	}
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return string(out), exitErr.ExitCode(), err
+			return stdout.String(), stderr.String(), exitErr.ExitCode(), err
 		}
-		return string(out), -1, err
+		return stdout.String(), stderr.String(), -1, err
 	}
-	return string(out), 0, nil
+	return stdout.String(), stderr.String(), 0, nil
+}
+
+// modelosDeCLI corre un subcomando que lista modelos, una línea cada
+// uno, y devuelve los ids tal cual los acepta el CLI.
+func modelosDeCLI(ctx context.Context, name string, args ...string) ([]string, error) {
+	bin, err := findBinary(name)
+	if err != nil {
+		return nil, err
+	}
+	out, err := exec.CommandContext(ctx, bin, args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("%s no pudo listar modelos · %s", name, err)
+	}
+	var ids []string
+	for _, l := range strings.Split(string(out), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			ids = append(ids, l)
+		}
+	}
+	return ids, nil
 }
 
 func init() {

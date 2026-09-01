@@ -174,6 +174,19 @@ falta (git, un CLI de agente, una API key) antes de que intentes usarlo.
 
 ## Primeros pasos
 
+El camino corto: una petición entra, un pull request sale.
+
+```sh
+# dentro de un repo git con al menos un commit
+devclean init
+devclean up "exportar clientes a CSV y arreglar el login con tildes" --agentes 3 --ship
+```
+
+`up` planea, ejecuta cada tarea en su propio cuarto aislado y, con `--ship`,
+entrega todo en **un solo PR** con un commit por tarea, en orden de dependencia.
+
+El camino largo, si quieres revisar entre paso y paso:
+
 ```sh
 # 1. dentro de un repo git con al menos un commit
 devclean init
@@ -188,10 +201,24 @@ devclean plan "exportar clientes a CSV y arreglar el login con tildes"
 devclean run --agentes 3
 
 # 4. revisa y entrega
-devclean board       # tablero
-devclean standup     # parte de datos: colisiones y atascos
-devclean ship T-001  # esclusa de salida + PR
+devclean board          # tablero
+devclean standup        # parte de datos: colisiones y atascos
+devclean ship --todas   # un PR con todas las tareas listas
+devclean ship T-001     # o una sola tarea en su propio PR
 ```
+
+### Cuando algo falla
+
+```sh
+devclean logs T-001     # intentos, tokens y el error exacto del agente
+devclean doctor         # ¿existe el modelo configurado? ¿hay key? ¿hay ejecutor?
+devclean run --reintentar   # revive las tareas detenidas sin perder su trabajo
+```
+
+Cada invocación del agente deja su volcado completo (prompt, stdout y stderr del
+CLI) en `.devclean/runs/<id>/intento-N.log`. Si el agente ni siquiera llegó al
+modelo — modelo inexistente, key ausente, rate limit — el bucle lo detecta, corta
+sin quemar los intentos restantes y te dice qué pasó.
 
 `init` detecta la rama base y el comando de pruebas; si se equivoca, corrígelo
 con `devclean init --pruebas "mi comando"`, `--pruebas-plantilla go|node|python`
@@ -406,23 +433,31 @@ No necesitas inventar rutas de prueba manuales para cada tarea:
 
 devclean incluye un **catálogo de agentes estándar listos para usar out-of-the-box**. No necesitas configurar nada para usar roles comunes en tus tareas (`devclean.spec.yml` o `--agente`):
 
-| Agente | Provider | Modelo por Defecto | Habilidades (Skills) Inyectadas |
-|---|---|---|---|
-| **`backend`** | `cli` (`claude` / `opencode`) | `claude-sonnet` / `glm-5.2` | `["backend", "api", "database", "sql", "performance"]` |
-| **`frontend`** | `cli` (`claude` / `opencode`) | `claude-sonnet` / `glm-5.2` | `["frontend", "ui", "ux", "components", "css", "state"]` |
-| **`architect`** | `cli` (`claude` / `opencode`) | `claude-sonnet` / `glm-5.2` | `["arquitectura", "diseno", "contratos", "clean-code"]` |
-| **`tester`** | `cli` (`claude` / `opencode`) | `claude-haiku` / `glm-4` | `["testing", "cobertura", "edge-cases", "examinador"]` |
-| **`refactor`** | `cli` (`claude` / `opencode`) | `claude-sonnet` / `glm-5.2` | `["refactoring", "simplificacion", "deuda-tecnica"]` |
-| **`ejecutor`** | `cli` (`claude` / `opencode`) | `claude-sonnet` / `glm-5.2` | `["implementacion", "tdd", "refactor"]` |
+| Agente | Provider | Habilidades (Skills) Inyectadas |
+|---|---|---|
+| **`backend`** | `cli` (`claude` / `opencode`) | `["backend", "api", "database", "sql", "performance"]` |
+| **`frontend`** | `cli` (`claude` / `opencode`) | `["frontend", "ui", "ux", "components", "css", "state"]` |
+| **`architect`** | `cli` (`claude` / `opencode`) | `["arquitectura", "diseno", "contratos", "clean-code"]` |
+| **`tester`** | `cli` (`claude` / `opencode`) | `["testing", "cobertura", "edge-cases", "examinador"]` |
+| **`refactor`** | `cli` (`claude` / `opencode`) | `["refactoring", "simplificacion", "deuda-tecnica"]` |
+| **`ejecutor`** | `cli` (`claude` / `opencode`) | `["implementacion", "tdd", "refactor"]` |
+
+Ningún arquetipo trae modelo propio: el modelo sale del `peso` de la tarea
+contra `modelos:` en `config.yml`, que `devclean init` rellena con el catálogo
+real del CLI. Un arquetipo con un id fijo escrito a mano es un id que tarde o
+temprano deja de existir, y una corrida que muere sin gastar un token.
 
 `Skills` es solo la etiqueta que ve el prompt. Además, cada arquetipo trae
 `SkillPackages`: nombres de **skills reales** (`SKILL.md`, formato
 skills.sh/Claude Code) cuyo contenido completo se inyecta en el prompt del
-agente, no solo el nombre. Todo arquetipo recibe la base —
-`caveman`, `grill-me`, `improve-codebase-architecture`, `implement`,
-`code-review`, `clean-code`, `clean-architecture`, `agent-development` —
-y además: `backend` → `create-a-backend`, `frontend` → `frontend-design`,
-`tester` → `test-driven-development`.
+agente, no solo el nombre. Todo arquetipo recibe la base — `implement` y
+`clean-code` — y además: `backend` → `create-a-backend`,
+`frontend` → `frontend-design`, `tester` → `test-driven-development`.
+
+La base se paga entera en **cada intento de cada tarea**: va como texto al
+principio del prompt. Por eso es corta a propósito. Si agregás paquetes en
+`config.yml`, contá lo que cuestan: ocho paquetes son unos 59 KB (~15k tokens)
+por invocación, antes de que el agente lea una sola línea de tu código.
 
 Traelas una vez con:
 
@@ -458,14 +493,34 @@ timeout_pruebas: 300             # segundos por corrida de listo_cuando y del pa
 recursion_max: 0                 # profundidad de recursión de tareas `recursivo: true`; 0 = desactivada
 agentes:                        # sobreescribe arquetipos o agrega agentes con nombres propios
   backend:     { provider: opencode, model: opencode/muse-spark-1.2-contributor-free, key_env: OPENCODE_API_KEY, skills: ["go", "sql"] }
-  specialist:  { provider: claude, model: claude-sonnet, skills: ["machine-learning", "python"] }
+  specialist:  { provider: claude, model: sonnet, skills: ["machine-learning", "python"] }
 estrategia: equilibrada         # ligera | equilibrada | pesada (peso por defecto)
-modelos:                        # modelo por peso de tarea
-  liviana: glm-4
-  media: glm-5.2
-  pesada: claude-sonnet
+modelos:                        # modelo por peso de tarea · lo rellena `devclean init`
+  liviana: opencode/ling-3.0-flash-fin-free
+  media: opencode-go/glm-5.3
+  pesada: opencode-go/qwen3.8-max
 reglas_import: ["api → dominio → datos"]  # opcional: verifica grafo de imports en ship
 ```
+
+#### Los ids de modelo son los del CLI, no inventados
+
+`devclean init` le pregunta al ejecutor qué modelos acepta de verdad
+(`opencode models`; para `claude`, los alias `opus`/`sonnet`/`haiku`) y reparte
+tres por peso de tarea en `modelos:`. Cambialos a gusto — mandan sobre todo lo
+demás — y verificalos antes de gastar un token:
+
+```sh
+devclean doctor     # avisa si algún modelo de config.yml no existe en el CLI
+opencode models     # el catálogo real de tu cuenta
+```
+
+Un id mal escrito no falla a mitad de la corrida: falla en `doctor`. Y si
+`modelos:` está vacío, cada invocación usa el modelo por defecto del CLI, que
+siempre existe.
+
+`agente` (por tarea) elige *quién* hace el trabajo; `peso` elige *con qué
+modelo*. Un plan típico manda las tareas de andamiaje a `liviana` y las de
+diseño a `pesada`, y así el gasto no es plano.
 
 ### Ejecutores soportados: Claude Code y OpenCode
 
@@ -473,9 +528,12 @@ devclean soporta de forma nativa tanto **Claude Code** (`claude`) como **OpenCod
 
 - **Claude Code**:
   - Requiere `ANTHROPIC_API_KEY`.
-  - Modelos estándar: `claude-sonnet`, `claude-haiku`, `claude-opus`.
+  - Alias de modelo: `opus`, `sonnet`, `haiku`.
 - **OpenCode**:
   - Requiere `OPENCODE_API_KEY`.
+  - Los ids llevan **siempre** el prefijo del proveedor (`provider/modelo`);
+    sin él, el servidor rechaza la invocación. Mirá el catálogo de tu cuenta
+    con `opencode models`.
   - Soporta modelos premium (`opencode-go/glm-5.2`, `opencode-go/deepseek-v4-pro`, `opencode-go/qwen3.7-max`) y **modelos gratuitos** como:
     - `opencode/muse-spark-1.2-contributor-free`
     - `opencode/mimo-v2.5-free`
@@ -486,7 +544,7 @@ Puedes alternar el ejecutor y modelo dinámicamente con flags:
 
 ```sh
 # Usando Claude
-devclean run --ejecutor claude --modelo claude-sonnet
+devclean run --ejecutor claude --modelo sonnet
 
 # Usando OpenCode con modelo gratuito
 devclean run --ejecutor opencode --modelo "opencode/muse-spark-1.2-contributor-free"
@@ -506,16 +564,19 @@ devclean up --ejecutor opencode --modelo "opencode/muse-spark-1.2-contributor-fr
 | `devclean constitution [--forzar]` | genera `.devclean/constitution.md` con un modelo (§6.11) |
 | `devclean plan "<texto>"` | convierte lenguaje natural en contratos de tarea (acepta `--export-spec`) |
 | `devclean apply [-f <spec.yml>]` | aplica y valida una especificación declarativa (acepta `--dry-run`, `--run`) |
-| `devclean up` | aplica la spec y ejecuta tareas en paralelo en cuartos aislados (estilo compose) |
+| `devclean up "<petición>" [--ship]` | **de una petición a un PR limpio en un solo comando**: planea, ejecuta en paralelo y entrega |
+| `devclean up [-f <spec.yml>]` | sin petición: aplica la spec y ejecuta tareas en paralelo (estilo compose) |
 | `devclean ps` | muestra el estado de tareas, cuartos activos y puertos asignados |
 | `devclean task add\|edit\|rm\|list` | manejo manual de tareas (acepta `--agente`) |
 | `devclean task seal <id> --visible <f> --oculta <f>` | sella una suite escrita a mano, sin gastar modelo (§6.8) |
 | `devclean check <id>` | corre la esclusa de entrada sobre una tarea |
 | `devclean run [--agentes N]` | ejecuta las tareas pendientes en paralelo (detecta solapamiento) |
+| `devclean run --reintentar` | vuelve a correr las tareas detenidas, reusando su cuarto y su trabajo parcial |
 | `devclean board` | tablero de estado · en TUI, `s` dispara `ship --dry-run` sobre la tarea lista |
 | `devclean standup` | parte de datos: COLISIÓN y ATASCO sin gastar tokens (§6.7) |
-| `devclean ship <id>` | esclusa de salida (hasta 11 pasos) y PR |
-| `devclean logs <id>` | detalle interno de una tarea |
+| `devclean ship <id>` | esclusa de salida (hasta 11 pasos) y PR de esa tarea |
+| `devclean ship --todas` | la esclusa de cada tarea lista y **un solo PR** con un commit por tarea |
+| `devclean logs <id>` | intentos, tokens, y el error del agente si la invocación falló |
 | `devclean report` | métricas del proyecto |
 | `devclean doctor` | verifica configuración, keys, permisos y git |
 
@@ -568,40 +629,40 @@ debate con dos detectores deterministas que cuestan cero tokens.
 
 ## Estado
 
-**v0.3.x (Parte B completa).** El MVP (v0.1) más todo lo de v0.2 ya está
-implementado y verificado en `main`:
+**v0.5.0.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
++ skills reales, recursividad y fiabilidad de `ship` (v0.5), todo en `main`
+con pruebas verdes.
 
-- **v0.3.2** publicada en GitHub con binarios estáticos (linux/darwin/windows
-  × amd64/arm64), `checksums.txt` e `install.sh` como asset. `v0.2` y `v0.3`
-  anteriores también publicadas. Instalación con una línea vía `curl` o con
-  `go install` verificada.
-- **Esclusa de entrada blindada:** `plan` ya no genera contratos que la
-  propia esclusa rechaza. `sanearAlcance` recorta rutas vedadas de
-  `tocar_solo` con aviso; el prompt del planificador recibe la lista de
-  vedadas. `gate.AlcanceProhibido` compartida.
-- **Cuartos huérfanos recuperados:** `room.Create`/`Destroy` limpian ramas y
-  worktrees huérfanos si `.devclean/rooms/` fue borrado (queda gitignored).
-  Verifica la rama con `rev-parse`, sin depender del idioma de git.
-- **Contratos entre tareas (§6.10):** `expone`/`usa` congelados y verificados
-  en `plan` → `run` (rechaza `usa` huérfano) → `ship` (paso `interfaces`) +
-  `reglas_import` en `ship` (paso `dependencias`).
-- **Examinador ciego y suite oculta (§6.8):** `internal/examiner` genera
-  `devclean_visible_test.go` (70%) y sella `devclean_hidden_test.go` (30%)
-  con `internal/sealed`; `ship` lo verifica y lo quema (paso
-  `suite_oculta`). Declara `imports` por suite, filtra `imported and not
-  used`, chequea sintaxis con `go/parser` y se salta si `expone` está vacío
-  (sin frontera no hay examen; evita falsos solapamientos).
-- **Solapamiento activo (§6.9):** `internal/overlap` — `git merge-tree` +
-  símbolos exportados de `attempts.jsonl` — corre en cada oleada de `run`.
-- **Parte de datos (§6.7):** `devclean standup` + `internal/standup` —
-  COLISIÓN y ATASCO derivados de `attempts.jsonl`, cero tokens.
-- **Constitución (§6.11):** `devclean constitution` + `internal/constitution`
-  — se genera con el modelo, se guarda en `.devclean/constitution.md` y se
-  inyecta en el prompt del planificador y de cada agente.
+- **v0.5 (esta release):**
+  - **Skills reales por agente:** cada arquetipo trae paquetes de skill de
+    verdad (`SKILL.md`, no solo una etiqueta) traídos con `devclean skills
+    sync` e inyectados completos en el prompt — ver [Arquetipos de Agentes
+    Predefinidos](#arquetipos-de-agentes-predefinidos-zero-config).
+  - **Ejecución recursiva de tareas:** una tarea `recursivo: true` se reparte
+    en subtareas reales que corren en cuartos anidados dentro de su propio
+    cuarto, con vista de árbol en `board`/`standup`/TUI — ver
+    [Recursividad](#recursividad-tareas-que-se-reparten-solas).
+  - **Fiabilidad de `ship`:** `git push --force` en la rama del cuarto y
+    detección de PR duplicado (`gh pr view`) evitan que un reintento tras un
+    fallo parcial (p. ej. `gh pr create` caído por red después del push) se
+    quede sin poder abrir el PR nunca. `timeout_agente`/`timeout_pruebas`
+    configurables — el default de 5 minutos por invocación de agente mataba
+    intentos reales a mitad de terminar.
+- **v0.4:** soporte nativo de OpenCode (modelos premium y gratuitos) junto a
+  Claude Code, con precedencia de ejecutor y auto-approve en modo headless;
+  catálogo de agentes predefinidos zero-config (`backend`, `frontend`,
+  `architect`, `tester`, `refactor`, `ejecutor`); modelo declarativo
+  `devclean.spec.yml` (`apply`, `up`, `ps`) estilo Docker Compose.
+- **v0.2/v0.3:** esclusa de entrada blindada (`sanearAlcance` recorta rutas
+  vedadas del plan antes de escribir el contrato), cuartos huérfanos
+  recuperados, contratos entre tareas (§6.10: `expone`/`usa`), examinador
+  ciego y suite oculta (§6.8), solapamiento activo (§6.9), parte de datos
+  (§6.7), constitución (§6.11). Binarios estáticos publicados
+  (linux/darwin/windows × amd64/arm64) desde v0.2.
 
 **Pendiente real:** duplicación entre ramas, solapamiento funcional completo
-(merge en seco + correr suites) y mutation testing del examinador. Todo lo
-demás del PRD ya está en `main` con pruebas verdes.
+(merge en seco + correr suites), mutation testing del examinador, y sumar el
+costo en tokens de la recursión a `devclean report`.
 
 > El GIF (`docs/demo.gif`) se graba con `vhs docs/demo.tape`; el tape usa
 > `scripts/demo-env.sh` (agente falso para no gastar tokens) y muestra la TUI.

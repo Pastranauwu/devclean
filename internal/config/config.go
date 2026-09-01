@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -91,6 +92,39 @@ func DefaultForbiddenZones() []string {
 		".github/**",
 		"CHANGELOG*",
 	}
+}
+
+// lockfilePorManifiesto empareja cada manifiesto de dependencias con el
+// archivo de bloqueo que el gestor regenera a partir de él.
+var lockfilePorManifiesto = map[string][]string{
+	"go.mod":         {"go.sum"},
+	"package.json":   {"package-lock.json", "yarn.lock", "pnpm-lock.yaml"},
+	"Cargo.toml":     {"Cargo.lock"},
+	"pyproject.toml": {"poetry.lock"},
+	"Pipfile":        {"Pipfile.lock"},
+}
+
+// LockfilesDerivados devuelve los archivos de bloqueo que la herramienta
+// regenera a partir de los manifiestos presentes en un alcance.
+//
+// Los lockfiles son zona prohibida (§6.3) para que nadie los edite a mano
+// y finja una resolución de dependencias. Pero cuando la tarea sí puede
+// tocar el manifiesto, prohibir el lockfile deja el proyecto sin compilar:
+// añadir una dependencia a go.mod y revertir go.sum daba
+// "missing go.sum entry" en cada intento, para siempre. Derivado del
+// manifiesto que la tarea ya tiene en alcance, el lockfile va con él.
+func LockfilesDerivados(tocarSolo []string) []string {
+	var out []string
+	visto := map[string]bool{}
+	for _, p := range tocarSolo {
+		for _, lock := range lockfilePorManifiesto[path.Base(p)] {
+			if !visto[lock] {
+				visto[lock] = true
+				out = append(out, lock)
+			}
+		}
+	}
+	return out
 }
 
 // DefaultTestPatterns are the test paths no contract may claim (adenda
@@ -444,6 +478,85 @@ func parseAgentes(data []byte) (map[string]Agente, error) {
 	return out, nil
 }
 
+// Pesos son los tres niveles de `modelos:`, de menor a mayor gasto.
+var Pesos = []string{"liviana", "media", "pesada"}
+
+// pistas de tamaño en los ids de modelo, por peso. El orden importa:
+// gana la primera que casa.
+var pistasPeso = map[string][]string{
+	"liviana": {"haiku", "flash", "lightning", "mini", "lite", "small", "free"},
+	"pesada":  {"opus", "ultra", "-max", "-pro", "thinking"},
+}
+
+// ElegirModelos reparte un catálogo real de ids de modelo entre los tres
+// pesos, para que `devclean init` deje una configuración que funciona sin
+// que el usuario adivine ids. Es una heurística por nombre y el usuario
+// manda: `modelos:` en config.yml se edita a mano y gana siempre.
+//
+// ponytail: heurística por subcadena en el id; si un proveedor nombra sus
+// modelos sin pistas de tamaño, todo cae en "media" y el usuario elige a
+// mano. Cambiar a metadata real solo si algún CLI la expone.
+func ElegirModelos(catalogo []string) map[string]string {
+	if len(catalogo) == 0 {
+		return nil
+	}
+	buscar := func(peso string) string {
+		for _, pista := range pistasPeso[peso] {
+			for _, m := range catalogo {
+				if strings.Contains(strings.ToLower(m), pista) {
+					return m
+				}
+			}
+		}
+		return ""
+	}
+
+	res := map[string]string{}
+	liviana, pesada := buscar("liviana"), buscar("pesada")
+
+	// media: el primero que no sea ni el liviano ni el pesado elegidos
+	media := ""
+	for _, m := range catalogo {
+		if m != liviana && m != pesada {
+			media = m
+			break
+		}
+	}
+	if media == "" {
+		media = catalogo[0]
+	}
+	if liviana == "" {
+		liviana = media
+	}
+	if pesada == "" {
+		pesada = media
+	}
+	res["liviana"], res["media"], res["pesada"] = liviana, media, pesada
+	return res
+}
+
+// ModelosValidos separa los modelos configurados que el CLI no reconoce.
+// `devclean doctor` lo usa para avisar antes de una corrida, no después
+// de quemarla.
+func ModelosValidos(configurados, catalogo []string) (desconocidos []string) {
+	if len(catalogo) == 0 {
+		return nil
+	}
+	valido := make(map[string]bool, len(catalogo))
+	for _, m := range catalogo {
+		valido[m] = true
+	}
+	visto := map[string]bool{}
+	for _, m := range configurados {
+		if m == "" || valido[m] || visto[m] {
+			continue
+		}
+		visto[m] = true
+		desconocidos = append(desconocidos, m)
+	}
+	return desconocidos
+}
+
 // DefaultAgentes devuelve el catálogo de arquetipos predefinidos con modelos y skills listos para usar.
 func DefaultAgentes(cli string) map[string]Agente {
 	provider := cli
@@ -451,57 +564,61 @@ func DefaultAgentes(cli string) map[string]Agente {
 		provider = "claude"
 	}
 
-	modeloSonnet := "claude-sonnet"
-	modeloHaiku := "claude-haiku"
 	keyEnv := "ANTHROPIC_API_KEY"
-
 	if provider == "opencode" {
-		modeloSonnet = "glm-5.2"
-		modeloHaiku = "glm-4"
 		keyEnv = "OPENCODE_API_KEY"
 	}
+
+	// Los arquetipos NO fijan modelo. Antes traían ids inventados
+	// ("glm-5.2", "claude-sonnet") que ningún CLI acepta: cada
+	// invocación moría en dos segundos, la tarea agotaba sus intentos y
+	// la corrida entera se caía en cascada sin gastar un token. El
+	// modelo sale de `modelos:` en config.yml (por peso de tarea), que
+	// `devclean init` rellena con el catálogo real del CLI; vacío
+	// significa "usa el modelo por defecto del CLI", que siempre existe.
+	const modeloDelCLI = ""
 
 	base := skills.BaseSkillNames()
 
 	return map[string]Agente{
 		"ejecutor": {
 			Provider:      provider,
-			Modelo:        modeloSonnet,
+			Modelo:        modeloDelCLI,
 			KeyEnv:        keyEnv,
 			Skills:        []string{"implementacion", "tdd", "refactor"},
 			SkillPackages: base,
 		},
 		"backend": {
 			Provider:      provider,
-			Modelo:        modeloSonnet,
+			Modelo:        modeloDelCLI,
 			KeyEnv:        keyEnv,
 			Skills:        []string{"backend", "api", "database", "sql", "performance"},
 			SkillPackages: append(append([]string{}, base...), skills.BackendSkillName()),
 		},
 		"frontend": {
 			Provider:      provider,
-			Modelo:        modeloSonnet,
+			Modelo:        modeloDelCLI,
 			KeyEnv:        keyEnv,
 			Skills:        []string{"frontend", "ui", "ux", "components", "css", "state"},
 			SkillPackages: append(append([]string{}, base...), skills.FrontendSkillName()),
 		},
 		"architect": {
 			Provider:      provider,
-			Modelo:        modeloSonnet,
+			Modelo:        modeloDelCLI,
 			KeyEnv:        keyEnv,
 			Skills:        []string{"arquitectura", "diseno", "contratos", "clean-code"},
 			SkillPackages: base,
 		},
 		"tester": {
 			Provider:      provider,
-			Modelo:        modeloHaiku,
+			Modelo:        modeloDelCLI,
 			KeyEnv:        keyEnv,
 			Skills:        []string{"testing", "cobertura", "edge-cases", "examinador"},
 			SkillPackages: append(append([]string{}, base...), skills.PMSkillName()),
 		},
 		"refactor": {
 			Provider:      provider,
-			Modelo:        modeloSonnet,
+			Modelo:        modeloDelCLI,
 			KeyEnv:        keyEnv,
 			Skills:        []string{"refactoring", "simplificacion", "deuda-tecnica"},
 			SkillPackages: base,

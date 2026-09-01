@@ -12,8 +12,9 @@ import (
 func escanearRuido(diff string, archivos []string) []Hallazgo {
 	var h []Hallazgo
 	for _, ad := range parseDiffAnadido(diff) {
+		entrada := esPuntoDeEntrada(ad.nombre)
 		for _, linea := range ad.lineas {
-			if t := tipoDebug(linea); t != "" {
+			if t := tipoDebug(linea, entrada); t != "" {
 				h = append(h, Hallazgo{Tipo: t, Archivo: ad.nombre, Detalle: recortar(linea)})
 			} else if esCodigoComentado(linea) {
 				h = append(h, Hallazgo{Tipo: "código comentado", Archivo: ad.nombre, Detalle: recortar(linea)})
@@ -31,31 +32,61 @@ func escanearRuido(diff string, archivos []string) []Hallazgo {
 var patronesDebug = []struct {
 	tipo string
 	re   *regexp.Regexp
+	// esSalida marca los patrones que en el punto de entrada de un
+	// programa NO son ruido, sino lo que el programa hace. Un CLI cuyo
+	// trabajo es imprimir un resultado no puede entregarse nunca si
+	// `fmt.Println` en su main.go cuenta como print de debug.
+	esSalida bool
 }{
 	// log.Print* queda afuera a propósito: es el logger estándar de Go
 	// para producción (servicios de red, CLIs de larga vida), no un
 	// rastro de debug como fmt.Println. Marcarlo como ruido frena
 	// cualquier código que loguee de verdad.
-	{"print de debug", regexp.MustCompile(`fmt\.Print(?:ln|f)?\(`)},
-	{"print de debug", regexp.MustCompile(`\bprintln\(`)},
-	{"print de debug", regexp.MustCompile(`\bprint\(`)},
-	{"print de debug", regexp.MustCompile(`console\.(?:log|debug|warn|info|error)\(`)},
-	{"print de debug", regexp.MustCompile(`\bdebugger\b`)},
-	{"print de debug", regexp.MustCompile(`pdb\.set_trace\(`)},
-	{"print de debug", regexp.MustCompile(`\bbreakpoint\(`)},
-	{"print de debug", regexp.MustCompile(`System\.out\.print(?:ln)?\(`)},
-	{"print de debug", regexp.MustCompile(`var_dump\(`)},
-	{"print de debug", regexp.MustCompile(`\bprint_r\(`)},
-	{"print de debug", regexp.MustCompile(`\bdd\(`)},
+	{"print de debug", regexp.MustCompile(`fmt\.Print(?:ln|f)?\(`), true},
+	{"print de debug", regexp.MustCompile(`\bprintln\(`), true},
+	{"print de debug", regexp.MustCompile(`\bprint\(`), true},
+	{"print de debug", regexp.MustCompile(`console\.(?:log|warn|info|error)\(`), true},
+	{"print de debug", regexp.MustCompile(`System\.out\.print(?:ln)?\(`), true},
+	// estos no son salida de nadie: son depuradores y volcados, ruido
+	// en cualquier archivo
+	{"print de debug", regexp.MustCompile(`console\.debug\(`), false},
+	{"print de debug", regexp.MustCompile(`\bdebugger\b`), false},
+	{"print de debug", regexp.MustCompile(`pdb\.set_trace\(`), false},
+	{"print de debug", regexp.MustCompile(`\bbreakpoint\(`), false},
+	{"print de debug", regexp.MustCompile(`var_dump\(`), false},
+	{"print de debug", regexp.MustCompile(`\bprint_r\(`), false},
+	{"print de debug", regexp.MustCompile(`\bdd\(`), false},
 }
 
-func tipoDebug(linea string) string {
+func tipoDebug(linea string, puntoDeEntrada bool) string {
 	for _, p := range patronesDebug {
+		if p.esSalida && puntoDeEntrada {
+			continue
+		}
 		if p.re.MatchString(linea) {
 			return p.tipo
 		}
 	}
 	return ""
+}
+
+// esPuntoDeEntrada reporta si el archivo es por dónde arranca un
+// programa, donde escribir a stdout es la función y no un descuido.
+// Solo por convención de ruta y nombre: leer el archivo para confirmar
+// que declara `package main` obligaría a tener el cuarto a mano, y el
+// escáner trabaja sobre el diff.
+func esPuntoDeEntrada(archivo string) bool {
+	limpio := strings.TrimPrefix(path.Clean(archivo), "./")
+	for _, dir := range []string{"cmd/", "bin/", "cli/"} {
+		if strings.HasPrefix(limpio, dir) || strings.Contains(limpio, "/"+dir) {
+			return true
+		}
+	}
+	switch path.Base(limpio) {
+	case "main.go", "main.py", "__main__.py", "main.rs", "cli.py", "cli.js", "cli.ts", "main.js", "main.ts":
+		return true
+	}
+	return false
 }
 
 // esCodigoComentado marca una línea de comentario que en realidad es
