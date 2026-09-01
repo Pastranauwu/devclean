@@ -670,11 +670,18 @@ debate con dos detectores deterministas que cuestan cero tokens.
 
 ## Estado
 
-**v0.6.0.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
+**v0.6.1.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
 + skills reales, recursividad y fiabilidad de `ship` (v0.5) + de una petición
 a un PR limpio (v0.6), todo en `main` con pruebas verdes.
 
-- **v0.6 (esta release):**
+- **v0.6.1:** el presupuesto de líneas lo estima el planificador por tarea, en
+  vez de una constante de 200 igual para todas — en una corrida real de siete
+  tareas, tres la reventaban y el trabajo ya estaba hecho cuando la esclusa lo
+  descubría. Además, el commit desde el que arranca cada cuarto se anota en su
+  estado en vez de deducirse de los mensajes `wip:`: sin eso, las tareas de
+  oleadas posteriores medían el cuarto entero contra la rama base, y la medida
+  cambiaba entre pasadas de `ship`.
+- **v0.6.0:**
   - **El motor invoca modelos de verdad.** Los arquetipos traían ids
     inventados (`glm-5.2`, `claude-sonnet`) que ningún CLI acepta: cada
     invocación moría en dos segundos sin gastar un token y la corrida entera
