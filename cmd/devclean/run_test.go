@@ -258,3 +258,37 @@ func TestResolverAgenteTarea(t *testing.T) {
 		t.Error("skillPkgsBack no debe estar vacío · el arquetipo backend trae la base + create-a-backend")
 	}
 }
+
+// En un stack sin examinador ciego (node), las rutas de prueba dejan de
+// estar vedadas: si nadie más las escribe, tiene que poder el
+// implementador, o el listo_cuando apunta a un archivo que nunca existe.
+func TestPatronesPruebaSegunElStack(t *testing.T) {
+	cfg := config.Config{PatronesPrueba: []string{"*_test.go", "test/**"}}
+
+	goRepo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(goRepo, "go.mod"), []byte("module x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := patronesPrueba(cfg, goRepo); len(got) != 2 {
+		t.Errorf("go = %v · con examinador las pruebas siguen vedadas", got)
+	}
+
+	nodeRepo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(nodeRepo, "package.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// vacío PERO NO nil: nil significa "config.yml no los declaró, usa los
+	// del proyecto", y volvería a vedar rutas que nadie más escribe
+	got := patronesPrueba(cfg, nodeRepo)
+	if got == nil {
+		t.Fatal("node = nil · nil se reinterpreta como \"usa los del proyecto\"")
+	}
+	if len(got) != 0 {
+		t.Errorf("node = %v, quiero vacío · sin examinador nadie escribiría las pruebas", got)
+	}
+
+	// sin patrones en config, un stack con examinador cae en los del proyecto
+	if got := patronesPrueba(config.Config{}, goRepo); len(got) == 0 {
+		t.Error("go sin config debe usar los patrones por defecto")
+	}
+}

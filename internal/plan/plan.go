@@ -55,6 +55,12 @@ type Contexto struct {
 	Constitucion string                   // contenido de .devclean/constitution.md (§6.11), "" si no existe
 	Vedadas      []string                 // globs que tocar_solo nunca puede incluir (zonas prohibidas + rutas de prueba)
 	Agentes      map[string]config.Agente // agentes disponibles en config.yml (§8.1 / Fase 2)
+	// PruebasPropias marca que este stack no tiene examinador ciego, así
+	// que las pruebas las escribe la propia tarea y su archivo tiene que
+	// entrar en tocar_solo. Sin decirlo, el planificador apunta el
+	// listo_cuando a un archivo de prueba que deja fuera de alcance, y
+	// nadie puede crearlo: la tarea queda roja para siempre.
+	PruebasPropias bool
 }
 
 // Prompt arma la instrucción para el planificador: una frase entra, un
@@ -73,8 +79,14 @@ func Prompt(frase string, c Contexto) string {
 	b.WriteString("\n\nDevuelve SOLO un array JSON, sin texto alrededor, con estos campos por tarea:\n")
 	b.WriteString("- \"titulo\": frase corta en minúscula\n")
 	b.WriteString("- \"porque\": por qué importa (una frase)\n")
-	b.WriteString("- \"listo_cuando\": un comando ejecutable que diga \"ya está\" (obligatorio)\n")
+	b.WriteString("- \"listo_cuando\": un comando ejecutable que HOY FALLE y que pase cuando la tarea esté hecha (obligatorio).\n")
+	b.WriteString("  · devclean lo ejecuta ANTES de gastar un solo token y rechaza la tarea si ya pasa: un comando que hoy da verde no verifica nada.\n")
+	b.WriteString("  · Por eso no sirve el comando de pruebas del proyecto tal cual si la suite ya está verde (`npm test`, `go test ./...`, `pytest`): acótalo a lo que esta tarea va a crear — el archivo de prueba, el módulo o el paquete que todavía no existe.\n")
+	b.WriteString("  · Ejemplos que fallan hoy porque el destino no existe: \"go test ./internal/wol/...\", \"node --test test/validator.test.js\", \"pytest tests/test_wol.py\", \"npm test -- validator\".\n")
 	b.WriteString("- \"tocar_solo\": array de globs de archivos que la tarea puede tocar\n")
+	if c.PruebasPropias {
+		b.WriteString("  · en este proyecto las pruebas las escribe la propia tarea: si el \"listo_cuando\" apunta a un archivo de prueba, ESE archivo tiene que estar también en \"tocar_solo\", o nadie podrá crearlo.\n")
+	}
 	if len(c.Vedadas) > 0 {
 		b.WriteString("  · \"tocar_solo\" NUNCA puede incluir estas rutas (las maneja el proyecto o el examinador ciego, no la tarea): " + strings.Join(c.Vedadas, ", ") + "\n")
 	}
@@ -131,7 +143,10 @@ func contextoPrompt(c Contexto) string {
 	if strings.TrimSpace(pruebas) == "" {
 		pruebas = "ninguno detectado · propón uno que exista o el estándar del lenguaje"
 	}
-	return fmt.Sprintf("El repositorio ya está en desarrollo. Lenguaje detectado: %s. Comando de pruebas: %s. Usa ese lenguaje y ese comando en los \"listo_cuando\"; no cambies el stack ni propongas paquetes o rutas que no existen.", c.Lenguaje, pruebas)
+	return fmt.Sprintf("El repositorio ya está en desarrollo. Lenguaje detectado: %s. Comando de pruebas del proyecto: %s.\n"+
+		"- Mantén ese lenguaje y ese corredor de pruebas; no cambies el stack ni propongas paquetes o rutas que no existen.\n"+
+		"- Pero NO copies ese comando tal cual en los \"listo_cuando\" si la suite del proyecto ya está verde: entonces pasaría hoy y devclean rechazaría la tarea. Apunta con el mismo corredor a lo que la tarea va a crear y que todavía no existe.",
+		c.Lenguaje, pruebas)
 }
 
 // Parse extrae la lista de borradores de la respuesta del modelo, tolerando

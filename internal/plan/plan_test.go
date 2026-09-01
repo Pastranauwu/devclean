@@ -163,3 +163,46 @@ func TestParseLeeLimiteLineas(t *testing.T) {
 		t.Errorf("limite_lineas = %d, quiero 1200", bs[0].LimiteLineas)
 	}
 }
+
+// El prompt tiene que exigir que listo_cuando falle hoy. Sin eso el
+// planificador copia el comando de pruebas del proyecto (`npm test`,
+// `go test ./...`), que en un repo con la suite verde pasa de entrada, y
+// la esclusa de entrada rechaza TODAS las tareas antes de gastar un token.
+func TestPromptExigeQueListoCuandoFalleHoy(t *testing.T) {
+	p := Prompt("lo que sea", Contexto{Lenguaje: "node", Pruebas: "npm test"})
+	for _, quiero := range []string{"HOY FALLE", "rechaza la tarea si ya pasa", "NO copies ese comando tal cual"} {
+		if !strings.Contains(p, quiero) {
+			t.Errorf("el prompt no dice %q", quiero)
+		}
+	}
+	// y da ejemplos acotados de cada stack, que es de donde el modelo copia
+	for _, ej := range []string{"node --test test/", "pytest tests/", "go test ./internal/"} {
+		if !strings.Contains(p, ej) {
+			t.Errorf("el prompt no da el ejemplo %q", ej)
+		}
+	}
+}
+
+// En greenfield el aviso ya estaba; que no se pierda.
+func TestPromptGreenfieldSigueExigiendoloTambien(t *testing.T) {
+	p := Prompt("algo", Contexto{EsVacio: true})
+	if !strings.Contains(p, "HOY FALLE") {
+		t.Error("el requisito vale igual en un repo vacío")
+	}
+}
+
+// Sin examinador ciego la tarea escribe sus propias pruebas, así que su
+// archivo tiene que entrar en tocar_solo. Sin decírselo, el planificador
+// apunta el listo_cuando a un archivo que deja fuera de alcance y que
+// nadie puede crear: la tarea agota los intentos con "Could not find".
+func TestPromptPideLasPruebasEnAlcanceSinExaminador(t *testing.T) {
+	con := Prompt("algo", Contexto{Lenguaje: "node", PruebasPropias: true})
+	if !strings.Contains(con, "ESE archivo tiene que estar también en \"tocar_solo\"") {
+		t.Error("el prompt no pide meter el archivo de prueba en tocar_solo")
+	}
+	// con examinador la regla es la contraria y no debe aparecer
+	sin := Prompt("algo", Contexto{Lenguaje: "go"})
+	if strings.Contains(sin, "las pruebas las escribe la propia tarea") {
+		t.Error("con examinador ciego el implementador NO escribe las pruebas")
+	}
+}

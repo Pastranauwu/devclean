@@ -114,6 +114,8 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
 	if cfg.TimeoutEsclusa > 0 {
 		timeout = time.Duration(cfg.TimeoutEsclusa) * time.Second
 	}
+	cfgEsclusa := cfg
+	cfgEsclusa.PatronesPrueba = patronesPrueba(cfg, root)
 
 	results := make([]runResult, 0, len(pendientes))
 
@@ -121,7 +123,7 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
 	// gastar un solo token (§6.3)
 	var aprobadas []task.Task
 	for _, t := range pendientes {
-		res := gate.Run(context.Background(), root, cfg, t, existentes, timeout)
+		res := gate.Run(context.Background(), root, cfgEsclusa, t, existentes, timeout)
 		if res.Aprobada {
 			aprobadas = append(aprobadas, t)
 			continue
@@ -137,7 +139,8 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
 	if len(aprobadas) == 0 {
 		sortRunResults(results)
 		_ = emitirResultados(results)
-		return errors.New("ninguna tarea superó la esclusa · corrige los contratos y reintenta")
+		return errors.New("ninguna tarea superó la esclusa · si el motivo es \"listo_cuando ya pasa\", " +
+			"el comando tiene que fallar HOY y pasar cuando la tarea esté hecha: vuelve a planear con devclean plan")
 	}
 
 	if ejecutor == "" {
@@ -650,7 +653,7 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		Task:            t,
 		Model:           modeloTarea,
 		Base:            base,
-		PatronesPrueba:  cfg.PatronesPrueba,
+		PatronesPrueba:  patronesPrueba(cfg, root),
 		AgentTimeout:    agentTimeout,
 		PruebaTimeout:   pruebaTimeout,
 		Env:             []string{fmt.Sprintf("PORT=%d", r.Puerto)},
@@ -763,4 +766,22 @@ func fasesVivas(root string, ids []string) map[string]tui.FaseRun {
 		}
 	}
 	return fases
+}
+
+// patronesPrueba devuelve las rutas que ninguna tarea puede editar.
+//
+// Vacío cuando el stack no tiene examinador ciego (node, rust): la regla
+// existe para que quien implementa no pueda tocar el examen que lo
+// juzga, y sin examinador no hay examen que proteger — solo un archivo
+// de prueba que nadie puede escribir y una tarea imposible.
+func patronesPrueba(cfg config.Config, root string) []string {
+	if !examiner.Soportado(config.DetectLanguage(root)) {
+		// vacío NO nil: nil significaría "no configurado, usa los del
+		// proyecto", y volveríamos a vedar rutas que nadie más escribe
+		return []string{}
+	}
+	if len(cfg.PatronesPrueba) > 0 {
+		return cfg.PatronesPrueba
+	}
+	return config.DefaultTestPatterns()
 }
