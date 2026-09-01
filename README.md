@@ -219,31 +219,64 @@ devclean ship --todas   # un PR con todas las tareas listas
 devclean ship T-001     # o una sola tarea en su propio PR
 ```
 
-### Integrar sin tocar nada
+### Que alguien revise antes de que apruebes
 
-`--integrar` añade dos pasos después de abrir el PR:
+```sh
+devclean up "exportar clientes a CSV" --agentes 3 --revisar
+devclean ship --todas --revisar
+```
 
-1. **Revisión.** Un modelo (el rol `revisor` de `config.yml`, o el del
-   planificador si no declaraste uno) lee el diff completo junto a los
-   contratos y decide. Es lo único que juzga *intención* en vez de mecánica:
-   las esclusas verifican que compila, que pasa y que no hay secretos, no que
-   el código haga lo que la tarea pedía. Su veredicto queda como comentario en
-   el propio PR.
-2. **Merge por rebase.** Los commits entran en la rama base tal cual, uno por
-   tarea, para que el historial siga siendo bisectable. Si la base se movió
-   mientras tanto, la rama de entrega se rebasea sobre la base nueva, se vuelve
-   a subir y se reintenta una vez; un conflicto real se reporta con los
-   archivos implicados.
+Un modelo (el rol `revisor` de `config.yml`, o el del planificador si no
+declaraste uno) lee el diff completo junto a los contratos y deja este informe
+como comentario en el PR:
 
-**Falla cerrado**, al revés que el examinador ciego: si el revisor no responde,
-devuelve algo ilegible, o el diff es más grande de lo que puede cubrir, **no se
-integra** y el PR queda abierto con el motivo. Perder un examen cuesta una
-prueba; integrar sin mirar mete código en la rama principal.
+```markdown
+## Revisión de la entrega
 
-Lo que `--integrar` apaga es tu revisión. Las esclusas siguen ahí, pero el juicio
-de "¿esto es lo que yo quería?" pasa a un modelo. En los stacks sin examinador
-ciego (node, rust) las pruebas las escribió el mismo agente que el código, así
-que ahí el revisor es lo único que mira el diff con otros ojos.
+_1 de 4 tareas necesitan cambios: T-004_
+
+| tarea | tipo | ¿funciona? | qué entrega |
+|---|---|---|---|
+| T-001 | `chore` | sí | inicializa el módulo Go y el Makefile |
+| T-002 | `feat` | sí | envía el magic packet por UDP broadcast |
+| T-004 | `feat` | **no** | servicio HTTP que dispara el wake |
+| T-007 | `docs` | sí | Dockerfile, unidad systemd y guía de uso |
+
+### T-004 · qué cambiar
+
+- internal/api/api.go:34 — no valida la MAC antes de enviar
+- internal/api/api.go:51 — el handler ignora el error de Send y responde 200
+```
+
+El revisor **informa, no decide**. Aprobar sigue siendo tuyo: lees la tabla,
+ves qué entrega cada tarea y con qué tipo, y le das a mergear en GitHub. El
+tipo (`feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `build`) sale
+de lo que la tarea entrega de verdad, no de adivinarlo por su título.
+
+Es lo único que juzga *intención*: las esclusas verifican que compila, que pasa
+la suite y que no hay secretos, no que el código haga lo que la tarea pedía.
+
+**Falla cerrado.** Si el revisor no responde, devuelve algo ilegible, marca una
+tarea rota sin decir qué cambiar, se salta tareas, o el diff pasa de 200.000
+caracteres, el paso falla y el PR queda abierto **diciendo que nadie lo
+revisó** — para que no apruebes creyendo que sí.
+
+### Integrar sin esperarte
+
+```sh
+devclean ship --todas --integrar
+```
+
+Hace lo mismo que `--revisar` y, si el revisor no pidió cambios, mergea el PR
+por rebase: los commits entran en la base tal cual, uno por tarea, para que el
+historial siga siendo bisectable. Si la base se movió mientras tanto, la rama
+de entrega se rebasea sobre la base nueva, se vuelve a subir y se reintenta una
+vez; un conflicto real se reporta con los archivos implicados.
+
+Lo que `--integrar` apaga es tu revisión. En los stacks sin examinador ciego
+(node, rust) las pruebas las escribió el mismo agente que el código, así que
+ahí el revisor es lo único que mira el diff con otros ojos. Si tu rama base no
+tiene protección, un merge automático entra sin que nada más lo pare.
 
 ### Cuando algo falla
 
@@ -648,7 +681,8 @@ devclean up --ejecutor opencode --modelo "opencode/muse-spark-1.2-contributor-fr
 | `devclean standup` | parte de datos: COLISIÓN y ATASCO sin gastar tokens (§6.7) |
 | `devclean ship <id>` | esclusa de salida (hasta 11 pasos) y PR de esa tarea |
 | `devclean ship --todas` | la esclusa de cada tarea lista y **un solo PR** con un commit por tarea |
-| `devclean ship --todas --integrar` | además revisa el diff con un modelo y, si aprueba, mergea el PR por rebase |
+| `devclean ship --todas --revisar` | además, un modelo revisa el diff y deja el informe en el PR · apruebas tú |
+| `devclean ship --todas --integrar` | además de revisar, mergea el PR si el revisor no pide cambios |
 | `devclean logs <id>` | intentos, tokens, y el error del agente si la invocación falló |
 | `devclean report` | métricas del proyecto |
 | `devclean doctor` | verifica configuración, keys, permisos y git |
@@ -706,11 +740,13 @@ debate con dos detectores deterministas que cuestan cero tokens.
 + skills reales, recursividad y fiabilidad de `ship` (v0.5) + de una petición
 a un PR limpio (v0.6), todo en `main` con pruebas verdes.
 
-- **v0.6.3:** `devclean ship --todas --integrar` (y `devclean up "..."
-  --integrar`) cierra el camino entero: revisa el diff con un modelo — el rol
-  `revisor` que llevaba declarado en `config.yml` sin usarse — y, si aprueba,
-  mergea el PR por rebase, conservando el commit por tarea. Falla cerrado: lo
-  que no se pudo revisar no se integra.
+- **v0.6.3:** un modelo revisa la entrega y deja un informe en el PR — una
+  línea por tarea con su tipo de Conventional Commit, si funciona y, si no,
+  qué cambiar con archivo:línea. Es el rol `revisor` que llevaba declarado en
+  `config.yml` sin usarse, y lo único que juzga intención en vez de mecánica.
+  Con `--revisar` informa y apruebas tú; con `--integrar` además mergea por
+  rebase si no pidió cambios. Falla cerrado: lo que no se pudo revisar se
+  reporta como no revisado.
 - **v0.6.2:** devclean no servía en un proyecto que ya existe con la suite en
   verde. El planificador copiaba el comando de pruebas del proyecto
   (`npm test`, `go test ./...`) en los `listo_cuando`, y la esclusa de entrada

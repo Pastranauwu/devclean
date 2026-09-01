@@ -12,7 +12,7 @@ func newUpCmd() *cobra.Command {
 	var file string
 	var agentes int
 	var modelo, ejecutor, titulo string
-	var reintentar, entregar, integrar bool
+	var reintentar, entregar, integrar, revisar bool
 
 	cmd := &cobra.Command{
 		Use:   `up ["<petición>"]`,
@@ -67,11 +67,11 @@ existe y ejecuta las tareas pendientes.`,
 			if err := runCmd(agentes, ejecutor, modelo, reintentar); err != nil {
 				return err
 			}
-			if !entregar && !integrar {
+			if !entregar && !integrar && !revisar {
 				return nil
 			}
 			out.Line("")
-			return runShipTodas(false, titulo, integrar)
+			return runShipTodas(false, titulo, integrar, revisar)
 		},
 	}
 
@@ -81,7 +81,8 @@ existe y ejecuta las tareas pendientes.`,
 	cmd.Flags().StringVar(&ejecutor, "ejecutor", "", "opencode o claude")
 	cmd.Flags().BoolVar(&reintentar, "reintentar", false, "vuelve a correr también las tareas detenidas")
 	cmd.Flags().BoolVar(&entregar, "ship", false, "al terminar, entrega todas las tareas listas en un solo PR")
-	cmd.Flags().BoolVar(&integrar, "integrar", false, "además de entregar, revisa el diff con un modelo y mergea el PR si aprueba")
+	cmd.Flags().BoolVar(&revisar, "revisar", false, "además de entregar, un modelo revisa el diff y deja el informe en el PR")
+	cmd.Flags().BoolVar(&integrar, "integrar", false, "además de revisar, mergea el PR si el revisor no pide cambios")
 	cmd.Flags().StringVar(&titulo, "titulo", "", "título del PR (por defecto, la petición)")
 
 	return cmd
