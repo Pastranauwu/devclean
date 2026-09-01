@@ -178,30 +178,44 @@ func armarTablero(filas []Fila, sel, aviso string) []lineaSticker {
 	if aviso != "" {
 		ls = append(ls, lineaSticker{texto: aviso, color: rgbAlerta})
 	}
-	ls = append(ls, lineaSticker{texto: "s dry-run · j/k mueve · q sale · se refresca solo", color: rgbApagado})
+	ls = append(ls, lineaSticker{texto: "j/k mueve · s entrega · r reintenta · d detalle · q sale · se refresca solo", color: rgbApagado})
 	return ls
 }
 
+// Tipos de acción que el tablero puede devolver al comando.
+const (
+	AccionEntregar   = "entregar"   // ship --dry-run sobre la tarea
+	AccionReintentar = "reintentar" // run --reintentar
+	AccionDetalle    = "detalle"    // logs de la tarea
+)
+
+// Accion es lo que el humano pidió desde el tablero. Tipo vacío = salió
+// sin pedir nada.
+type Accion struct {
+	Tipo string
+	ID   string
+}
+
 // CorrerBoard muestra el tablero sobre un plasma animado; sale con q o esc.
-// Si el usuario pulsa s sobre una tarea lista, devuelve su id para que
-// el comando dispare ship --dry-run en la misma terminal.
-func CorrerBoard(root string) (string, error) {
+// El tablero no ejecuta nada: devuelve lo que el humano pidió para que el
+// comando lo corra en la misma terminal, con su salida normal.
+func CorrerBoard(root string) (Accion, error) {
 	filas, err := Tablero(root)
 	if err != nil {
-		return "", err
+		return Accion{}, err
 	}
 	m := boardModel{filas: filas, cursor: cursorInicial(filas), params: DefaultPlasma(), root: root}
 	final, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	if err != nil {
-		return "", err
+		return Accion{}, err
 	}
-	return final.(boardModel).shipID, nil
+	return final.(boardModel).accion, nil
 }
 
 type boardModel struct {
 	filas  []Fila
 	cursor int
-	shipID string
+	accion Accion
 	aviso  string
 	ancho  int
 	alto   int
@@ -252,20 +266,41 @@ func (m boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.aviso = ""
 			}
 			return m, nil
-		case "s":
+		case "s", "r", "d":
 			if m.cursor < 0 || m.cursor >= len(m.filas) {
 				return m, nil
 			}
 			f := m.filas[m.cursor]
-			if f.Estado != state.Lista {
-				m.aviso = f.ID + " no está lista · s solo entrega las que están en LISTO"
+			accion, aviso := accionDeTecla(msg.String(), f)
+			if aviso != "" {
+				m.aviso = aviso
 				return m, nil
 			}
-			m.shipID = f.ID
+			m.accion = accion
 			return m, tea.Quit
 		}
 	}
 	return m, nil
+}
+
+// accionDeTecla traduce una tecla a la acción que el comando ejecutará,
+// o a un aviso si la tarea no está en el estado que esa acción necesita.
+func accionDeTecla(tecla string, f Fila) (Accion, string) {
+	switch tecla {
+	case "s":
+		if f.Estado != state.Lista {
+			return Accion{}, f.ID + " no está lista · s solo entrega las que están en LISTO"
+		}
+		return Accion{AccionEntregar, f.ID}, ""
+	case "r":
+		if f.Estado != state.Detenida {
+			return Accion{}, f.ID + " no está detenida · r solo revive las que están en DETENIDO"
+		}
+		return Accion{AccionReintentar, f.ID}, ""
+	case "d":
+		return Accion{AccionDetalle, f.ID}, ""
+	}
+	return Accion{}, ""
 }
 
 // refrescar relee el estado de disco sin perder la selección: el cursor

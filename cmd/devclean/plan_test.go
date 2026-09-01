@@ -69,3 +69,42 @@ func TestConfirmar(t *testing.T) {
 		t.Error("respuesta suelta no debió confirmar")
 	}
 }
+
+func TestCerrarDependencias(t *testing.T) {
+	props := []propuesta{
+		{ID: "T-001"},
+		{ID: "T-002", DependeDe: []string{"T-001"}},
+		{ID: "T-003", DependeDe: []string{"T-002"}},
+		{ID: "T-004"},
+	}
+
+	// descartar T-001 arrastra a T-002 y, en cascada, a T-003
+	elegidas := map[string]bool{"T-002": true, "T-003": true, "T-004": true}
+	arrastradas := cerrarDependencias(props, elegidas)
+	if len(arrastradas) != 2 {
+		t.Fatalf("arrastradas = %v, quiero T-002 y T-003", arrastradas)
+	}
+	if len(elegidas) != 1 || !elegidas["T-004"] {
+		t.Errorf("elegidas = %v, solo T-004 sobrevive", elegidas)
+	}
+}
+
+func TestCerrarDependenciasNoTocaLoCoherente(t *testing.T) {
+	props := []propuesta{{ID: "T-001"}, {ID: "T-002", DependeDe: []string{"T-001"}}}
+	elegidas := map[string]bool{"T-001": true, "T-002": true}
+	if arrastradas := cerrarDependencias(props, elegidas); len(arrastradas) != 0 {
+		t.Errorf("arrastradas = %v, quiero ninguna", arrastradas)
+	}
+	if len(elegidas) != 2 {
+		t.Errorf("elegidas = %v", elegidas)
+	}
+}
+
+// Una dependencia que no está en el plan ya vive en el repo: no arrastra.
+func TestCerrarDependenciasIgnoraLasDeFueraDelPlan(t *testing.T) {
+	props := []propuesta{{ID: "T-009", DependeDe: []string{"T-001"}}}
+	elegidas := map[string]bool{"T-009": true}
+	if arrastradas := cerrarDependencias(props, elegidas); len(arrastradas) != 0 {
+		t.Errorf("arrastradas = %v · T-001 no es parte de este plan", arrastradas)
+	}
+}

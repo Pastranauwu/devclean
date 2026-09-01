@@ -71,7 +71,7 @@ func TestArmarTableroMarcaSeleccionYHint(t *testing.T) {
 	if !strings.Contains(texto, "> T-001") {
 		t.Errorf("debió marcar T-001:\n%s", texto)
 	}
-	if !strings.Contains(texto, "s dry-run") {
+	if !strings.Contains(texto, "s entrega") {
 		t.Errorf("debió mostrar el hint de s:\n%s", texto)
 	}
 }
@@ -96,8 +96,8 @@ func TestBoardKeySSobreLista(t *testing.T) {
 	}}
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	bm := next.(boardModel)
-	if bm.shipID != "T-001" {
-		t.Errorf("shipID = %q, quiere T-001", bm.shipID)
+	if bm.accion != (Accion{AccionEntregar, "T-001"}) {
+		t.Errorf("accion = %+v, quiere entregar T-001", bm.accion)
 	}
 	if cmd == nil {
 		t.Fatal("s sobre lista debió salir para disparar dry-run")
@@ -114,8 +114,8 @@ func TestBoardKeySSobrePendiente(t *testing.T) {
 	}
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	bm := next.(boardModel)
-	if bm.shipID != "" {
-		t.Errorf("shipID = %q, pendiente no debe disparar dry-run", bm.shipID)
+	if bm.accion.Tipo != "" {
+		t.Errorf("accion = %+v, pendiente no debe disparar dry-run", bm.accion)
 	}
 	if cmd != nil {
 		t.Fatal("s sobre pendiente no debe salir")
@@ -222,4 +222,53 @@ func textoTablero(ls []lineaSticker) string {
 		b.WriteString(l.texto + "\n")
 	}
 	return b.String()
+}
+
+// r revive una tarea detenida; sobre cualquier otro estado avisa.
+func TestBoardKeyRSoloSobreDetenida(t *testing.T) {
+	filas := []Fila{
+		{ID: "T-001", Titulo: "a", Estado: state.Detenida},
+		{ID: "T-002", Titulo: "b", Estado: state.Lista},
+	}
+
+	m := boardModel{filas: filas}
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if bm := next.(boardModel); bm.accion != (Accion{AccionReintentar, "T-001"}) {
+		t.Errorf("accion = %+v, quiere reintentar T-001", bm.accion)
+	}
+	if cmd == nil {
+		t.Fatal("r sobre detenida debe salir para correr el reintento")
+	}
+
+	m = boardModel{filas: filas, cursor: 1}
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	bm := next.(boardModel)
+	if bm.accion.Tipo != "" || cmd != nil {
+		t.Errorf("accion = %+v · r sobre una lista no reintenta nada", bm.accion)
+	}
+	if !strings.Contains(bm.aviso, "T-002 no está detenida") {
+		t.Errorf("aviso = %q", bm.aviso)
+	}
+}
+
+// d muestra el detalle de cualquier tarea, sea cual sea su estado: es
+// justo cuando algo va mal cuando hace falta mirar.
+func TestBoardKeyDSiempreDisponible(t *testing.T) {
+	for _, estado := range []string{state.Lista, state.Detenida, state.EnCurso, state.Pendiente} {
+		m := boardModel{filas: []Fila{{ID: "T-001", Estado: estado}}}
+		next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+		bm := next.(boardModel)
+		if bm.accion != (Accion{AccionDetalle, "T-001"}) || cmd == nil {
+			t.Errorf("estado %s: accion = %+v", estado, bm.accion)
+		}
+	}
+}
+
+func TestBoardAyudaListaLasTeclas(t *testing.T) {
+	texto := textoTablero(armarTablero([]Fila{{ID: "T-001", Estado: state.Lista}}, "", ""))
+	for _, tecla := range []string{"s entrega", "r reintenta", "d detalle", "q sale"} {
+		if !strings.Contains(texto, tecla) {
+			t.Errorf("la ayuda no menciona %q", tecla)
+		}
+	}
 }
