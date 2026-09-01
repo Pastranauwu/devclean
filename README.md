@@ -670,10 +670,18 @@ debate con dos detectores deterministas que cuestan cero tokens.
 
 ## Estado
 
-**v0.6.1.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
+**v0.6.2.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
 + skills reales, recursividad y fiabilidad de `ship` (v0.5) + de una petición
 a un PR limpio (v0.6), todo en `main` con pruebas verdes.
 
+- **v0.6.2:** devclean no servía en un proyecto que ya existe con la suite en
+  verde. El planificador copiaba el comando de pruebas del proyecto
+  (`npm test`, `go test ./...`) en los `listo_cuando`, y la esclusa de entrada
+  rechazaba TODAS las tareas con "listo_cuando ya pasa" antes de gastar un
+  token: el prompt nunca le decía que el comando tiene que fallar hoy. Y en los
+  stacks sin examinador ciego (node, rust) nadie podía escribir las pruebas —
+  el examinador no existe y al implementador se le vedaban esas rutas — así que
+  el `listo_cuando` apuntaba a un archivo que jamás se creaba.
 - **v0.6.1:** el presupuesto de líneas lo estima el planificador por tarea, en
   vez de una constante de 200 igual para todas — en una corrida real de siete
   tareas, tres la reventaban y el trabajo ya estaba hecho cuando la esclusa lo
@@ -753,6 +761,19 @@ devclean sirve para lo que tiene oráculo: un comando que decide verde o rojo.
 No verifica interfaz gráfica, comportamiento visual ni criterios difusos. El
 examinador ciego es de caja negra sobre la interfaz pública; sin expone no
 hay prueba. Prometer más quema el proyecto.
+
+**El examinador ciego solo existe para Go y Python.** En los demás stacks
+(node, rust) las pruebas las escribe quien implementa, y las rutas de prueba
+dejan de estar vedadas: la regla de que el implementador no toca el examen
+solo tiene sentido si hay alguien más que lo escriba. Ahí devclean sigue
+sirviendo — el `listo_cuando` es igual de vinculante — pero sin la garantía de
+que las pruebas las redactó alguien que no vio la implementación.
+
+**`listo_cuando` tiene que fallar hoy.** Es la regla que hace que una tarea
+signifique algo, y la esclusa de entrada la comprueba ejecutándolo antes de
+gastar un token. Por eso el comando de pruebas del proyecto tal cual
+(`npm test`, `go test ./...`) no sirve en un repo con la suite verde: hay que
+apuntar a lo que la tarea va a crear.
 
 ## Licencia
 

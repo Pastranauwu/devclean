@@ -208,7 +208,11 @@ func AlcanceProhibido(p string, zonas, patronesPrueba []string) (string, bool) {
 			return z, true
 		}
 	}
-	if len(patronesPrueba) == 0 {
+	// nil y vacío NO son lo mismo: nil es "config.yml no los declaró, usa
+	// los del proyecto"; un slice vacío es "este stack no tiene
+	// examinador ciego, así que las pruebas las escribe quien implementa
+	// y ninguna ruta está vedada".
+	if patronesPrueba == nil {
 		patronesPrueba = config.DefaultTestPatterns()
 	}
 	for _, patron := range patronesPrueba {
@@ -236,7 +240,9 @@ func checkZonasProhibidas(t task.Task, zonas []string) Check {
 // (adenda A.3). En v0.2 las escribe un examinador ciego; si el
 // implementador puede editarlas, el examen no vale nada.
 func checkRutasDePrueba(t task.Task, patrones []string) Check {
-	if len(patrones) == 0 {
+	// ver AlcanceProhibido: vacío significa "ninguna vedada", no "usa los
+	// del proyecto"
+	if patrones == nil {
 		patrones = config.DefaultTestPatterns()
 	}
 	for _, patron := range patrones {

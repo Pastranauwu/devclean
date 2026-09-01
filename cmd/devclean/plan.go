@@ -15,6 +15,7 @@ import (
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/constitution"
+	"github.com/Pastranauwu/devclean/internal/examiner"
 	"github.com/Pastranauwu/devclean/internal/executor"
 	"github.com/Pastranauwu/devclean/internal/gate"
 	"github.com/Pastranauwu/devclean/internal/plan"
@@ -85,14 +86,15 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 		return err
 	}
 	esVacio := config.DetectEmpty(root)
-	zonas, patrones := zonasYPatrones(cfg)
+	zonas, patrones := zonasYPatronesDe(cfg, root)
 	ctx := plan.Contexto{
-		Lenguaje:     config.DetectLanguage(root),
-		EsVacio:      esVacio,
-		Pruebas:      cfg.Pruebas,
-		Constitucion: constitucion,
-		Vedadas:      append(append([]string{}, zonas...), patrones...),
-		Agentes:      cfg.TodosLosAgentes(),
+		Lenguaje:       config.DetectLanguage(root),
+		EsVacio:        esVacio,
+		Pruebas:        cfg.Pruebas,
+		Constitucion:   constitucion,
+		Vedadas:        append(append([]string{}, zonas...), patrones...),
+		PruebasPropias: !examiner.Soportado(config.DetectLanguage(root)),
+		Agentes:        cfg.TodosLosAgentes(),
 	}
 	if esVacio && !aprobar && isTerminal(os.Stdin) {
 		ctx.Stack, ctx.Requisitos = pedirRequisitos(os.Stdin, esTUI())
@@ -300,6 +302,17 @@ func zonasYPatrones(cfg config.Config) (zonas, patrones []string) {
 	patrones = cfg.PatronesPrueba
 	if len(patrones) == 0 {
 		patrones = config.DefaultTestPatterns()
+	}
+	return zonas, patrones
+}
+
+// zonasYPatronesDe es zonasYPatrones ajustado al stack del repo: donde no
+// hay examinador ciego, las rutas de prueba no son zona vedada, porque
+// tiene que poder escribirlas quien implementa (ver patronesPrueba).
+func zonasYPatronesDe(cfg config.Config, root string) (zonas, patrones []string) {
+	zonas, patrones = zonasYPatrones(cfg)
+	if !examiner.Soportado(config.DetectLanguage(root)) {
+		return zonas, []string{} // vacío = ninguna vedada; nil = usa los del proyecto
 	}
 	return zonas, patrones
 }

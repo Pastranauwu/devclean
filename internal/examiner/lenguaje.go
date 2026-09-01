@@ -16,6 +16,17 @@ import (
 // el examen degrada en vez de frenar al implementador.
 const timeoutSintaxis = 15 * time.Second
 
+// Soportado reporta si devclean sabe generar y validar una suite ciega
+// para ese stack.
+//
+// Importa fuera de este paquete porque la adenda A.3 (el implementador
+// nunca toca las pruebas) solo tiene sentido si hay un examinador que las
+// escriba. Donde no lo hay — node, rust — prohibirle además al
+// implementador escribirlas deja la tarea sin nadie que la haga: el
+// planificador apunta el listo_cuando a un archivo de prueba, el
+// implementador no puede crearlo, y la tarea queda roja para siempre.
+func Soportado(lenguaje string) bool { return lenguajeExamen(lenguaje) != "" }
+
 // lenguajeExamen normaliza el lenguaje detectado al que el examinador
 // sabe examinar. Devuelve "" cuando no hay examinador para ese stack: sin
 // validador de sintaxis la suite generada es basura que rompe la
