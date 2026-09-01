@@ -38,8 +38,9 @@ type OpcionesEntrega struct {
 	// puede vetar. Es el único paso que juzga intención en vez de
 	// mecánica. Falla cerrado: lo que no se pudo revisar no se integra.
 	Revisor Revisor
-	// Integrar mergea el PR cuando el revisor aprueba. Sin él la entrega
-	// termina con el PR abierto, como siempre.
+	// Integrar mergea el PR cuando el revisor no pide cambios. Sin él la
+	// entrega termina con el PR abierto y el informe dentro: aprobar es
+	// del humano.
 	Integrar bool
 	DryRun   bool
 	Progreso func(Paso)
@@ -48,7 +49,9 @@ type OpcionesEntrega struct {
 // Revisor juzga si la entrega puede integrarse. La interfaz vive aquí,
 // del lado del consumidor, para no atar ship al paquete revisor.
 type Revisor interface {
-	Revisar(ctx context.Context, diff string, tareas []task.Task) (aprobado bool, resumen string, err error)
+	// Revisar devuelve si el revisor no encontró nada que corregir, el
+	// informe en markdown para el PR y una línea para la terminal.
+	Revisar(ctx context.Context, diff string, tareas []task.Task) (sinCambios bool, informe, resumen string, err error)
 }
 
 // Entrega es el desenlace de entregar varias tareas en un solo PR.
@@ -217,12 +220,23 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	apuntar(Paso{"pr", true, url})
 	e.PR, e.Aprobado = url, true
 
-	if o.Integrar {
-		if !integrarPR(ctx, o, path, target, url, ordenadas, apuntar) {
-			// el PR queda abierto con el motivo: no es un fallo de la
-			// entrega, es una integración que no se hizo
+	if o.Revisor != nil {
+		sinCambios, ok := revisarEntrega(ctx, o, path, target, url, ordenadas, apuntar)
+		if !ok || !sinCambios || !o.Integrar {
+			// el PR queda abierto con el informe dentro. Aprobar es del
+			// humano: el revisor informa, no decide.
 			return e
 		}
+	} else if !o.Integrar {
+		return e
+	}
+
+	if o.Integrar {
+		if err := mergearPR(ctx, o.Root, path, o.Base, url); err != nil {
+			apuntar(Paso{"integrar en " + o.Base, false, err.Error()})
+			return e
+		}
+		apuntar(Paso{"integrar en " + o.Base, true, "mergeado por rebase · un commit por tarea"})
 		e.Integrado = true
 	}
 
@@ -234,36 +248,31 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	return e
 }
 
-// integrarPR revisa el diff y, si el revisor aprueba, mergea el PR por
-// rebase. Devuelve si se integró; cuando no, el PR queda abierto con el
-// motivo anotado en los pasos y como comentario en el propio PR.
-func integrarPR(ctx context.Context, o OpcionesEntrega, path, target, url string, tareas []task.Task, apuntar func(Paso)) bool {
-	if o.Revisor != nil {
-		diff, err := gitRun(path, "diff", target+"..HEAD")
-		if err != nil {
-			apuntar(Paso{"revisión", false, "no se pudo leer el diff · " + tail(diff)})
-			return false
-		}
-		aprobado, resumen, err := o.Revisor.Revisar(ctx, diff, tareas)
-		if err != nil {
-			// falla cerrado: lo que no se pudo revisar no entra
-			apuntar(Paso{"revisión", false, err.Error() + " · el PR queda abierto"})
-			return false
-		}
-		_ = comentarPR(ctx, o.Root, url, resumen)
-		if !aprobado {
-			apuntar(Paso{"revisión", false, resumen + " · el PR queda abierto"})
-			return false
-		}
-		apuntar(Paso{"revisión", true, resumen})
+// revisarEntrega pide el informe del revisor y lo deja como comentario
+// en el PR. Devuelve si no pidió cambios, y si la revisión se pudo hacer.
+//
+// Falla cerrado: lo que no se pudo revisar no se da por revisado. El PR
+// queda abierto con el motivo, para que quien aprueba sepa que nadie
+// miró el diff.
+func revisarEntrega(ctx context.Context, o OpcionesEntrega, path, target, url string, tareas []task.Task, apuntar func(Paso)) (sinCambios, ok bool) {
+	diff, err := gitRun(path, "diff", target+"..HEAD")
+	if err != nil {
+		apuntar(Paso{"revisión", false, "no se pudo leer el diff · " + tail(diff)})
+		return false, false
 	}
-
-	if err := mergearPR(ctx, o.Root, path, o.Base, url); err != nil {
-		apuntar(Paso{"integrar en " + o.Base, false, err.Error()})
-		return false
+	sinCambios, informe, resumen, err := o.Revisor.Revisar(ctx, diff, tareas)
+	if err != nil {
+		apuntar(Paso{"revisión", false, err.Error() + " · el PR queda abierto sin revisar"})
+		return false, false
 	}
-	apuntar(Paso{"integrar en " + o.Base, true, "mergeado por rebase · un commit por tarea"})
-	return true
+	if err := comentarPR(ctx, o.Root, url, informe); err != nil {
+		// el informe es el producto de la revisión: si no llega al PR,
+		// quien aprueba no lo va a ver
+		apuntar(Paso{"revisión", false, "no se pudo publicar el informe en el PR · " + err.Error()})
+		return sinCambios, false
+	}
+	apuntar(Paso{"revisión", true, resumen})
+	return sinCambios, true
 }
 
 // baseDelta devuelve el commit desde el que empieza el trabajo propio de

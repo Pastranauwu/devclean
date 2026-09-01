@@ -17,56 +17,112 @@ type genFijo struct {
 func (g genFijo) Generar(context.Context, string) (string, error) { return g.texto, g.err }
 
 func tareas() []task.Task {
-	return []task.Task{{ID: "T-001", Titulo: "validar mac", ListoCuando: "go test ./...", Expone: []string{"wol.Parse(s string) error"}}}
+	return []task.Task{
+		{ID: "T-001", Titulo: "validar mac", ListoCuando: "go test ./...", Expone: []string{"wol.Parse(s string) error"}},
+		{ID: "T-002", Titulo: "empaquetar", ListoCuando: "docker build ."},
+	}
 }
 
-func TestRevisarApruebaYVeta(t *testing.T) {
-	v, err := Revisar(context.Background(), Opciones{
-		Generador: genFijo{texto: "```json\n{\"aprobado\": true, \"motivo\": \"hace lo que pide\"}\n```"},
-		Tareas:    tareas(), Diff: "+ algo",
-	})
-	if err != nil || !v.Aprobado {
-		t.Fatalf("v = %+v, err = %v", v, err)
-	}
+const informeOK = `{"tareas":[
+ {"id":"T-001","tipo":"feat","funciona":true,"descripcion":"parsea y valida una MAC"},
+ {"id":"T-002","tipo":"chore","funciona":true,"descripcion":"Dockerfile y compose"}
+]}`
 
-	v, err = Revisar(context.Background(), Opciones{
-		Generador: genFijo{texto: `{"aprobado": false, "motivo": "no valida la entrada", "hallazgos": ["wol.go:12 — acepta mac vacía"]}`},
+func TestRevisarInformaPorTarea(t *testing.T) {
+	v, err := Revisar(context.Background(), Opciones{
+		Generador: genFijo{texto: "```json\n" + informeOK + "\n```"},
 		Tareas:    tareas(), Diff: "+ algo",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.Aprobado || !strings.Contains(v.Resumen(), "wol.go:12") {
-		t.Errorf("v = %+v · el veto debe traer sus hallazgos", v)
+	if !v.Aprobado() || len(v.Tareas) != 2 {
+		t.Fatalf("v = %+v", v)
+	}
+	// el tipo sale del revisor, no de adivinar por el título: empaquetar
+	// es chore, no feat
+	if v.Tareas[1].Tipo != "chore" {
+		t.Errorf("tipo = %q, quiero chore", v.Tareas[1].Tipo)
 	}
 }
 
-// Falla cerrado: lo que no se puede revisar no se integra.
+func TestInformeListaTareasYCambios(t *testing.T) {
+	v, err := Revisar(context.Background(), Opciones{
+		Generador: genFijo{texto: `{"tareas":[
+ {"id":"T-001","tipo":"feat","funciona":false,"descripcion":"parsea una MAC","cambios":["wol.go:12 — acepta mac vacía"]},
+ {"id":"T-002","tipo":"chore","funciona":true,"descripcion":"Dockerfile"}
+],"notas":"las dos usan formatos de MAC distintos"}`},
+		Tareas: tareas(), Diff: "+ algo",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Aprobado() {
+		t.Error("con una tarea rota no puede estar aprobado")
+	}
+	inf := v.Informe()
+	for _, quiero := range []string{
+		"T-001", "`feat`", "**no**", "parsea una MAC", // la tabla
+		"wol.go:12", "qué cambiar", // qué corregir, con archivo:línea
+		"formatos de MAC distintos", // lo que solo se ve en el conjunto
+		"El revisor pide cambios",   // el pie, cuando hay algo que corregir
+	} {
+		if !strings.Contains(inf, quiero) {
+			t.Errorf("el informe no menciona %q", quiero)
+		}
+	}
+	// y con todo en orden, el pie recuerda de quién es la decisión
+	ok, _ := Revisar(context.Background(), Opciones{
+		Generador: genFijo{texto: informeOK}, Tareas: tareas(), Diff: "+x",
+	})
+	if !strings.Contains(ok.Informe(), "La aprobación es tuya") {
+		t.Error("el informe debe dejar claro que aprobar es del humano")
+	}
+	if !strings.Contains(v.Resumen(), "T-001") {
+		t.Errorf("resumen = %q", v.Resumen())
+	}
+}
+
+// Falla cerrado: lo que no se puede leer no se da por revisado, porque
+// quien aprueba lo haría a ciegas.
 func TestRevisarFallaCerrado(t *testing.T) {
 	casos := []struct {
 		nombre string
 		o      Opciones
 	}{
 		{"sin generador", Opciones{Tareas: tareas(), Diff: "+x"}},
-		{"sin diff", Opciones{Generador: genFijo{texto: "{}"}, Tareas: tareas()}},
+		{"sin diff", Opciones{Generador: genFijo{texto: informeOK}, Tareas: tareas()}},
 		{"el modelo falla", Opciones{Generador: genFijo{err: errors.New("503")}, Tareas: tareas(), Diff: "+x"}},
 		{"respuesta ilegible", Opciones{Generador: genFijo{texto: "pues no sé"}, Tareas: tareas(), Diff: "+x"}},
-		{"json inválido", Opciones{Generador: genFijo{texto: "{aprobado: si}"}, Tareas: tareas(), Diff: "+x"}},
-		{"veta sin motivo", Opciones{Generador: genFijo{texto: `{"aprobado": false}`}, Tareas: tareas(), Diff: "+x"}},
-		{"diff enorme", Opciones{Generador: genFijo{texto: `{"aprobado": true}`}, Tareas: tareas(), Diff: strings.Repeat("x", MaxDiff+1)}},
+		{"json inválido", Opciones{Generador: genFijo{texto: "{tareas: si}"}, Tareas: tareas(), Diff: "+x"}},
+		{"sin tareas", Opciones{Generador: genFijo{texto: `{"tareas":[]}`}, Tareas: tareas(), Diff: "+x"}},
+		{"diff enorme", Opciones{Generador: genFijo{texto: informeOK}, Tareas: tareas(), Diff: strings.Repeat("x", MaxDiff+1)}},
+		{"tipo inventado", Opciones{Generador: genFijo{
+			texto: `{"tareas":[{"id":"T-001","tipo":"mejora","funciona":true,"descripcion":"x"},{"id":"T-002","tipo":"chore","funciona":true,"descripcion":"y"}]}`},
+			Tareas: tareas(), Diff: "+x"}},
+		{"sin descripción", Opciones{Generador: genFijo{
+			texto: `{"tareas":[{"id":"T-001","tipo":"feat","funciona":true,"descripcion":""},{"id":"T-002","tipo":"chore","funciona":true,"descripcion":"y"}]}`},
+			Tareas: tareas(), Diff: "+x"}},
+		{"rota sin decir qué cambiar", Opciones{Generador: genFijo{
+			texto: `{"tareas":[{"id":"T-001","tipo":"feat","funciona":false,"descripcion":"x"},{"id":"T-002","tipo":"chore","funciona":true,"descripcion":"y"}]}`},
+			Tareas: tareas(), Diff: "+x"}},
+		{"se salta una tarea", Opciones{Generador: genFijo{
+			texto: `{"tareas":[{"id":"T-001","tipo":"feat","funciona":true,"descripcion":"x"}]}`},
+			Tareas: tareas(), Diff: "+x"}},
 	}
 	for _, c := range casos {
-		if v, err := Revisar(context.Background(), c.o); err == nil || v.Aprobado {
-			t.Errorf("%s: v = %+v, err = %v · debe fallar sin aprobar", c.nombre, v, err)
+		if v, err := Revisar(context.Background(), c.o); err == nil || v.Aprobado() {
+			t.Errorf("%s: v = %+v, err = %v · debe fallar sin darse por revisado", c.nombre, v, err)
 		}
 	}
 }
 
-// El prompt tiene que decirle qué juzga y qué no: si veta por estilo,
-// ninguna entrega se integra nunca.
-func TestPromptAcotaElVeto(t *testing.T) {
+// El prompt tiene que decirle qué juzga y qué no: si marca como rota
+// cualquier cosa por estilo, nunca se aprueba nada.
+func TestPromptAcotaElJuicio(t *testing.T) {
 	p := Prompt(tareas(), "+ codigo")
-	for _, quiero := range []string{"T-001", "validar mac", "wol.Parse", "+ codigo", "NO vetes por estilo", "aprobado"} {
+	for _, quiero := range []string{"T-001", "validar mac", "wol.Parse", "+ codigo",
+		"NO marques funciona:false por estilo", "chore", "descripcion", "cambios"} {
 		if !strings.Contains(p, quiero) {
 			t.Errorf("el prompt no menciona %q", quiero)
 		}

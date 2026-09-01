@@ -336,58 +336,57 @@ func TestEntregarTodasReconoceRamaYaAplanada(t *testing.T) {
 // revisorFijo responde siempre lo mismo, para probar las dos ramas del
 // paso de integración sin hablar con un modelo.
 type revisorFijo struct {
-	aprobado bool
-	resumen  string
-	err      error
+	sinCambios bool
+	informe    string
+	resumen    string
+	err        error
 }
 
-func (r revisorFijo) Revisar(context.Context, string, []task.Task) (bool, string, error) {
-	return r.aprobado, r.resumen, r.err
+func (r revisorFijo) Revisar(context.Context, string, []task.Task) (bool, string, string, error) {
+	return r.sinCambios, r.informe, r.resumen, r.err
 }
 
-// Un veto del revisor deja el PR abierto: la entrega en sí fue correcta,
-// lo que no se hizo es meterla en la rama principal. Se prueba sobre
-// integrarPR directamente porque en --dry-run la entrega ni llega ahí.
-func TestIntegrarPRNoMergeaSiElRevisorVeta(t *testing.T) {
+// El revisor informa, no decide: cuando pide cambios, el PR se queda
+// abierto con el informe dentro y el merge no se intenta. Se prueba sobre
+// revisarEntrega porque en --dry-run la entrega ni llega ahí.
+func TestRevisarEntregaReportaCambios(t *testing.T) {
 	root := repoConCommit(t)
 	sinIdentidadGit(t, root)
 
 	var pasos []Paso
-	ok := integrarPR(context.Background(),
-		OpcionesEntrega{Root: root, Base: "main", Revisor: revisorFijo{aprobado: false, resumen: "no valida la entrada"}},
+	sinCambios, ok := revisarEntrega(context.Background(),
+		OpcionesEntrega{Root: root, Base: "main",
+			Revisor: revisorFijo{sinCambios: false, informe: "## Revisión", resumen: "1 de 1 tareas necesitan cambios: T-001"}},
 		root, "main", "http://pr/1", nil, func(p Paso) { pasos = append(pasos, p) })
 
-	if ok {
-		t.Error("un veto no debe integrarse")
+	if sinCambios {
+		t.Error("el revisor pidió cambios · no puede reportar lo contrario")
 	}
-	// un solo paso: frena en la revisión y ni intenta el merge. Con un
-	// revisor que aprueba habría un segundo paso "integrar en main".
-	if len(pasos) != 1 || pasos[0].Nombre != "revisión" || pasos[0].OK {
-		t.Fatalf("pasos = %+v · debe frenar en la revisión, antes del merge", pasos)
-	}
-	if !strings.Contains(pasos[0].Detalle, "no valida la entrada") {
-		t.Errorf("detalle = %q · debe llevar el motivo del veto", pasos[0].Detalle)
+	_ = ok // sin remoto, publicar el comentario falla; lo que importa es el veredicto
+	if len(pasos) != 1 {
+		t.Fatalf("pasos = %+v", pasos)
 	}
 }
 
-// Lo que no se pudo revisar tampoco se integra: falla cerrado.
-func TestIntegrarPRFallaCerrado(t *testing.T) {
+// Lo que no se pudo revisar no se da por revisado: falla cerrado, y el
+// paso dice que nadie miró el diff.
+func TestRevisarEntregaFallaCerrado(t *testing.T) {
 	root := repoConCommit(t)
 	sinIdentidadGit(t, root)
 
 	var pasos []Paso
-	ok := integrarPR(context.Background(),
+	sinCambios, ok := revisarEntrega(context.Background(),
 		OpcionesEntrega{Root: root, Base: "main", Revisor: revisorFijo{err: errors.New("el revisor no respondió")}},
 		root, "main", "http://pr/1", nil, func(p Paso) { pasos = append(pasos, p) })
 
-	if ok {
-		t.Error("una revisión fallida no debe integrarse")
+	if sinCambios || ok {
+		t.Error("una revisión fallida no puede darse por buena")
 	}
 	if len(pasos) != 1 || pasos[0].OK {
 		t.Fatalf("pasos = %+v", pasos)
 	}
-	if !strings.Contains(pasos[0].Detalle, "el PR queda abierto") {
-		t.Errorf("detalle = %q · debe decir que el PR sigue ahí", pasos[0].Detalle)
+	if !strings.Contains(pasos[0].Detalle, "sin revisar") {
+		t.Errorf("detalle = %q · debe decir que nadie miró el diff", pasos[0].Detalle)
 	}
 }
 
