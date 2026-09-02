@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -26,8 +26,25 @@ jobs:
       - name: test
         run: go test ./...
 
+      # si la release ya existe (p. ej. un run local de goreleaser la
+      # publicó antes que el CI), re-publicar choca con 422 already_exists
+      # en los assets y el workflow queda rojo de mentira. Se salta el
+      # paso y el run termina verde: el release ya está. Para republicalo
+      # hay que borrar el release y re-correr.
+      - name: ¿release ya existe?
+        id: existe
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "ya_existe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ya_existe=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: goreleaser
-        uses: goreleaser/goreleaser-action@v6
+        if: steps.existe.outputs.ya_existe != 'true'
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: "~> v2"
