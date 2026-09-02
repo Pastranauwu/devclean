@@ -83,8 +83,14 @@ func (c *Contador) Limite() int {
 	return c.limite
 }
 
-// Agotado reporta si no queda margen.
-func (c *Contador) Agotado() bool { return c.Restante() <= 0 }
+// Agotado reporta si no queda margen. Sin tope configurado (limite <= 0)
+// nunca está agotado: correr sin presupuesto es el default, no un corte.
+func (c *Contador) Agotado() bool {
+	if c == nil || c.limite <= 0 {
+		return false
+	}
+	return c.Restante() <= 0
+}
 
 // GastoEnDisco suma los tokens de todos los attempts.jsonl del proyecto,
 // de tareas raíz y de subtareas de la recursión por igual — los archivos

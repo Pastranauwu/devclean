@@ -838,10 +838,14 @@ debate con dos detectores deterministas que cuestan cero tokens.
 
 ## Estado
 
-**v0.6.5.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
+**v0.6.6.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
 + skills reales, recursividad y fiabilidad de `ship` (v0.5) + de una petición
 a un PR limpio (v0.6), todo en `main` con pruebas verdes.
 
+- **v0.6.6: fix crítico de arranque.** `devclean run` cortaba TODA tarea
+  con "presupuesto de tokens agotado" apenas arrancaba, incluso sin
+  `presupuesto_tokens` configurado: `Agotado()` trataba el presupuesto 0
+  (sin tope) como un tope ya quemado. Ahora sin tope nunca está agotado.
 - **v0.6.5: la orquestación deja de ser frágil y se vuelve
    barata a escala.** Las subtareas de una tarea recursiva corren **en
   paralelo** (`subagentes`) y cada hoja usa el modelo de su peso — las

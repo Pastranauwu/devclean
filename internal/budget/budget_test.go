@@ -37,6 +37,27 @@ func TestContadorSinTopeNoRechaza(t *testing.T) {
 	if c.Limite() != 0 {
 		t.Errorf("Limite = %d, quiero 0", c.Limite())
 	}
+	// sin tope nunca está agotado: Agotado() true con presupuesto 0
+	// cortaba todas las tareas con "presupuesto agotado" apenas arrancaba
+	if c.Agotado() {
+		t.Fatal("sin tope no puede estar agotado")
+	}
+	if c.Restante() != 0 {
+		t.Errorf("Restante = %d, quiero 0 (no hay tope que medir)", c.Restante())
+	}
+}
+
+func TestAgotadoConTope(t *testing.T) {
+	c := Nuevo(10)
+	if c.Agotado() {
+		t.Fatal("recién creado no puede estar agotado")
+	}
+	if !c.Gastar(10) {
+		t.Fatal("gastar 10 de 10 debía caber")
+	}
+	if !c.Agotado() {
+		t.Fatal("en el tope exacto ya está agotado")
+	}
 }
 
 func TestGastoEnDiscoSumaIntentos(t *testing.T) {
