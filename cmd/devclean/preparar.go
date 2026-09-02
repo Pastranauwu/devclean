@@ -94,12 +94,19 @@ func prepararEntorno(cwd string, in io.Reader, entregar bool) (string, config.Co
 	}
 	guardar := false
 
-	// 3. rama base
-	if cfg.Base == "" {
+	// 3. rama base: vacía o apuntando a una rama que no existe. Un
+	// `base: master` heredado en un repo cuya rama es `main` detenía
+	// las cuatro tareas de la corrida sin arreglo posible desde el CLI.
+	if cfg.Base == "" || (tieneCommits(root) && !ramaExiste(root, cfg.Base)) {
+		anterior := cfg.Base
 		if cfg.Base = config.DetectBaseBranch(root); cfg.Base == "" {
 			cfg.Base = "main"
 		}
-		out.Line("· rama base: %s", cfg.Base)
+		if anterior != "" && anterior != cfg.Base {
+			out.Line("· la rama base %s no existe · se usa %s", anterior, cfg.Base)
+		} else {
+			out.Line("· rama base: %s", cfg.Base)
+		}
 		guardar = true
 	}
 
@@ -126,7 +133,10 @@ func prepararEntorno(cwd string, in io.Reader, entregar bool) (string, config.Co
 	if cfg.Cli != ex.Name() {
 		cfg.Cli, guardar = ex.Name(), true
 	}
-	if key := keyDe(cfg, ex.Name()); key != "" && os.Getenv(key) == "" {
+	// claude se usa casi siempre con la sesión de la suscripción, sin
+	// key en el entorno: avisar de eso como si fuera un problema asusta
+	// sin motivo. Solo se menciona cuando el CLI de verdad la necesita.
+	if key := keyDe(cfg, ex.Name()); key != "" && os.Getenv(key) == "" && ex.Name() != "claude" {
 		out.Line("· sin %s en el entorno · si %s no está logueado, la corrida va a fallar", key, ex.Name())
 	}
 
@@ -289,6 +299,16 @@ func preguntar(lector *bufio.Reader, msg string) string {
 func aprobar(lector *bufio.Reader, msg string) bool {
 	r := strings.ToLower(preguntar(lector, msg))
 	return r == "s" || r == "si" || r == "sí" || r == "y"
+}
+
+func tieneCommits(root string) bool {
+	_, err := gitEn(root, "rev-parse", "--verify", "--quiet", "HEAD")
+	return err == nil
+}
+
+func ramaExiste(root, rama string) bool {
+	_, err := gitEn(root, "rev-parse", "--verify", "--quiet", rama+"^{commit}")
+	return err == nil
 }
 
 func gitEn(dir string, args ...string) (string, error) {

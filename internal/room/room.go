@@ -45,6 +45,21 @@ func RamaExiste(ctx context.Context, root, id string) bool {
 	return err == nil
 }
 
+// VerificarBase comprueba que la rama base sirva para crear cuartos y
+// distingue los dos motivos por los que no: un repo sin commits se
+// arregla con un commit inicial, pero una base que no existe (un
+// `base: master` heredado en un repo cuya rama es `main`) no — y ese
+// consejo equivocado dejaba la corrida entera detenida sin salida.
+func VerificarBase(ctx context.Context, root, base string) error {
+	if _, err := git(ctx, root, "rev-parse", "--verify", "--quiet", base+"^{commit}"); err == nil {
+		return nil
+	}
+	if _, err := git(ctx, root, "rev-parse", "--verify", "--quiet", "HEAD"); err == nil {
+		return fmt.Errorf("la rama base %s no existe en este repo · corrige `base:` en .devclean/config.yml", base)
+	}
+	return fmt.Errorf("no hay commits en %s · haz un commit inicial y reintenta", base)
+}
+
 // IntegrationBranch es la rama temporal donde se encadenan las oleadas:
 // el trabajo verde de una oleada se mergea aquí y la siguiente oleada
 // crea sus cuartos desde esta rama (Fase 2).
@@ -57,8 +72,8 @@ func ResetIntegration(ctx context.Context, root, base string) error {
 	if base == "" {
 		base = "HEAD"
 	}
-	if _, err := git(ctx, root, "rev-parse", "--verify", "--quiet", base+"^{commit}"); err != nil {
-		return fmt.Errorf("no hay commits en %s · haz un commit inicial y reintenta", base)
+	if err := VerificarBase(ctx, root, base); err != nil {
+		return err
 	}
 	path := filepath.Join(Dir(root), "_integra")
 	if out, err := git(ctx, root, "worktree", "add", path, "-b", IntegrationBranch, base); err != nil {
@@ -106,8 +121,8 @@ func Create(ctx context.Context, root, id, base string) (Room, error) {
 		base = "HEAD"
 	}
 	// verificar la base antes: el mensaje de git varía con el idioma
-	if _, err := git(ctx, root, "rev-parse", "--verify", "--quiet", base+"^{commit}"); err != nil {
-		return Room{}, fmt.Errorf("no hay commits en %s · haz un commit inicial y reintenta", base)
+	if err := VerificarBase(ctx, root, base); err != nil {
+		return Room{}, err
 	}
 	if out, err := git(ctx, root, "worktree", "add", r.Path, "-b", r.Rama, base); err != nil {
 		return Room{}, fmt.Errorf("no se pudo crear el cuarto %s · %s", id, strings.TrimSpace(out))

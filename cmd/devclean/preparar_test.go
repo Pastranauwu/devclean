@@ -63,6 +63,46 @@ func TestPrepararEntornoDesdeCero(t *testing.T) {
 	}
 }
 
+// una config que apunta a una rama que no existe (base: master en un
+// repo con main) detenía la corrida entera sin arreglo desde el CLI.
+func TestPrepararEntornoCorrigeBaseInexistente(t *testing.T) {
+	if _, err := elegirEjecutor(""); err != nil {
+		t.Skip("sin ejecutor instalado")
+	}
+	root := repoTemporal(t)
+	out = ui.New(io.Discard, false)
+	t.Setenv("HOME", t.TempDir())
+	os.WriteFile(filepath.Join(root, "a.txt"), []byte("x\n"), 0o644)
+	if _, err := gitEn(root, "add", "-A"); err != nil {
+		t.Fatal(err)
+	}
+	if salida, err := gitEn(root, "commit", "-q", "-m", "first"); err != nil {
+		t.Fatalf("commit: %v · %s", err, salida)
+	}
+	rama, _ := gitEn(root, "rev-parse", "--abbrev-ref", "HEAD")
+	rama = strings.TrimSpace(rama)
+
+	if err := runInit(root, "go test ./...", "", "", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := config.Load(root)
+	cfg.Base = "no-existe-esta-rama"
+	if err := cfg.Save(root); err != nil {
+		t.Fatal(err)
+	}
+
+	_, cfg, err := prepararEntorno(root, nil, false)
+	if err != nil {
+		t.Fatalf("prepararEntorno: %v", err)
+	}
+	if cfg.Base != rama {
+		t.Errorf("Base = %q, quiere la rama real %q", cfg.Base, rama)
+	}
+	if guardada, _ := config.Load(root); guardada.Base != rama {
+		t.Errorf("no persistió la corrección: %q", guardada.Base)
+	}
+}
+
 func TestCommitInicialPreguntaSiHayArchivosAjenos(t *testing.T) {
 	root := repoTemporal(t)
 	out = ui.New(io.Discard, false)
