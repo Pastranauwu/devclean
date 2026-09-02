@@ -37,6 +37,28 @@ type Agent interface {
 	Run(ctx context.Context, req Request) (Result, error)
 }
 
+// ErrDetener es un error que el agente devuelve cuando agotó sus propios
+// caminos y reintentar no cambiaría nada. Lo produce la recursión
+// (internal/recurse) cuando una subtarea quedó roja tras escalar de
+// modelo y consultar al orquestador: hacer que el bucle del padre repita
+// la descomposición entera quemaría los intentos restantes contra la
+// misma pared. El bucle lo trata como detenida inmediata, sin correr
+// listo_cuando ni gastar un intento más.
+type ErrDetener struct{ Motivo string }
+
+func (e *ErrDetener) Error() string { return e.Motivo }
+
+// MotivoPresupuesto es el motivo con que se detiene una tarea cuando la
+// corrida quemó su tope de tokens (`presupuesto_tokens` en config.yml).
+// Es una constante para que la recursión y la interfaz lo reconozcan.
+const MotivoPresupuesto = "presupuesto de tokens agotado · sube presupuesto_tokens en config.yml o dejalo en 0 para correr sin tope"
+
+// MotivoVentanas es el motivo con que se detiene una tarea cuando su
+// gasto pasaría un tope de una ventana rodante (5h/semanal/mensual) del
+// proveedor (`presupuesto:` en config.yml). El ledger es global de la
+// cuenta, así que vale entre proyectos.
+const MotivoVentanas = "ventana de presupuesto agotada · revisá devclean usage · subí el tope en el bloque presupuesto: de config.yml"
+
 // Examinador genera la suite de pruebas ciega antes de que el
 // implementador empiece (§6.8). La interfaz vive en loop para evitar
 // un ciclo de importación con el paquete examiner.
@@ -105,6 +127,22 @@ type Options struct {
 	// implementador para escribir la suite visible y sellar la oculta
 	// (§6.8). Si falla, el bucle continúa sin pruebas ciegas.
 	Examinador Examinador
+
+	// Presupuesto, si no es nil, recibe el gasto de cada intento. Devuelve
+	// false cuando la corrida ya quemó su tope: el bucle se detiene con el
+	// motivo en vez de gastar el intento siguiente. Solo los bucles hoja
+	// lo reciben — el padre recursivo ya lo ve por sus subtareas y no
+	// cuenta doble el agregado.
+	Presupuesto interface{ Gastar(int) bool }
+
+	// Proveedor es el proveedor del ejecutor (opencode | claude), para
+	// atribuir el gasto al ledger de ventanas.
+	Proveedor string
+	// Ventanas registra el gasto de cada intento en el ledger de ventanas
+	// rodantes (internal/ventanas), verde o rojo por igual. Devuelve false
+	// cuando ese gasto pasaría un tope configurado para el proveedor: el
+	// bucle se detiene con el motivo. Solo los bucles hoja lo reciben.
+	Ventanas interface{ Registrar(string, int) bool }
 }
 
 // Outcome es el resultado de correr el bucle sobre una tarea.
@@ -193,6 +231,11 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		res, agentErr := o.Agent.Run(ctx, req)
 		logRel := guardarLog(o.Root, o.Task.ID, intento, req.Prompt, res, agentErr)
 
+		// la recursión agotó sus caminos: no hay que correr listo_cuando
+		// ni gastar los intentos restantes, se detiene con su motivo
+		var detener *ErrDetener
+		errors.As(agentErr, &detener)
+
 		revertidos, err := revertFueraDeAlcance(o.Room.Path, o.Task.TocarSolo, o.PatronesPrueba)
 		if err != nil {
 			return Outcome{}, err
@@ -222,7 +265,11 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		}
 
 		avisar(intento, FaseVerificando)
-		salida, code := runPrueba(ctx, o.Room.Path, o.Task.ListoCuando, o.PruebaTimeout)
+		var salida string
+		var code *int
+		if detener == nil {
+			salida, code = runPrueba(ctx, o.Room.Path, o.Task.ListoCuando, o.PruebaTimeout)
+		}
 		pasaron, fallaron := ParseTestCounts(salida)
 		fin := time.Now().UTC()
 
@@ -261,6 +308,33 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		}
 		if err := s.Append(a); err != nil {
 			return Outcome{}, err
+		}
+
+		// el gasto de este intento ya ocurrió: se registra (verde o rojo)
+		// y, si deja un tope al límite o lo pasa, el intento siguiente no
+		// se gasta. Un intento verde siempre gana sobre el corte: el
+		// trabajo está hecho, no se descarta por haber pasado el tope.
+		n := res.Tokens.Entrada + res.Tokens.Salida
+		if o.Ventanas != nil && o.Proveedor != "" {
+			if !o.Ventanas.Registrar(o.Proveedor, n) {
+				if code != nil && *code == 0 {
+					return Outcome{Verde: true, Intentos: intento}, nil
+				}
+				return Outcome{Verde: false, Intentos: intento, UltimoError: MotivoVentanas, Pregunta: MotivoVentanas}, nil
+			}
+		}
+		if o.Presupuesto != nil && !o.Presupuesto.Gastar(n) {
+			if code != nil && *code == 0 {
+				return Outcome{Verde: true, Intentos: intento}, nil
+			}
+			return Outcome{Verde: false, Intentos: intento, UltimoError: MotivoPresupuesto, Pregunta: MotivoPresupuesto}, nil
+		}
+
+		// la recursión dijo "no hay más camino": detenerse es el
+		// resultado, no un fallo del mecanismo (mismo criterio que
+		// agotar intentos), pero con el motivo exacto de la hoja roja
+		if detener != nil {
+			return Outcome{Verde: false, Intentos: intento, UltimoError: detener.Motivo, Pregunta: detener.Motivo}, nil
 		}
 
 		if code != nil && *code == 0 {

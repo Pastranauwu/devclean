@@ -221,3 +221,117 @@ func TestPromptIncluyeContenidoDeSkills(t *testing.T) {
 		t.Errorf("prompt sin el contenido de la skill:\n%s", p)
 	}
 }
+
+// contadorPrueba es el mínimo que loop pide al presupuesto: Gastar.
+type contadorPrueba struct {
+	limite, usado int
+}
+
+func (c *contadorPrueba) Gastar(n int) bool {
+	if c.limite <= 0 {
+		return true
+	}
+	if c.usado+n > c.limite {
+		return false
+	}
+	c.usado += n
+	return true
+}
+
+// ventanasPrueba simula el ledger: registra el gasto y, si rechaza, el
+// bucle debe cortar con el motivo de ventana.
+type ventanasPrueba struct {
+	registrado int
+	rechaza    bool
+}
+
+func (v *ventanasPrueba) Registrar(_ string, n int) bool {
+	v.registrado += n
+	return !v.rechaza
+}
+
+func TestRunCortaPorVentana(t *testing.T) {
+	root := repoConCommit(t)
+	ag := &agenteFalso{nombre: "claude", tokens: Tokens{Entrada: 10, Salida: 5}}
+	tk := tareaDePrueba()
+	tk.ListoCuando = "false"
+	tk.LimiteIntentos = 3
+
+	o := optsDePrueba(t, root, ag, tk)
+	o.Proveedor = "claude"
+	v := &ventanasPrueba{rechaza: true}
+	o.Ventanas = v
+
+	outcome, err := Run(context.Background(), o)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if outcome.Verde {
+		t.Fatal("una tarea roja no puede quedar verde")
+	}
+	if !strings.Contains(outcome.Pregunta, MotivoVentanas) {
+		t.Errorf("Pregunta = %q, quiero el motivo de ventana", outcome.Pregunta)
+	}
+	if v.registrado != 15 {
+		t.Errorf("el ledger registró %d, quiero 15 (el primer intento)", v.registrado)
+	}
+	if outcome.Intentos != 1 {
+		t.Errorf("Intentos = %d, quiero 1 (se cortó al primer rechazo)", outcome.Intentos)
+	}
+}
+
+func TestRunRegistraVentanasTambienCuandoEsVerde(t *testing.T) {
+	root := repoConCommit(t)
+	ag := &agenteFalso{nombre: "opencode", tokens: Tokens{Entrada: 10, Salida: 5}}
+	ag.hacer = func(veces int, req Request) (string, int, error) {
+		escribir(t, req.RoomPath, "src/done.txt", "x\n")
+		return "", 0, nil
+	}
+
+	o := optsDePrueba(t, root, ag, tareaDePrueba())
+	o.Proveedor = "opencode"
+	v := &ventanasPrueba{}
+	o.Ventanas = v
+
+	outcome, err := Run(context.Background(), o)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !outcome.Verde {
+		t.Fatalf("Outcome = %+v, quiero verde", outcome)
+	}
+	if v.registrado != 15 {
+		t.Errorf("el ledger registró %d, quiero 15 aunque fuera verde", v.registrado)
+	}
+}
+
+func TestRunCortaPorPresupuesto(t *testing.T) {
+	root := repoConCommit(t)
+	ag := &agenteFalso{nombre: "falso", tokens: Tokens{Entrada: 10, Salida: 5}}
+	tk := tareaDePrueba()
+	tk.ListoCuando = "false"
+	tk.LimiteIntentos = 3
+
+	o := optsDePrueba(t, root, ag, tk)
+	o.Presupuesto = &contadorPrueba{limite: 20}
+
+	outcome, err := Run(context.Background(), o)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if outcome.Verde {
+		t.Fatal("una tarea roja no puede quedar verde")
+	}
+	if !strings.Contains(outcome.Pregunta, MotivoPresupuesto) {
+		t.Errorf("Pregunta = %q, quiero el motivo de presupuesto", outcome.Pregunta)
+	}
+	// cada intento gasta 15; con tope 20 el segundo ya no cabe y se corta
+	// en lugar de quemar los tres intentos
+	if outcome.Intentos != 2 {
+		t.Errorf("Intentos = %d, quiero 2 (el segundo pasó el tope)", outcome.Intentos)
+	}
+	attempts, _ := ReadAttempts(root, "T-001")
+	if len(attempts) != 2 {
+		t.Errorf("attempts = %d, quiero 2 (se cortó antes de quemar el tercero)", len(attempts))
+	}
+}

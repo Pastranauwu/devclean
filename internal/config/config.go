@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Pastranauwu/devclean/internal/kv"
@@ -43,12 +44,30 @@ type Config struct {
 	// 0 (default) = desactivada, una tarea `recursivo: true` corre plana.
 	// Cada nivel abre cuartos anidados dentro del cuarto actual — subirlo
 	// multiplica el gasto de tokens, así que el default es apagado.
-	RecursionMax   int                  `json:"recursion_max,omitempty"`
-	PatronesPrueba []string             `json:"patrones_prueba"` // rutas que ninguna tarea puede editar
-	Proveedores    map[string]Proveedor `json:"proveedores,omitempty"`
-	Agentes        map[string]Agente    `json:"agentes,omitempty"`
-	Estrategia     string               `json:"estrategia,omitempty"` // ligera | equilibrada | pesada
-	Modelos        map[string]string    `json:"modelos,omitempty"`    // peso -> modelo (liviana/media/pesada)
+	RecursionMax int `json:"recursion_max,omitempty"`
+	// Subagentes es cuántas subtareas de una misma tarea recursiva
+	// corren en paralelo dentro de su cuarto padre. 1 = serial. Sin esto,
+	// la recursión ejecutaba una hoja a la vez: para "muchos chicos a la
+	// vez" las hojas independientes necesitan un tope propio, distinto de
+	// --agentes (que limita tareas raíz en paralelo).
+	Subagentes int `json:"subagentes,omitempty"`
+	// PresupuestoTokens es el tope de gasto de una corrida completa
+	// (suma de entrada+salida de todos los intentos, incluidas las
+	// subtareas de la recursión). 0 = sin tope. Al pasarlo, la corrida se
+	// corta con un motivo legible; board/run muestran cuánto va y cuánto
+	// queda.
+	PresupuestoTokens int `json:"presupuesto_tokens,omitempty"`
+	// PresupuestoVentanas es el bloque `presupuesto:`: por proveedor, por
+	// ventana rodante (5h/semanal/mensual), cuántos tokens puede quemar
+	// devclean. El ledger de internal/ventanas lo hace cumplir y lo
+	// muestra en barras; protege las ventanas reales de la cuenta sin
+	// depender de que el proveedor las exponga.
+	PresupuestoVentanas map[string]map[string]int `json:"presupuesto_ventanas,omitempty"`
+	PatronesPrueba      []string                  `json:"patrones_prueba"` // rutas que ninguna tarea puede editar
+	Proveedores         map[string]Proveedor      `json:"proveedores,omitempty"`
+	Agentes             map[string]Agente         `json:"agentes,omitempty"`
+	Estrategia          string                    `json:"estrategia,omitempty"` // ligera | equilibrada | pesada
+	Modelos             map[string]string         `json:"modelos,omitempty"`    // peso -> modelo (liviana/media/pesada)
 	// ReglasImport declara la dirección permitida entre módulos (§6.10):
 	// cada string es una cadena como "api → dominio → datos". Se verifica
 	// en la esclusa de salida que ningún import del diff viole el orden.
@@ -193,6 +212,12 @@ func (c Config) Save(root string) error {
 	if c.RecursionMax > 0 {
 		fmt.Fprintf(&b, "recursion_max: %d\n", c.RecursionMax)
 	}
+	if c.Subagentes > 0 {
+		fmt.Fprintf(&b, "subagentes: %d\n", c.Subagentes)
+	}
+	if c.PresupuestoTokens > 0 {
+		fmt.Fprintf(&b, "presupuesto_tokens: %d\n", c.PresupuestoTokens)
+	}
 	if len(c.Proveedores) > 0 {
 		fmt.Fprintf(&b, "proveedores:\n")
 		for _, rol := range sortedRoles(c.Proveedores) {
@@ -235,7 +260,36 @@ func (c Config) Save(root string) error {
 			fmt.Fprintf(&b, "  %s: %s\n", peso, kv.Quote(c.Modelos[peso]))
 		}
 	}
+	if len(c.PresupuestoVentanas) > 0 {
+		fmt.Fprintf(&b, "presupuesto:\n")
+		for _, proveedor := range sortedPresupuestoKeys(c.PresupuestoVentanas) {
+			var partes []string
+			for _, ventana := range []string{"5h", "semanal", "mensual"} {
+				if n := c.PresupuestoVentanas[proveedor][ventana]; n > 0 {
+					partes = append(partes, ventana+": "+strconv.Itoa(n))
+				}
+			}
+			if len(partes) > 0 {
+				fmt.Fprintf(&b, "  %s: { %s }\n", proveedor, strings.Join(partes, ", "))
+			}
+		}
+	}
 	return os.WriteFile(Path(root), []byte(b.String()), 0o644)
+}
+
+// KeyEnvDe devuelve la variable de entorno donde vive la key de un
+// proveedor (claude, opencode, o un rol), buscando primero en agentes y
+// luego en proveedores. Vacío si no está declarada.
+func (c Config) KeyEnvDe(nombre string) string {
+	if a, ok := c.Agentes[nombre]; ok && a.KeyEnv != "" {
+		return a.KeyEnv
+	}
+	if c.Proveedores != nil {
+		if p, ok := c.Proveedores[nombre]; ok {
+			return p.KeyEnv
+		}
+	}
+	return ""
 }
 
 // sortedStringKeys devuelve las claves de un mapa en orden estable.
@@ -257,6 +311,17 @@ func sortedRoles(m map[string]Proveedor) []string {
 	}
 	sort.Strings(roles)
 	return roles
+}
+
+// sortedPresupuestoKeys devuelve los proveedores del bloque presupuesto
+// en orden estable.
+func sortedPresupuestoKeys(m map[string]map[string]int) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // sortedAgentNames devuelve los nombres de agentes en orden estable para Save.
@@ -303,6 +368,44 @@ func (c Config) ModeloPeso(peso string) string {
 		return ""
 	}
 	return c.Modelos[peso]
+}
+
+// ModeloPara devuelve el modelo de un peso de tarea, cayendo al peso por
+// defecto de la estrategia si el peso pedido no está mapeado, y "" si no
+// hay nada declarado (el CLI decide entonces).
+func (c Config) ModeloPara(peso string) string {
+	if peso == "" {
+		peso = c.PesoPorDefecto()
+	}
+	if m := c.ModeloPeso(peso); m != "" {
+		return m
+	}
+	return c.ModeloPeso(c.PesoPorDefecto())
+}
+
+// ModeloEscalado devuelve el modelo del peso siguiente al dado
+// (liviana→media→pesada), o "" si no hay, si es el mismo que `actual` o
+// si no está mapeado. Es el paso del fallback: el barato falló con
+// trabajo, se sube un escalón sin tocar el contrato.
+func (c Config) ModeloEscalado(peso, actual string) string {
+	if peso == "" {
+		peso = c.PesoPorDefecto()
+	}
+	siguiente := ""
+	for i, p := range Pesos {
+		if p == peso && i+1 < len(Pesos) {
+			siguiente = Pesos[i+1]
+			break
+		}
+	}
+	if siguiente == "" {
+		return ""
+	}
+	m := c.ModeloPeso(siguiente)
+	if m == "" || m == actual {
+		return ""
+	}
+	return m
 }
 
 // Parse reads the config yaml subset. Unknown keys are ignored.
@@ -356,6 +459,18 @@ func Parse(data []byte) (Config, error) {
 				return cfg, fmt.Errorf("config.yml: línea %d · recursion_max inválido: %s · entero, mínimo 0", p.Line, p.Value)
 			}
 			cfg.RecursionMax = n
+		case "subagentes":
+			n, err := kv.ParseInt(p.Value)
+			if err != nil || n < 1 {
+				return cfg, fmt.Errorf("config.yml: línea %d · subagentes inválido: %s · entero, mínimo 1", p.Line, p.Value)
+			}
+			cfg.Subagentes = n
+		case "presupuesto_tokens":
+			n, err := kv.ParseInt(p.Value)
+			if err != nil || n < 0 {
+				return cfg, fmt.Errorf("config.yml: línea %d · presupuesto_tokens inválido: %s · entero, mínimo 0 (0 = sin tope)", p.Line, p.Value)
+			}
+			cfg.PresupuestoTokens = n
 		case "estrategia":
 			cfg.Estrategia = kv.Unquote(p.Value)
 		case "reglas_import":
@@ -384,7 +499,44 @@ func Parse(data []byte) (Config, error) {
 		return cfg, err
 	}
 	cfg.Modelos = modelos
+
+	ventanas, err := parsePresupuestoVentanas(data)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.PresupuestoVentanas = ventanas
 	return cfg, nil
+}
+
+// parsePresupuestoVentanas lee el bloque anidado `presupuesto:`, con un
+// proveedor por línea: `claude: { 5h: 40000, semanal: 120000 }`.
+func parsePresupuestoVentanas(data []byte) (map[string]map[string]int, error) {
+	children, err := kv.Nested(strings.Split(string(data), "\n"), "presupuesto", 1)
+	if err != nil {
+		return nil, fmt.Errorf("config.yml: %s", err)
+	}
+	if len(children) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]map[string]int, len(children))
+	for _, c := range children {
+		fields, err := kv.ParseInlineMap(c.Value)
+		if err != nil {
+			return nil, fmt.Errorf("config.yml: línea %d · %s", c.Line, err)
+		}
+		limites := make(map[string]int, len(fields))
+		for ventana, raw := range fields {
+			n, err := kv.ParseInt(raw)
+			if err != nil || n < 0 {
+				return nil, fmt.Errorf("config.yml: línea %d · %s %s inválido: %s · entero, mínimo 0", c.Line, c.Key, ventana, raw)
+			}
+			if n > 0 {
+				limites[ventana] = n
+			}
+		}
+		out[c.Key] = limites
+	}
+	return out, nil
 }
 
 // parseModelos lee el bloque anidado `modelos:` (Fase 3), con un peso

@@ -114,6 +114,79 @@ func TestParseTimeoutAgenteYPruebas(t *testing.T) {
 	}
 }
 
+func TestParseSubagentesYPresupuesto(t *testing.T) {
+	cfg, err := Parse([]byte("subagentes: 4\npresupuesto_tokens: 40000\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.Subagentes != 4 {
+		t.Errorf("Subagentes = %d, quiero 4", cfg.Subagentes)
+	}
+	if cfg.PresupuestoTokens != 40000 {
+		t.Errorf("PresupuestoTokens = %d, quiero 40000", cfg.PresupuestoTokens)
+	}
+	if _, err := Parse([]byte("subagentes: 0\n")); err == nil {
+		t.Error("subagentes: 0 debía rechazarse (mínimo 1)")
+	}
+	if _, err := Parse([]byte("presupuesto_tokens: -1\n")); err == nil {
+		t.Error("presupuesto_tokens negativo debía rechazarse")
+	}
+}
+
+func TestParsePresupuestoVentanas(t *testing.T) {
+	cfg, err := Parse([]byte("presupuesto:\n  claude: { 5h: 40000, semanal: 120000 }\n  opencode: { mensual: 100000 }\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	claude := cfg.PresupuestoVentanas["claude"]
+	if claude["5h"] != 40000 || claude["semanal"] != 120000 {
+		t.Errorf("claude = %v, quiero 5h:40000 semanal:120000", claude)
+	}
+	if got := cfg.PresupuestoVentanas["opencode"]["mensual"]; got != 100000 {
+		t.Errorf("opencode mensual = %d, quiero 100000", got)
+	}
+	// ida y vuelta
+	root := t.TempDir()
+	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Save(root); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	cargada, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cargada.PresupuestoVentanas["claude"]["5h"]; got != 40000 {
+		t.Errorf("tras ida y vuelta claude 5h = %d, quiero 40000", got)
+	}
+	if _, err := Parse([]byte("presupuesto:\n  claude: { 5h: x }\n")); err == nil {
+		t.Error("tope no numérico debía rechazarse")
+	}
+}
+
+func TestModeloParaYEscalado(t *testing.T) {
+	cfg := Config{Modelos: map[string]string{"liviana": "barato", "media": "medio", "pesada": "caro"}}
+	if got := cfg.ModeloPara("liviana"); got != "barato" {
+		t.Errorf("ModeloPara(liviana) = %q, quiero barato", got)
+	}
+	// peso sin mapear cae al peso por defecto (media)
+	if got := cfg.ModeloPara(""); got != "medio" {
+		t.Errorf("ModeloPara('') = %q, quiero el de la estrategia (medio)", got)
+	}
+	if got := cfg.ModeloEscalado("liviana", "barato"); got != "medio" {
+		t.Errorf("ModeloEscalado(liviana) = %q, quiero medio", got)
+	}
+	if got := cfg.ModeloEscalado("pesada", "caro"); got != "" {
+		t.Errorf("ModeloEscalado(pesada) = %q, quiero nada", got)
+	}
+	// escalar al mismo modelo no gasta otra invocación
+	cfg2 := Config{Modelos: map[string]string{"liviana": "x", "media": "x"}}
+	if got := cfg2.ModeloEscalado("liviana", "x"); got != "" {
+		t.Errorf("ModeloEscalado con mismo modelo = %q, quiero nada", got)
+	}
+}
+
 func TestLoadMissing(t *testing.T) {
 	_, err := Load(t.TempDir())
 	if err == nil {

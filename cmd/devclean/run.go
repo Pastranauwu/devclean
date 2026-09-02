@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Pastranauwu/devclean/internal/budget"
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/constitution"
 	"github.com/Pastranauwu/devclean/internal/examiner"
@@ -25,6 +26,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/tui"
+	"github.com/Pastranauwu/devclean/internal/ventanas"
 )
 
 // runResult es una tarea de la corrida, con su desenlace.
@@ -34,6 +36,9 @@ type runResult struct {
 	Estado   string `json:"estado"` // lista | detenida | rechazada
 	Intentos int    `json:"intentos,omitempty"`
 	Motivo   string `json:"motivo,omitempty"`
+	// Tokens es el gasto total de la tarea (suma de todos sus intentos),
+	// para que la corrida deje ver cuánto cuesta cada pieza.
+	Tokens int `json:"tokens,omitempty"`
 }
 
 func newRunCmd() *cobra.Command {
@@ -151,23 +156,37 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
 		return err
 	}
 
+	presupuesto := budget.Nuevo(cfg.PresupuestoTokens)
+	ventanasReg := ventanas.Nuevo(ventanas.LedgerPath(), cfg.PresupuestoVentanas)
+
 	if esTUI() {
 		if len(results) > 0 {
 			sortRunResults(results)
 			_ = emitirResultados(results)
 		}
-		_, err := correrConTUI(context.Background(), root, cfg, ex, modelo, constitucion, aprobadas, agentes)
+		_, err := correrConTUI(context.Background(), root, cfg, ex, modelo, constitucion, aprobadas, agentes, presupuesto, ventanasReg)
 		return err
 	}
 
-	results = append(results, ejecutarOlas(context.Background(), root, cfg, ex, modelo, constitucion, aprobadas, agentes, nil)...)
+	if cfg.PresupuestoTokens > 0 {
+		out.Line("presupuesto absoluto %s tokens · quemados %s · quedan %s", budget.FormatearGasto(cfg.PresupuestoTokens), budget.FormatearGasto(budget.GastoEnDisco(root)), budget.FormatearGasto(cfg.PresupuestoTokens-budget.GastoEnDisco(root)))
+	}
+	for _, p := range []string{"claude", "opencode"} {
+		if l := ventanas.LineaVentanas(ventanasReg, p); l != "" {
+			out.Line("presupuesto %s", l)
+		}
+	}
+	results = append(results, ejecutarOlas(context.Background(), root, cfg, ex, modelo, constitucion, aprobadas, agentes, presupuesto, ventanasReg, nil)...)
 	sortRunResults(results)
+	if cfg.PresupuestoTokens > 0 {
+		out.Line("presupuesto absoluto %s · gasto final %s · quedan %s", budget.FormatearGasto(cfg.PresupuestoTokens), budget.FormatearGasto(budget.GastoEnDisco(root)), budget.FormatearGasto(cfg.PresupuestoTokens-budget.GastoEnDisco(root)))
+	}
 	return emitirResultados(results)
 }
 
 // correrConTUI ejecuta la corrida dentro del tablero en vivo y devuelve
 // los resultados para imprimirlos al final.
-func correrConTUI(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion string, aprobadas []task.Task, agentes int) ([]runResult, error) {
+func correrConTUI(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion string, aprobadas []task.Task, agentes int, presupuesto *budget.Contador, ventanasReg *ventanas.Registro) ([]runResult, error) {
 	filas := make([]tui.FilaRun, 0, len(aprobadas))
 	for _, t := range aprobadas {
 		filas = append(filas, tui.FilaRun{ID: t.ID, Titulo: t.Titulo, Limite: t.LimiteIntentos})
@@ -180,7 +199,7 @@ func correrConTUI(ctx context.Context, root string, cfg config.Config, ex execut
 	var results []runResult
 	err := tui.CorrerRun(filas, func() map[string]tui.FaseRun { return fasesVivas(root, ids) },
 		func(emit func(tui.EventoRun)) {
-			results = ejecutarOlas(ctx, root, cfg, ex, modelo, constitucion, aprobadas, agentes, emit)
+			results = ejecutarOlas(ctx, root, cfg, ex, modelo, constitucion, aprobadas, agentes, presupuesto, ventanasReg, emit)
 		})
 	return results, err
 }
@@ -189,7 +208,7 @@ func correrConTUI(ctx context.Context, root string, cfg config.Config, ex execut
 // una ola solo arranca cuando sus dependencias ya están verdes. El
 // trabajo verde de cada ola se integra en una rama temporal y la
 // siguiente ola arranca desde ahí, así la cadena comparte estado.
-func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion string, aprobadas []task.Task, agentes int, emit func(tui.EventoRun)) []runResult {
+func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion string, aprobadas []task.Task, agentes int, presupuesto *budget.Contador, ventanasReg *ventanas.Registro, emit func(tui.EventoRun)) []runResult {
 	var results []runResult
 	procesadas := map[string]bool{}
 	integrada := map[string]bool{}
@@ -247,7 +266,7 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 
 		var verdes []runResult
 		if len(asignadas) > 0 {
-			r := correr(ctx, root, cfg, ex, modelo, constitucion, base, asignadas, agentes, emit)
+			r := correr(ctx, root, cfg, ex, modelo, constitucion, base, asignadas, agentes, presupuesto, ventanasReg, emit)
 			results = append(results, r...)
 			for _, rr := range r {
 				procesadas[rr.ID] = true
@@ -489,7 +508,7 @@ func (a agenteExecutor) Run(ctx context.Context, req loop.Request) (loop.Result,
 
 // correr lanza las tareas con `agentes` trabajadores en paralelo. onEvent,
 // si no es nil, recibe cada transición para el tablero en vivo.
-func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion, base string, asignadas []task.Task, agentes int, onEvent func(tui.EventoRun)) []runResult {
+func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion, base string, asignadas []task.Task, agentes int, presupuesto *budget.Contador, ventanasReg *ventanas.Registro, onEvent func(tui.EventoRun)) []runResult {
 	// §6.9: solapamiento activo entre tareas de la misma oleada
 	alertasOverlap := checkOverlapOla(root, asignadas)
 	for _, a := range alertasOverlap {
@@ -506,10 +525,16 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 		go func() {
 			defer wg.Done()
 			for t := range jobs {
+				if presupuesto.Agotado() {
+					mu.Lock()
+					results = append(results, runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: loop.MotivoPresupuesto})
+					mu.Unlock()
+					continue
+				}
 				if onEvent != nil {
 					onEvent(tui.EventoRun{ID: t.ID, Estado: "trabajando"})
 				}
-				r := correrUno(ctx, root, cfg, ex, modelo, base, constitucion, t)
+				r := correrUno(ctx, root, cfg, ex, modelo, base, constitucion, presupuesto, ventanasReg, t)
 				if onEvent != nil {
 					onEvent(tui.EventoRun{ID: r.ID, Estado: r.Estado, Intentos: r.Intentos, Motivo: r.Motivo})
 				}
@@ -601,7 +626,12 @@ func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagMod
 // correrUno ejecuta una tarea completa: cuarto, esclusa de estado,
 // bucle, y deja el estado final (lista o detenida). El cuarto no se
 // destruye aquí: ship lo libera al entregar.
-func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, base, constitucion string, t task.Task) runResult {
+//
+// Al igual que en la recursión, una tarea plana que deja trabajo y queda
+// roja se reintenta una vez con el siguiente modelo más pesado, reusando
+// su cuarto y su trabajo parcial — el modelo barato es el default, y
+// subir de escalón no cuesta tokens extra más allá del intento repetido.
+func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, base, constitucion string, presupuesto *budget.Contador, ventanasReg *ventanas.Registro, t task.Task) runResult {
 	r, err := room.Ensure(ctx, root, t.ID, base)
 	if err != nil {
 		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
@@ -631,8 +661,11 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		pruebaTimeout = time.Duration(cfg.TimeoutPruebas) * time.Second
 	}
 
+	// presupuesto: las hojas lo gastan con sus intentos; el padre
+	// recursivo no, porque sus subtareas ya lo gastan cada una
+	recursiva := cfg.RecursionMax > 0 && t.Recursivo
 	var agente loop.Agent = agenteExecutor{exTarea}
-	if cfg.RecursionMax > 0 && t.Recursivo {
+	if recursiva {
 		agente = recurse.Agent{
 			Cfg:            cfg,
 			Constitucion:   constitucion,
@@ -642,10 +675,12 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 			Task:           t,
 			Root:           root,
 			RaizID:         t.ID,
+			Presupuesto:    presupuesto,
+			Ventanas:       ventanasReg,
 		}
 	}
 
-	outcome, err := loop.Run(ctx, loop.Options{
+	opts := loop.Options{
 		Agent:           agente,
 		OnIntento:       progresoIntento(t.ID, modeloTarea),
 		Root:            root,
@@ -662,22 +697,74 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		Skills:          skillsTarea,
 		SkillsContenido: skillsContenido,
 		Examinador:      exam,
-	})
+	}
+	if !recursiva {
+		opts.Presupuesto = presupuesto
+		opts.Ventanas = ventanasReg
+	}
+	opts.Proveedor = exTarea.Name()
+
+	outcome, err := loop.Run(ctx, opts)
+	if !outcome.Verde && err == nil && !recursiva {
+		// escalera: el modelo barato dejó trabajo y las pruebas siguen
+		// rojas; se sube un escalón reusando el cuarto, sin re-examinar
+		if m := cfg.ModeloEscalado(t.Peso, modeloTarea); m != "" && huboTrabajoRun(root, t.ID) {
+			escalado := opts
+			escalado.Model = m
+			escalado.Examinador = nil
+			escalado.OnIntento = progresoIntento(t.ID, m)
+			outcome, err = loop.Run(ctx, escalado)
+			if err == nil && outcome.Verde {
+				modeloTarea = m
+			}
+		}
+	}
+
+	tokens := tokensDeTarea(root, t.ID)
 	if err != nil {
 		_ = state.Save(root, state.State{ID: t.ID, Estado: state.Detenida, Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit, UltimoError: err.Error()})
-		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
+		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error(), Tokens: tokens}
 	}
 
 	if outcome.Verde {
 		_ = state.Save(root, state.State{ID: t.ID, Estado: state.Lista, Intentos: outcome.Intentos, Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit})
-		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "lista", Intentos: outcome.Intentos}
+		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "lista", Intentos: outcome.Intentos, Tokens: tokens}
 	}
 	_ = state.Save(root, state.State{
 		ID: t.ID, Estado: state.Detenida, Intentos: outcome.Intentos,
 		Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit,
 		UltimoError: outcome.UltimoError, Pregunta: outcome.Pregunta,
 	})
-	return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Intentos: outcome.Intentos, Motivo: outcome.Pregunta}
+	return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Intentos: outcome.Intentos, Motivo: outcome.Pregunta, Tokens: tokens}
+}
+
+// huboTrabajoRun reporta si la tarea tocó archivos en algún intento: es
+// la señal para saber si vale escalar de modelo (el código falló) o si
+// escalar no cambia nada (el modelo ni escribió).
+func huboTrabajoRun(root, id string) bool {
+	as, err := loop.ReadAttempts(root, id)
+	if err != nil {
+		return false
+	}
+	for _, a := range as {
+		if len(a.ArchivosTocados) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// tokensDeTarea suma el gasto de todos los intentos de una tarea.
+func tokensDeTarea(root, id string) int {
+	as, err := loop.ReadAttempts(root, id)
+	if err != nil {
+		return 0
+	}
+	total := 0
+	for _, a := range as {
+		total += a.Tokens.Entrada + a.Tokens.Salida
+	}
+	return total
 }
 
 func motivoRechazo(res gate.Result) string {
@@ -709,7 +796,11 @@ func emitirResultados(results []runResult) error {
 	for _, r := range results {
 		switch r.Estado {
 		case "lista":
-			out.Line("✓ %s  %s  · verde en %d intentos", r.ID, r.Titulo, r.Intentos)
+			extra := ""
+			if r.Tokens > 0 {
+				extra = " · " + budget.FormatearGasto(r.Tokens) + " tokens"
+			}
+			out.Line("✓ %s  %s  · verde en %d intentos%s", r.ID, r.Titulo, r.Intentos, extra)
 		case "detenida":
 			out.Line("⏸ %s  %s  · %s", r.ID, r.Titulo, r.Motivo)
 		case "rechazada":

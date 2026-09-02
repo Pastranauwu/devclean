@@ -6,12 +6,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Pastranauwu/devclean/internal/budget"
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/recurse"
 	"github.com/Pastranauwu/devclean/internal/standup"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
+	"github.com/Pastranauwu/devclean/internal/ventanas"
 )
 
 func newStandupCmd() *cobra.Command {
@@ -63,6 +65,20 @@ func runStandup() error {
 	if err := out.Data(eventos); err != nil {
 		return err
 	}
+	if cfg, err := config.Load(root); err == nil {
+		if cfg.PresupuestoTokens > 0 {
+			out.Line("presupuesto %s", budget.Barra(budget.GastoEnDisco(root), cfg.PresupuestoTokens))
+		}
+		ventanasReg := ventanas.Nuevo(ventanas.LedgerPath(), cfg.PresupuestoVentanas)
+		for _, p := range []string{"claude", "opencode"} {
+			if l := ventanas.LineaVentanas(ventanasReg, p); l != "" {
+				out.Line("presupuesto %s", l)
+			}
+		}
+		if cfg.PresupuestoTokens > 0 || len(cfg.PresupuestoVentanas) > 0 {
+			out.Line("")
+		}
+	}
 	out.Line("%s", standup.Formatear(eventos, time.Now(), nActivas))
 
 	for _, t := range tareas {
@@ -75,15 +91,16 @@ func runStandup() error {
 		}
 		out.Line("")
 		out.Line("árbol de %s (%s):", t.ID, t.Titulo)
-		imprimirArbolStandup(nodos, t.ID, 1)
+		imprimirArbolStandup(root, nodos, t.ID, 1)
 	}
 	return nil
 }
 
 // imprimirArbolStandup imprime, indentado, el estado de cada subtarea de
 // una tarea recursiva — mismo dato que board, en el mismo lugar donde ya
-// se mira el progreso del día.
-func imprimirArbolStandup(nodos []recurse.NodoArbol, padre string, profundidad int) {
+// se mira el progreso del día. Una subtarea corriendo ahora mismo sale
+// con ◐ y su fase, en vez de con el veredicto de cuando terminó.
+func imprimirArbolStandup(root string, nodos []recurse.NodoArbol, padre string, profundidad int) {
 	sangria := strings.Repeat("  ", profundidad)
 	for _, n := range nodos {
 		if n.Padre != padre {
@@ -97,7 +114,14 @@ func imprimirArbolStandup(nodos []recurse.NodoArbol, padre string, profundidad i
 		if n.Motivo != "" {
 			detalle = " · " + n.Motivo
 		}
+		if n.Modelo != "" {
+			detalle += " · " + n.Modelo
+		}
+		if l, corriendo := loop.LeerLatido(root, n.ID); corriendo {
+			marca = "◐"
+			detalle = " · " + l.Descripcion()
+		}
 		out.Line("%s%s %s  %s (%d intentos)%s", sangria, marca, n.ID, n.Titulo, n.Intentos, detalle)
-		imprimirArbolStandup(nodos, n.ID, profundidad+1)
+		imprimirArbolStandup(root, nodos, n.ID, profundidad+1)
 	}
 }

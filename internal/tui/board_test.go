@@ -15,7 +15,7 @@ func TestArmarTableroColumnas(t *testing.T) {
 		{ID: "T-002", Titulo: "login", Estado: state.EnCurso},
 		{ID: "T-003", Titulo: "docs", Estado: state.Pendiente},
 	}
-	ls := armarTablero(filas, "", "")
+	ls := armarTablero(filas, "", "", nil)
 	texto := ""
 	for _, l := range ls {
 		texto += l.texto + "\n"
@@ -36,7 +36,7 @@ func TestArmarTableroMuestraArbolDeSubtareas(t *testing.T) {
 			}},
 		}},
 	}
-	ls := armarTablero(filas, "", "")
+	ls := armarTablero(filas, "", "", nil)
 	texto := ""
 	for _, l := range ls {
 		texto += l.texto + "\n"
@@ -49,7 +49,7 @@ func TestArmarTableroMuestraArbolDeSubtareas(t *testing.T) {
 }
 
 func TestArmarTableroVacio(t *testing.T) {
-	ls := armarTablero(nil, "", "")
+	ls := armarTablero(nil, "", "", nil)
 	texto := ""
 	for _, l := range ls {
 		texto += l.texto + "\n"
@@ -65,7 +65,7 @@ func TestArmarTableroMarcaSeleccionYHint(t *testing.T) {
 		{ID: "T-002", Titulo: "login", Estado: state.Pendiente},
 	}
 	texto := ""
-	for _, l := range armarTablero(filas, "T-001", "") {
+	for _, l := range armarTablero(filas, "T-001", "", nil) {
 		texto += l.texto + "\n"
 	}
 	if !strings.Contains(texto, "> T-001") {
@@ -173,7 +173,7 @@ func TestArmarTableroMuestraFaseViva(t *testing.T) {
 		{ID: "T-002", Titulo: "login", Estado: state.EnCurso,
 			Detalle: "intento 2/3 · agente · opencode/glm-5.3 · 3m12s"},
 	}
-	texto := textoTablero(armarTablero(filas, "", ""))
+	texto := textoTablero(armarTablero(filas, "", "", nil))
 	for _, want := range []string{"T-002", "intento 2/3", "agente", "opencode/glm-5.3", "3m12s"} {
 		if !strings.Contains(texto, want) {
 			t.Errorf("tablero sin %q:\n%s", want, texto)
@@ -186,7 +186,7 @@ func TestArmarTableroMarcaAtasco(t *testing.T) {
 		{ID: "T-003", Titulo: "cli", Estado: state.EnCurso, Atascada: true,
 			Detalle: "ATASCO · intento 1/3 · agente · 42m0s sin señal"},
 	}
-	ls := armarTablero(filas, "", "")
+	ls := armarTablero(filas, "", "", nil)
 	if !strings.Contains(textoTablero(ls), "ATASCO") {
 		t.Error("el tablero debe marcar el atasco")
 	}
@@ -208,7 +208,7 @@ func TestArmarTableroMarcaAtasco(t *testing.T) {
 // Una tarea que no corre no lleva línea de detalle.
 func TestArmarTableroSinDetalleSiNoCorre(t *testing.T) {
 	filas := []Fila{{ID: "T-001", Titulo: "docs", Estado: state.Pendiente}}
-	ls := armarTablero(filas, "", "")
+	ls := armarTablero(filas, "", "", nil)
 	for _, l := range ls {
 		if strings.Contains(l.texto, "intento") {
 			t.Errorf("línea de detalle inesperada: %q", l.texto)
@@ -265,7 +265,7 @@ func TestBoardKeyDSiempreDisponible(t *testing.T) {
 }
 
 func TestBoardAyudaListaLasTeclas(t *testing.T) {
-	texto := textoTablero(armarTablero([]Fila{{ID: "T-001", Estado: state.Lista}}, "", ""))
+	texto := textoTablero(armarTablero([]Fila{{ID: "T-001", Estado: state.Lista}}, "", "", nil))
 	for _, tecla := range []string{"s entrega", "r reintenta", "d detalle", "q sale"} {
 		if !strings.Contains(texto, tecla) {
 			t.Errorf("la ayuda no menciona %q", tecla)
