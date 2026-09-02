@@ -838,10 +838,16 @@ debate con dos detectores deterministas que cuestan cero tokens.
 
 ## Estado
 
-**v0.6.6.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
+**v0.6.7.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
 + skills reales, recursividad y fiabilidad de `ship` (v0.5) + de una petición
 a un PR limpio (v0.6), todo en `main` con pruebas verdes.
 
+- **v0.6.7: la esclusa de interfaces acepta archivos como entregable.** Un
+  `expone` puede ser un archivo entero (un interaction-model de Alexa, un
+  README, un servicio systemd): su nombre vive en el encabezado del diff,
+  no en las líneas añadidas, y `verificarExpone` solo miraba las añadidas —
+  una tarea que entregaba `skill/interaction-model.json` frenaba con "no
+  expone lo prometido" pese a que el archivo estaba en el diff.
 - **v0.6.6: fix crítico de arranque.** `devclean run` cortaba TODA tarea
   con "presupuesto de tokens agotado" apenas arrancaba, incluso sin
   `presupuesto_tokens` configurado: `Agotado()` trataba el presupuesto 0

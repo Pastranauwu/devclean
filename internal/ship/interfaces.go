@@ -20,13 +20,21 @@ func verificarExpone(firmas []string, diff string) (faltan, noVerificables []str
 	}
 
 	var añadido strings.Builder
+	var rutas strings.Builder
 	for _, ad := range parseDiffAnadido(diff) {
 		for _, linea := range ad.lineas {
 			añadido.WriteString(linea)
 			añadido.WriteByte('\n')
 		}
+		// las rutas de archivo del diff también cuentan como "lo que la
+		// tarea entrega": un expone puede ser un archivo entero (un
+		// interaction-model, un README, un servicio systemd), y su nombre
+		// vive en el encabezado del diff, no en las líneas añadidas.
+		rutas.WriteString(ad.nombre)
+		rutas.WriteByte('\n')
 	}
 	cuerpo := añadido.String()
+	cuerpo += rutas.String()
 
 	for _, f := range firmas {
 		nombre, verificable := task.FirmaVerificable(f)

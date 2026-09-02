@@ -224,6 +224,24 @@ func TestVerificarExponeSigueBloqueandoFirmaReal(t *testing.T) {
 	}
 }
 
+// Un expone puede ser un archivo entero (un interaction-model de alexa,
+// un README, un servicio systemd): su nombre está en el encabezado del
+// diff, no en las líneas añadidas. Antes eso frenaba con "no expone lo
+// prometido" pese a que el archivo se entregó.
+func TestVerificarExponeAceptaArchivos(t *testing.T) {
+	diff := `diff --git a/skill/interaction-model.json b/skill/interaction-model.json
+new file mode 100644
+--- /dev/null
++++ b/skill/interaction-model.json
+@@ -0,0 +1,3 @@
++{"interactionModel": {"languageModel": {"invocationName": "wake pc"}}}
+`
+	faltan, _ := verificarExpone([]string{"skill/interaction-model.json"}, diff)
+	if len(faltan) != 0 {
+		t.Errorf("faltan = %v, el archivo sí se entregó", faltan)
+	}
+}
+
 // Un CLI cuyo trabajo es imprimir no puede quedar bloqueado para siempre
 // porque su main.go llama a fmt.Println.
 func TestEscanearRuidoNoMarcaLaSalidaDelPrograma(t *testing.T) {
