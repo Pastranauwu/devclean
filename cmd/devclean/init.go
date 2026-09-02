@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/executor"
 	"github.com/Pastranauwu/devclean/internal/gate"
 	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/tui"
@@ -26,7 +27,7 @@ type initResult struct {
 }
 
 func newInitCmd() *cobra.Command {
-	var pruebas, plantilla string
+	var pruebas, plantilla, cli string
 	var sinSkills bool
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -41,9 +42,10 @@ func newInitCmd() *cobra.Command {
 			if pruebas == "" && plantilla == "" && !out.JSON() && isTerminal(os.Stdin) {
 				in = os.Stdin
 			}
-			return runInit(cwd, pruebas, plantilla, in, sinSkills)
+			return runInit(cwd, pruebas, plantilla, cli, in, sinSkills)
 		},
 	}
+	cmd.Flags().StringVar(&cli, "cli", "", "CLI de agente: opencode o claude (por defecto pregunta si hay más de uno)")
 	cmd.Flags().StringVar(&pruebas, "pruebas", "", "comando de pruebas del proyecto, en vez del detectado")
 	cmd.Flags().StringVar(&plantilla, "pruebas-plantilla", "", "stack de pruebas: go, node o python")
 	cmd.Flags().BoolVar(&sinSkills, "sin-skills", false, "no traer las skills por defecto (podés hacerlo luego con devclean skills sync)")
@@ -67,7 +69,7 @@ func confirmarPruebas(in io.Reader, detectado string) string {
 	return detectado
 }
 
-func runInit(cwd, pruebasFlag, plantilla string, in io.Reader, sinSkills bool) error {
+func runInit(cwd, pruebasFlag, plantilla, cli string, in io.Reader, sinSkills bool) error {
 	root, err := config.RepoRoot(cwd)
 	if err != nil {
 		return err
@@ -112,7 +114,12 @@ func runInit(cwd, pruebasFlag, plantilla string, in io.Reader, sinSkills bool) e
 	// El CLI y sus modelos se descubren aquí, una sola vez, y quedan
 	// escritos en config.yml: es la única forma de que los ids sean
 	// reales y de que el usuario los pueda cambiar sin leer el código.
-	cliDetectado, catalogo := detectarCatalogo()
+	// Con más de un CLI instalado, en terminal elige el humano: antes
+	// se tomaba el primero (opencode) y el catálogo de claude nunca se veía.
+	if cli == "" && in != nil && esTUI() {
+		cli = elegirCLIAMano(clisInstalados())
+	}
+	cliDetectado, catalogo := detectarCatalogo(cli)
 	modelos := config.ElegirModelos(catalogo)
 	// la heurística acierta el tamaño por el nombre, no la calidad ni la
 	// velocidad: en terminal el humano ve el catálogo real y decide
@@ -174,12 +181,12 @@ func runInit(cwd, pruebasFlag, plantilla string, in io.Reader, sinSkills bool) e
 	return nil
 }
 
-// detectarCatalogo elige el primer ejecutor instalado y le pide su
-// catálogo real de modelos. Sin ejecutor, o si el CLI no sabe listarlos,
-// devuelve vacío: `modelos:` queda fuera de config.yml y cada invocación
-// usa el modelo por defecto del CLI, que siempre existe.
-func detectarCatalogo() (string, []string) {
-	ex, err := elegirEjecutor("")
+// detectarCatalogo elige el ejecutor pedido (o el primero instalado) y
+// le pide su catálogo real de modelos. Sin ejecutor, o si el CLI no sabe
+// listarlos, devuelve vacío: `modelos:` queda fuera de config.yml y cada
+// invocación usa el modelo por defecto del CLI, que siempre existe.
+func detectarCatalogo(cli string) (string, []string) {
+	ex, err := elegirEjecutor(cli)
 	if err != nil {
 		return "", nil
 	}
@@ -190,6 +197,35 @@ func detectarCatalogo() (string, []string) {
 		return ex.Name(), nil
 	}
 	return ex.Name(), catalogo
+}
+
+// clisInstalados devuelve los nombres de los CLIs de agente que responden.
+func clisInstalados() []string {
+	var res []string
+	for _, e := range []executor.Executor{executor.OpenCode{}, executor.Claude{}} {
+		if e.Available() == nil {
+			res = append(res, e.Name())
+		}
+	}
+	return res
+}
+
+// elegirCLIAMano pregunta qué CLI usar cuando hay más de uno. Con uno
+// solo (o ninguno) no pregunta y devuelve "" para que decida la
+// autodetección.
+func elegirCLIAMano(instalados []string) string {
+	if len(instalados) < 2 {
+		return ""
+	}
+	ops := make([]tui.Opcion, 0, len(instalados))
+	for _, n := range instalados {
+		ops = append(ops, tui.Opcion{ID: n, Etiqueta: n})
+	}
+	id, err := tui.Elegir("CLI DE AGENTE", "j/k mueve · enter elige · q deja "+instalados[0], ops)
+	if err != nil {
+		return ""
+	}
+	return id
 }
 
 // elegirModelosAMano deja al humano fijar el modelo de cada peso sobre el

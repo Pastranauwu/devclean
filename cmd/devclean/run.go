@@ -65,11 +65,7 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
 	if agentes < 1 {
 		return errors.New("--agentes inválido · mínimo 1")
 	}
-	root, err := projectRoot()
-	if err != nil {
-		return err
-	}
-	cfg, err := config.Load(root)
+	root, cfg, err := entornoListo(false)
 	if err != nil {
 		return err
 	}
