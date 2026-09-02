@@ -160,8 +160,15 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
 			sortRunResults(results)
 			_ = emitirResultados(results)
 		}
-		_, err := correrConTUI(context.Background(), root, cfg, ex, modelo, constitucion, aprobadas, agentes, presupuesto, ventanasReg)
-		return err
+		olas, err := correrConTUI(context.Background(), root, cfg, ex, modelo, constitucion, aprobadas, agentes, presupuesto, ventanasReg)
+		if err != nil {
+			return err
+		}
+		// el tablero se cierra y se lleva lo que mostraba. Sin esto una
+		// corrida detenida entera (una rama base inexistente, por
+		// ejemplo) no dejaba ni una línea diciendo por qué.
+		sortRunResults(olas)
+		return emitirResultados(olas)
 	}
 
 	if cfg.PresupuestoTokens > 0 {
@@ -221,7 +228,13 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 	if tieneDeps {
 		if err := room.ResetIntegration(ctx, root, cfg.Base); err != nil {
 			for _, t := range aprobadas {
-				results = append(results, runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()})
+				r := runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: err.Error()}
+				results = append(results, r)
+				if emit != nil {
+					// sin esto el tablero se queda en "pendiente" hasta
+					// cerrarse, como si no hubiera pasado nada
+					emit(tui.EventoRun{ID: r.ID, Estado: r.Estado, Motivo: r.Motivo})
+				}
 			}
 			return results
 		}
