@@ -87,6 +87,7 @@ var scaffoldNames = map[string]bool{
 	"CONTRIBUTING.md":    true,
 	"CODE_OF_CONDUCT.md": true,
 	".gitignore":         true,
+	"skills-lock.json":   true, // lo deja devclean skills sync, no es código
 	".gitattributes":     true,
 	".editorconfig":      true,
 }

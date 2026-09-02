@@ -59,16 +59,11 @@ func newPlanCmd() *cobra.Command {
 }
 
 func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
-	root, err := projectRoot()
+	root, cfg, err := entornoListo(false)
 	if err != nil {
 		return err
 	}
 	dir := config.TasksDir(root)
-
-	cfg, err := config.Load(root)
-	if err != nil {
-		return err
-	}
 	if modelo == "" {
 		modelo = config.ModeloRol(cfg, "planificador")
 	}

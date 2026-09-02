@@ -156,6 +156,19 @@ en pruebas sintéticas, todas corregidas:
 
 ---
 
+**`up` plug and play (2 sep 2026)** — `cmd/devclean/preparar.go`.
+`prepararEntorno` corre antes de planear: `git init`, `runInit` sin
+preguntas, rama base, commit inicial (solo si lo único sin versionar es
+`.devclean`/`.agents`/`skills-lock.json`; si hay más, pregunta o corta),
+ejecutor instalado (cae al que haya, ofrece `npm i -g` en terminal),
+modelos contra el catálogo real (`ElegirModelos` si alguno no existe),
+comando de pruebas re-detectado, y con `--ship` exige `gh` y `origin`
+antes de gastar tokens (pide la URL en terminal). Todo lo que arregla lo
+persiste en `config.yml`. `plan` y `run` sueltos pasan por lo mismo
+(`entornoListo`, una vez por proceso). `init` queda para elegir a mano:
+con dos CLIs instalados pregunta cuál (`--cli` lo fija); antes tomaba
+siempre el primero, opencode, y el catálogo de claude no se veía nunca.
+
 ## Qué falta
 
 **El v0.1 está funcionalmente completo y el GIF grabado.**

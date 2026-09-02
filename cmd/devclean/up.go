@@ -24,14 +24,18 @@ las ejecuta en paralelo en cuartos aislados (devclean run) y, con --ship,
 las entrega en UN pull request limpio (devclean ship --todas).
 
 Sin petición, aplica la especificación del repo (devclean.spec.yml) si
-existe y ejecuta las tareas pendientes.`,
+existe y ejecuta las tareas pendientes.
+
+No hace falta devclean init: up configura lo que falte (repo git,
+.devclean, commit inicial, ejecutor, modelos, comando de pruebas) y
+pregunta solo cuando no puede resolverlo solo.`,
 		Example: `  devclean up "cli en go que despierta equipos por wake-on-lan" --ship
   devclean up "arreglar el login con tildes" --integrar
   devclean up --agentes 4 --ship
   devclean up -f specs/auth.yml`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := projectRoot()
+			root, _, err := entornoListo(entregar || integrar || revisar)
 			if err != nil {
 				return err
 			}
