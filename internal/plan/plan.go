@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Pastranauwu/devclean/internal/config"
@@ -35,6 +36,54 @@ type Borrador struct {
 	// con documentación nunca cabe en 200 líneas, y la esclusa de salida
 	// la frenaba después de que el trabajo ya estaba hecho.
 	LimiteLineas int `json:"limite_lineas"`
+
+	// Como es el enfoque que sugiere el orquestador: cómo encarar la
+	// tarea, qué tocar primero, a qué no meterse. Es orientación para el
+	// ejecutor, no contrato vinculante como listo_cuando — se inyecta en
+	// el prompt como nota, y en una descomposición recursiva es lo único
+	// que le dice al agente chico cómo cumplir su parte sin inventar.
+	Como string `json:"como,omitempty"`
+}
+
+// UnmarshalJSON tolera que el modelo escriba las dependencias como
+// números (`"depende_de": [1]`) o como ids completos (`["T-002"]`):
+// `depende_de` es []string en el contrato, y un JSON numérico rompía
+// toda la descomposición recursiva.
+func (b *Borrador) UnmarshalJSON(data []byte) error {
+	type alias Borrador
+	var raw struct {
+		*alias
+		DependeDe json.RawMessage `json:"depende_de"`
+	}
+	a := alias(*b)
+	raw.alias = &a
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*b = Borrador(a)
+	if len(raw.DependeDe) == 0 {
+		return nil
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw.DependeDe, &items); err != nil {
+		return err
+	}
+	deps := make([]string, 0, len(items))
+	for _, it := range items {
+		var s string
+		if json.Unmarshal(it, &s) == nil {
+			deps = append(deps, s)
+			continue
+		}
+		var n float64
+		if json.Unmarshal(it, &n) == nil {
+			deps = append(deps, strconv.FormatFloat(n, 'f', -1, 64))
+			continue
+		}
+		deps = append(deps, strings.Trim(string(it), `"`))
+	}
+	b.DependeDe = deps
+	return nil
 }
 
 // Generador pide texto a un modelo. El comando lo adapta desde el
@@ -107,7 +156,8 @@ func Prompt(frase string, c Contexto) string {
 		sort.Strings(ags)
 		fmt.Fprintf(&b, "- \"agente\": nombre del agente asignado para esta tarea (disponibles: %s); o \"\" para el ejecutor por defecto\n", strings.Join(ags, "; "))
 	}
-	b.WriteString("- \"riesgos\": riesgos o limitaciones, o \"\" si no hay\n\n")
+	b.WriteString("- \"riesgos\": riesgos o limitaciones, o \"\" si no hay\n")
+	b.WriteString("- \"como\": una línea corta con el enfoque — cómo encarar la tarea, qué tocar primero, a qué no meterse. Es la instrucción que le deja el orquestador al agente que la ejecuta, no el criterio de éxito (eso es listo_cuando)\n\n")
 	b.WriteString("Las tareas corren en paralelo y aisladas: no pueden leerse el código entre sí. Si una produce algo que otra necesita, la firma DEBE aparecer igual en el \"expone\" de la que la produce y en el \"usa\" de la que la consume; si no, cada una inventará la suya y no van a encajar.\n\n")
 	b.WriteString("Ejemplo:\n[\n")
 	b.WriteString("  {\"titulo\": \"enviar magic packet\", \"porque\": \"es la acción central\", \"listo_cuando\": \"go test ./internal/wol/...\", \"tocar_solo\": [\"internal/wol/**\"], \"expone\": [\"wol.Send(mac, addr string) error\"], \"usa\": [], \"peso\": \"media\", \"limite_lineas\": 250, \"riesgos\": \"\"},\n")

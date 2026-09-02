@@ -436,15 +436,107 @@ también es `recursivo` y todavía hay profundidad disponible, recursa de
 nuevo. Solo la tarea raíz llega a `ship` y abre PR — las subtareas son
 plomería interna, invisible afuera.
 
+El orquestador no delega y se va: **cada subtarea hereda el contexto del
+padre** — `no_tocar` y `riesgos` se suman a los suyos, `limite_lineas` se
+recorta al presupuesto del padre, y el planificador deja en cada contrato
+un **`como`** (una línea de enfoque: cómo encararla, qué tocar primero, a
+qué no meterse). Las firmas congeladas (`expone`/`usa`) también se
+propagan y se inyectan al prompt del agente chico, igual que en una
+oleada paralela.
+
+**Las subtareas corren en paralelo.** Las hojas independientes van juntas,
+limitadas por `subagentes` en `config.yml` (las que se solapan en
+`tocar_solo` esperan a la siguiente pasada, y una que declara
+`depende_de: [n]` por número de subtarea espera a ver el código de la n).
+Cada hoja usa el modelo de **su peso**: las chicas y bien definidas van a
+`liviana`, que `devclean init` mapea al modelo más barato del catálogo
+(haiku en Claude, los `-free` de OpenCode) — el barato solo tiene que
+seguir instrucciones precisas, no pensar. Sin `peso` declarado, la hoja
+default es `liviana`.
+
+#### Qué pasa cuando una subtarea falla
+
+Una hoja roja **no aborta el árbol**. Sigue esta escalera, en orden:
+
+1. **Escala de modelo.** Se sube al siguiente peso (`liviana → media →
+   pesada` en `modelos:`) y se reintenta en el mismo cuarto, reusando el
+   trabajo parcial. Solo si la subtarea dejó archivos tocados: si el
+   modelo ni escribió una línea, escalar no cambia nada. Esta escalera no
+   es exclusiva de la recursión: **toda tarea plana de `run` también
+   sube de modelo** cuando deja trabajo y sigue roja.
+2. **El orquestador decide.** Si el modelo pesado tampoco pudo, el
+   planificador recibe un *brief* compacto (contrato, fallo, y qué espera
+   el padre) y puede **replanificar** la subtarea con un contrato nuevo,
+   que se reintenta desde un cuarto limpio. `omitir`/`detener` no abren
+   la puerta a loops: la hoja queda roja y el criterio final es el
+   `listo_cuando` del padre.
+3. **Se sigue con las demás.** La subtarea roja queda registrada en el
+   árbol con su motivo y las hermanas siguen corriendo e integrándose.
+   Al terminar, si quedaron hojas rojas pero el `listo_cuando` del padre
+   ya pasa, la tarea se da por verde — la hoja era opcional. Si no pasa,
+   la recursión se detiene con el motivo exacto de la hoja roja, sin
+   gastar los intentos restantes del padre contra la misma pared.
+
 ```yaml
 recursion_max: 2   # en config.yml; 0 = sin recursión (default)
+subagentes: 3      # cuántas subtareas corren a la vez dentro de la tarea
 ```
 
-**Estado actual:** el bucle, la integración y el árbol funcionan
-(`internal/recurse`). Cada subtarea resuelta (verde o roja, con su motivo)
-queda en `.devclean/runs/<id>/arbol.json`, que sobrevive a que el cuarto se
-destruya. `devclean board` (TUI y `--plain`/`--json`) y `devclean standup`
-muestran ese árbol indentado bajo la tarea raíz.
+**Presupuesto de tokens.** `presupuesto_tokens` en `config.yml` topa el
+gasto de una corrida entera (intentos de tareas raíz y de todas las
+subtareas de la recursión). Al pasarlo, la corrida corta con el motivo
+claro en vez de seguir quemando. Y para verlo sin adivinar, `devclean
+run` imprime la barra al arrancar y al terminar, y `devclean board`
+(TUI y `--plain`) y `devclean standup` la muestran en vivo:
+
+```
+presupuesto ██████░░░░ 12.4k / 40k · 31% · quedan 27.6k
+```
+
+**Ventanas reales de la cuenta.** Las cuentas de Claude y OpenCode
+tienen ventanas de uso (Claude: 5 horas rodantes + semanal; OpenCode Go:
+5h/semanal/mensual), pero ningún CLI las expone y Anthropic no publica
+los límites en tokens. `presupuesto:` en config.yml declara, por
+proveedor y por ventana, cuánto puede quemar devclean: un **ledger local
+global** (`~/.devclean/ventanas.jsonl`, compartido entre todos tus
+proyectos, como la cuenta) lleva la cuenta de lo que devclean gasta en
+cada ventana rodante y corta la corrida cuando un tope se pasa, antes de
+que la cuenta real toque su límite. `devclean usage` lo muestra:
+
+```
+$ devclean usage
+presupuesto absoluto ██████░░░░ 12.4k / 40k · 31% · quedan 27.6k
+gasto claude · 5h ██ 12k/40k · semanal ░ 45k/120k
+gasto opencode · mensual ████ 30k/100k
+cuenta real (claude) · 5h 47% · semanal 12%
+```
+
+La última línea es la **sonda real**: una llamada mínima lee las
+cabeceras `anthropic-ratelimit-unified-5h/7d-utilization` y te muestra el
+% que tu cuenta Claude ya usó de verdad (no solo lo de devclean). Requiere
+una API key (`ANTHROPIC_API_KEY` o la `key_env` del rol claude en
+config); sin key, la sonda degrada al ledger y avisa. `devclean usage
+--sonda` fuerza la consulta en vivo (el resto usa la caché de 5 min).
+
+**Límite honesto:** el ledger mide solo lo que quema devclean; lo que
+gastás a mano en claude.ai o en otra herramienta no entra en la cuenta
+del ledger. Para ver la cuenta completa usá la sonda de Claude (que sí
+lee el % real) — y para OpenCode Go el % real del dashboard sigue
+necesitando la cookie del dashboard, así que ahí el ledger es la única
+fuente local.
+
+**Estado actual:** el bucle, la integración, el árbol, la escalera de
+fallback, el supervisor del orquestador y las oleadas paralelas
+funcionan (`internal/recurse`). Cada subtarea (verde o roja, con su
+motivo y su modelo) queda en `.devclean/runs/<id>/arbol.json`, que
+sobrevive a que el cuarto se destruya. Y ahora es visible **en vivo**: el
+latido de cada subtarea se escribe en la raíz del proyecto (no dentro
+del cuarto que se destruye), así que mientras una recursión corre,
+`devclean board` (TUI y `--plain`/`--json`) y `devclean standup`
+muestran qué agente chico está trabajando, en qué fase, con qué modelo y
+con cuánto gasto — una subtarea que lleva más de diez minutos sin señal
+se marca como ATASCO igual que una tarea raíz. `devclean logs T-100001`
+abre sus intentos, como si fuera una tarea de verdad.
 
 ---
 
@@ -594,6 +686,11 @@ timeout_esclusa: 300            # segundos para el chequeo "falla hoy"
 timeout_agente: 1200             # segundos por invocación del agente (bucle real, no la esclusa de entrada)
 timeout_pruebas: 300             # segundos por corrida de listo_cuando y del paso bisectable en ship
 recursion_max: 0                 # profundidad de recursión de tareas `recursivo: true`; 0 = desactivada
+subagentes: 2                    # subtareas de una tarea recursiva en paralelo; 1 = serial
+presupuesto_tokens: 40000        # tope de tokens de una corrida; 0 = sin tope · board/standup muestran la barra de gasto
+presupuesto:                    # tope por ventana rodante y por proveedor (el ledger es global de la cuenta)
+  claude:   { 5h: 40000, semanal: 120000 }
+  opencode: { 5h: 10000, semanal: 30000, mensual: 100000 }
 agentes:                        # sobreescribe arquetipos o agrega agentes con nombres propios
   backend:     { provider: opencode, model: opencode/muse-spark-1.2-contributor-free, key_env: OPENCODE_API_KEY, skills: ["go", "sql"] }
   specialist:  { provider: claude, model: sonnet, skills: ["machine-learning", "python"] }
@@ -679,6 +776,7 @@ devclean up --ejecutor opencode --modelo "opencode/muse-spark-1.2-contributor-fr
 | `devclean run --reintentar` | vuelve a correr las tareas detenidas, reusando su cuarto y su trabajo parcial |
 | `devclean board` | tablero en vivo · se refresca solo y muestra intento, fase, modelo y atascos |
 | `devclean standup` | parte de datos: COLISIÓN y ATASCO sin gastar tokens (§6.7) |
+| `devclean usage` | gasto por ventanas (5h/semanal/mensual) por proveedor + presupuesto + % real de la cuenta Claude |
 | `devclean ship <id>` | esclusa de salida (hasta 11 pasos) y PR de esa tarea |
 | `devclean ship --todas` | la esclusa de cada tarea lista y **un solo PR** con un commit por tarea |
 | `devclean ship --todas --revisar` | además, un modelo revisa el diff y deja el informe en el PR · apruebas tú |
@@ -718,6 +816,10 @@ suite oculta falló, la entrega guarda la brecha igualmente para el reporte.
 - Las keys nunca entran al contexto del modelo ni a logs.
 - Escaneo de secretos obligatorio antes de cualquier PR.
 - `devclean ship --dry-run` muestra todo antes de publicar.
+- La única llamada HTTP directa de devclean es la sonda opcional de
+  `devclean usage --sonda`: un `POST` mínimo al API de Anthropic con tu
+  key, solo para leer el % de las ventanas de la cuenta; sin `--sonda`
+  usa una caché local y degrada sin red.
 
 ## Por qué no reuniones entre agentes
 
@@ -736,9 +838,30 @@ debate con dos detectores deterministas que cuestan cero tokens.
 
 ## Estado
 
-**v0.6.3.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
+**v0.6.5.** MVP (v0.1) + Parte B (v0.2/v0.3) + zero-config y OpenCode (v0.4)
 + skills reales, recursividad y fiabilidad de `ship` (v0.5) + de una petición
 a un PR limpio (v0.6), todo en `main` con pruebas verdes.
+
+- **v0.6.5: la orquestación deja de ser frágil y se vuelve
+   barata a escala.** Las subtareas de una tarea recursiva corren **en
+  paralelo** (`subagentes`) y cada hoja usa el modelo de su peso — las
+  chicas van al más barato (haiku/free), que solo sigue instrucciones
+  precisas. Una hoja roja ya no aborta la recursión: se escala al
+  siguiente modelo (escalera que ahora también cubre las tareas planas
+de `run`), se le pregunta al orquestador qué hacer (replanificar/
+   omitir) y se sigue con las demás. Un **`presupuesto_tokens`** topa el
+   gasto de la corrida entera y un **ledger de ventanas rodantes**
+   (`presupuesto:` por proveedor y por 5h/semanal/mensual, global a la
+   cuenta) corta antes de tocar el límite real, con barras en vivo en
+   `board`/`standup`/`run` y en el nuevo `devclean usage`, que además lee
+   con una sonda el % real de las ventanas de tu cuenta Claude. El
+   orquestador deja requerimientos más ricos: cada subtarea hereda
+   `no_tocar`, `riesgos`, `limite_lineas` y las firmas congeladas del
+   padre, y recibe un **`como`** (enfoque) inyectado a su prompt. Y deja
+   de estar ciego: los latidos de las subtareas viven en la raíz del
+   proyecto, así que `board`/`standup` muestran en vivo qué agente chico
+   trabaja, su fase, su modelo y su gasto, con ATASCO como en las tareas
+   raíz.
 
 - **v0.6.3:** un modelo revisa la entrega y deja un informe en el PR — una
   línea por tarea con su tipo de Conventional Commit, si funciona y, si no,

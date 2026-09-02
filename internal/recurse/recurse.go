@@ -13,34 +13,71 @@
 // entera es "lo que hizo el agente en este intento". El bucle no cambia
 // una línea — sigue verificando `listo_cuando` del padre después, con
 // código, nunca con el juicio del modelo (manifiesto regla 3).
+//
+// Las subtareas independientes corren en PARALELO, en oleadas limitadas
+// por `subagentes` en config.yml: el modelo barato se ocupa de las hojas
+// chicas y el orquestador solo interviene cuando algo falla. Una hoja
+// roja no aborta el árbol: se escala de modelo, se le pregunta al
+// orquestador qué hacer y se sigue con las demás. Solo cuando las hojas
+// rojas no se pueden salvar y el `listo_cuando` del padre sigue fallando
+// (o se agota el presupuesto de tokens), la recursión se detiene con un
+// loop.ErrDetener — sin quemar los intentos restantes del padre.
 package recurse
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
+	"runtime"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/Pastranauwu/devclean/internal/budget"
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/gate"
 	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/task"
+	"github.com/Pastranauwu/devclean/internal/ventanas"
 )
+
+// LimiteReplan topa cuántas veces el orquestador puede reescribir el
+// contrato de una misma subtarea. Una replan fallida otra vez no se
+// vuelve a consultar: la hoja queda roja y se sigue con las demás.
+const LimiteReplan = 1
+
+// muCuarto serializa la creación y destrucción de cuartos anidados: git
+// worktree add/remove del mismo repo en paralelo choca por los locks
+// internos. La ejecución del agente dentro del cuarto no se serializa.
+var muCuarto sync.Mutex
 
 // Agent descompone una tarea recursiva y ejecuta sus subtareas.
 type Agent struct {
 	Cfg            config.Config
 	Constitucion   string
-	Planificador   plan.Generador // rol planificador (modelo caro): decompone
+	Planificador   plan.Generador // rol planificador (modelo caro): descompone y supervisa
 	Ejecutor       loop.Agent     // agente hoja (modelo barato) para subtareas no recursivas
 	ModeloEjecutor string
 	Task           task.Task // la tarea recursiva que este Agent resuelve
 	Profundidad    int       // 0 = raíz
+	// Presupuesto es el tope de gasto compartido de la corrida. Las
+	// hojas lo gastan con sus intentos; al agotarse, la recursión corta.
+	Presupuesto *budget.Contador
+	// Ventanas es el ledger de ventanas rodantes (5h/semanal/mensual) de
+	// la cuenta. Las hojas registran su gasto; al pasar un tope
+	// configurado, la hoja corta y la recursión se detiene.
+	Ventanas *ventanas.Registro
 
-	// Root es la raíz del proyecto (no el cuarto): ahí vive arbol.json,
-	// para que sobreviva a que el cuarto de la subtarea se destruya.
+	// Root es la raíz del proyecto (no el cuarto): ahí viven arbol.json,
+	// y desde aquí los latidos y attempts de las subtareas, para que
+	// sobrevivan a que el cuarto de la subtarea se destruya y para que
+	// board/standup puedan verlas en vivo.
 	Root string
 	// RaizID es la tarea de nivel 0 que arrancó la recursión — todo nodo,
 	// a cualquier profundidad, se guarda bajo su arbol.json, así
@@ -51,18 +88,42 @@ type Agent struct {
 // Name identifica al agente en attempts.jsonl y en los logs.
 func (a Agent) Name() string { return "recursivo" }
 
-// Run descompone la tarea en subtareas, las corre una por una en cuartos
-// anidados y las integra a la rama de este cuarto. No abre PR ni decide
-// nada por juicio propio: el bucle del padre corre `listo_cuando` después
-// de esto, exactamente igual que si un solo agente hubiera escrito el
-// código a mano.
+// resultadoSub es el desenlace de una subtarea ya resuelta. Si verde, su
+// cuarto sigue vivo (con su rama) esperando la integración; si no, el
+// cuarto ya se destruyó.
+type resultadoSub struct {
+	sub    task.Task
+	verde  bool
+	modelo string
+	tk     loop.Tokens
+	motivo string
+}
+
+// Run descompone la tarea en subtareas, las corre en oleadas paralelas
+// dentro de cuartos anidados y las integra a la rama de este cuarto. No
+// abre PR ni decide nada por juicio propio: el bucle del padre corre
+// `listo_cuando` después de esto, exactamente igual que si un solo agente
+// hubiera escrito el código a mano.
+//
+// El desenlace de una hoja roja sigue esta escalera, en orden:
+//  1. se escala al siguiente modelo más pesado (`modelos` en config) y
+//     se reintenta reusando el mismo cuarto y su trabajo parcial;
+//  2. si sigue roja y hay trabajo real, el orquestador (Planificador)
+//     recibe un brief compacto y puede replanificar la subtarea, que se
+//     reintenta desde un cuarto nuevo;
+//  3. si queda roja, se registra en el árbol y se CONTINÚA con las
+//     demás subtareas — una hoja no mata el trabajo de sus hermanas.
+//
+// Al final, si quedaron hojas rojas, se corre el `listo_cuando` del
+// padre: si pasó, las hojas rojas eran opcionales y se devuelve éxito;
+// si no, se devuelve un loop.ErrDetener con el motivo exacto.
 func (a Agent) Run(ctx context.Context, req loop.Request) (loop.Result, error) {
 	limite := a.Task.LimiteSubtareas
 	if limite < 1 {
 		limite = task.DefaultLimiteSubtareas
 	}
 
-	borradores, err := a.descomponer(ctx, req)
+	borradores, err := a.descomponer(ctx)
 	if err != nil {
 		return loop.Result{}, fmt.Errorf("descomposición de %s falló · %s", a.Task.ID, err)
 	}
@@ -70,94 +131,368 @@ func (a Agent) Run(ctx context.Context, req loop.Request) (loop.Result, error) {
 		return loop.Result{}, fmt.Errorf("descomposición de %s propuso %d subtareas, el límite es %d · bajá el alcance o subí limite_subtareas", a.Task.ID, len(borradores), limite)
 	}
 
-	var tokens loop.Tokens
+	var subs []task.Task
 	for i, b := range borradores {
 		sub, err := a.tareaDesdeBorrador(b, i+1)
 		if err != nil {
 			return loop.Result{}, fmt.Errorf("subtarea %d de %s inválida · %s", i+1, a.Task.ID, err)
 		}
-
-		gres := gate.Run(ctx, req.RoomPath, a.Cfg, sub, nil, gate.DefaultTimeout)
-		if !gres.Aprobada {
-			motivo := "rechazada en la esclusa de entrada · " + gres.PrimerMotivo()
-			a.registrar(sub, false, 0, motivo, loop.Tokens{})
-			return loop.Result{}, fmt.Errorf("subtarea %s %s", sub.ID, motivo)
-		}
-
-		r, err := room.Create(ctx, req.RoomPath, sub.ID, "HEAD")
-		if err != nil {
-			a.registrar(sub, false, 0, "no se pudo crear el cuarto · "+err.Error(), loop.Tokens{})
-			return loop.Result{}, fmt.Errorf("no se pudo crear el cuarto de %s · %s", sub.ID, err)
-		}
-
-		outcome, agentErr, tk := a.correrSubtarea(ctx, req, r, sub)
-		tokens.Entrada += tk.Entrada
-		tokens.Salida += tk.Salida
-		if agentErr != nil {
-			a.registrar(sub, false, outcome.Intentos, agentErr.Error(), tk)
-			_ = room.Destroy(ctx, req.RoomPath, sub.ID)
-			return loop.Result{Tokens: tokens}, agentErr
-		}
-		if !outcome.Verde {
-			a.registrar(sub, false, outcome.Intentos, outcome.Pregunta, tk)
-			_ = room.Destroy(ctx, req.RoomPath, sub.ID)
-			return loop.Result{Tokens: tokens}, fmt.Errorf("subtarea %s no llegó a verde · %s", sub.ID, outcome.Pregunta)
-		}
-
-		if err := integrar(req.RoomPath, r.Rama, sub.ID); err != nil {
-			a.registrar(sub, false, outcome.Intentos, "no se pudo integrar · "+err.Error(), tk)
-			_ = room.Destroy(ctx, req.RoomPath, sub.ID)
-			return loop.Result{Tokens: tokens}, fmt.Errorf("no se pudo integrar %s a %s · %s", sub.ID, a.Task.ID, err)
-		}
-		a.registrar(sub, true, outcome.Intentos, "", tk)
-		_ = room.Destroy(ctx, req.RoomPath, sub.ID)
+		subs = append(subs, sub)
 	}
 
-	return loop.Result{ExitCode: 0, Tokens: tokens}, nil
+	// esclusa de entrada en serie: la que no pasa se rechaza antes de
+	// gastar un token, mismo criterio que devclean run
+	roja := map[string]string{} // id -> motivo
+	aprobadas := make([]task.Task, 0, len(subs))
+	for _, s := range subs {
+		gres := gate.Run(ctx, req.RoomPath, a.Cfg, s, nil, gate.DefaultTimeout)
+		if !gres.Aprobada {
+			roja[s.ID] = "rechazada en la esclusa de entrada · " + gres.PrimerMotivo()
+			a.registrar(s, false, 0, roja[s.ID], loop.Tokens{}, "")
+			continue
+		}
+		aprobadas = append(aprobadas, s)
+	}
+
+	subagentes := a.Cfg.Subagentes
+	if subagentes < 1 {
+		subagentes = 1
+	}
+
+	verde := map[string]bool{}
+	var tokens loop.Tokens
+	pendientes := aprobadas
+
+	for len(pendientes) > 0 {
+		var ola []task.Task
+		for _, s := range pendientes {
+			if depsVerdes(s.DependeDe, verde) {
+				ola = append(ola, s)
+			}
+		}
+		if len(ola) == 0 {
+			// solo quedan bloqueadas por dependencias que no salieron
+			for _, s := range pendientes {
+				roja[s.ID] = "bloqueada · depende de " + strings.Join(depsFaltantes(s.DependeDe, verde), ", ") + " que no salió verde"
+				a.registrar(s, false, 0, roja[s.ID], loop.Tokens{}, "")
+			}
+			break
+		}
+
+		// las solapadas en tocar_solo no corren juntas: la ola consume el
+		// subconjunto sin cruce y el resto espera a la siguiente pasada
+		batch, _ := separarSolapadas(ola)
+
+		results := correrOla(ctx, req, a, batch, subagentes)
+		for _, r := range results {
+			tokens.Entrada += r.tk.Entrada
+			tokens.Salida += r.tk.Salida
+			if r.verde {
+				verde[r.sub.ID] = true
+			} else {
+				roja[r.sub.ID] = r.motivo
+			}
+		}
+
+		// integrar verdes en orden de id: una sola rama que va acumulando
+		sort.Slice(results, func(i, j int) bool { return results[i].sub.ID < results[j].sub.ID })
+		for _, r := range results {
+			if !r.verde {
+				continue
+			}
+			if err := integrar(req.RoomPath, room.Branch(r.sub.ID), r.sub.ID); err != nil {
+				delete(verde, r.sub.ID)
+				roja[r.sub.ID] = "no se pudo integrar · " + err.Error()
+				a.registrar(r.sub, false, 0, roja[r.sub.ID], loop.Tokens{}, "")
+				continue
+			}
+			muCuarto.Lock()
+			_ = room.Destroy(ctx, req.RoomPath, r.sub.ID)
+			muCuarto.Unlock()
+		}
+
+		// recomputar pendientes: lo que no quedó ni verde ni roja
+		pendientes = pendientes[:0]
+		for _, s := range aprobadas {
+			if !verde[s.ID] && roja[s.ID] == "" {
+				pendientes = append(pendientes, s)
+			}
+		}
+
+		if a.Presupuesto != nil && a.Presupuesto.Agotado() {
+			for _, s := range pendientes {
+				roja[s.ID] = loop.MotivoPresupuesto
+				a.registrar(s, false, 0, roja[s.ID], loop.Tokens{}, "")
+			}
+			pendientes = pendientes[:0]
+			break
+		}
+	}
+
+	if len(roja) == 0 {
+		return loop.Result{ExitCode: 0, Tokens: tokens}, nil
+	}
+	if a.Presupuesto != nil && a.Presupuesto.Agotado() {
+		return loop.Result{Tokens: tokens}, &loop.ErrDetener{Motivo: loop.MotivoPresupuesto}
+	}
+	// el padre puede haber quedado verde pese a las hojas rojas: la
+	// última palabra la tiene listo_cuando, no el árbol
+	if listoPadreVerde(ctx, req.RoomPath, a.Task.ListoCuando, a.Cfg.TimeoutPruebas) {
+		return loop.Result{ExitCode: 0, Tokens: tokens}, nil
+	}
+	var partes []string
+	for _, id := range sortedIDs(roja) {
+		partes = append(partes, id+" · "+roja[id])
+	}
+	return loop.Result{Tokens: tokens}, &loop.ErrDetener{Motivo: "subtareas rojas: " + strings.Join(partes, " | ")}
+}
+
+// resolverSubtarea resuelve una subtarea completa dentro de su cuarto:
+// intento con el modelo de su peso, escalada a un modelo más pesado si
+// dejó trabajo y sigue roja, y dictamen del orquestador si el pesado
+// tampoco pudo. Si queda verde, el cuarto queda vivo esperando que Run lo
+// integre; si no, se destruye. Corre en una goroutine por hoja.
+func (a Agent) resolverSubtarea(ctx context.Context, req loop.Request, sub task.Task) resultadoSub {
+	modelo := a.modeloInicial(sub)
+
+	if a.Presupuesto != nil && a.Presupuesto.Agotado() {
+		return resultadoSub{sub: sub, modelo: modelo, motivo: loop.MotivoPresupuesto}
+	}
+
+	muCuarto.Lock()
+	r, err := room.Create(ctx, req.RoomPath, sub.ID, "HEAD")
+	muCuarto.Unlock()
+	if err != nil {
+		return resultadoSub{sub: sub, modelo: modelo, motivo: "no se pudo crear el cuarto · " + err.Error()}
+	}
+	a.registrar(sub, false, 0, "en curso · modelo "+modelo, loop.Tokens{}, modelo)
+
+	outcome, agentErr, tk := a.correrSubtarea(ctx, req, r, sub, modelo)
+	if agentErr != nil {
+		a.registrar(sub, false, outcome.Intentos, "no pudo ejecutarse · "+agentErr.Error(), tk, modelo)
+		muCuarto.Lock()
+		_ = room.Destroy(ctx, req.RoomPath, sub.ID)
+		muCuarto.Unlock()
+		return resultadoSub{sub: sub, modelo: modelo, tk: tk, motivo: "no pudo ejecutarse · " + agentErr.Error()}
+	}
+	if outcome.Verde {
+		a.registrar(sub, true, outcome.Intentos, "", tk, modelo)
+		return resultadoSub{sub: sub, verde: true, modelo: modelo, tk: tk}
+	}
+
+	// hoja roja: solo merece escalar de modelo si de verdad dejó trabajo
+	if m := a.Cfg.ModeloEscalado(sub.Peso, modelo); m != "" && huboTrabajo(rootPara(a, req), sub.ID) {
+		outcome, agentErr, tk = a.correrSubtarea(ctx, req, r, sub, m)
+		modelo = m
+		if agentErr == nil && outcome.Verde {
+			a.registrar(sub, true, outcome.Intentos, "", tk, modelo)
+			return resultadoSub{sub: sub, verde: true, modelo: modelo, tk: tk}
+		}
+	}
+
+	// el orquestador decide (replanificar) si el modelo pesado tampoco
+	// pudo — es el único momento en que un modelo grande se entromete
+	if a.Planificador != nil && huboTrabajo(rootPara(a, req), sub.ID) {
+		if nuevo, ok := a.supervisar(ctx, sub, outcome.Pregunta); ok {
+			muCuarto.Lock()
+			gres := gate.Run(ctx, req.RoomPath, a.Cfg, nuevo, nil, gate.DefaultTimeout)
+			_ = room.Destroy(ctx, req.RoomPath, sub.ID)
+			var r2 room.Room
+			if gres.Aprobada {
+				r2, err = room.Create(ctx, req.RoomPath, sub.ID, "HEAD")
+			}
+			muCuarto.Unlock()
+			if gres.Aprobada && err == nil {
+				o2, ae2, tk2 := a.correrSubtarea(ctx, req, r2, nuevo, a.modeloInicial(nuevo))
+				if ae2 == nil && o2.Verde {
+					a.registrar(nuevo, true, o2.Intentos, "", tk2, a.modeloInicial(nuevo))
+					return resultadoSub{sub: nuevo, verde: true, modelo: a.modeloInicial(nuevo), tk: tk2}
+				}
+				muCuarto.Lock()
+				_ = room.Destroy(ctx, req.RoomPath, sub.ID)
+				muCuarto.Unlock()
+				outcome = o2
+				tk = tk2
+				modelo = a.modeloInicial(nuevo)
+			}
+		} else {
+			muCuarto.Lock()
+			_ = room.Destroy(ctx, req.RoomPath, sub.ID)
+			muCuarto.Unlock()
+		}
+	} else {
+		muCuarto.Lock()
+		_ = room.Destroy(ctx, req.RoomPath, sub.ID)
+		muCuarto.Unlock()
+	}
+
+	a.registrar(sub, false, outcome.Intentos, outcome.Pregunta, tk, modelo)
+	return resultadoSub{sub: sub, modelo: modelo, tk: tk, motivo: outcome.Pregunta}
+}
+
+// correrOla ejecuta la ola en paralelo con hasta subagentes trabajadores.
+// Cada hoja corre su propia escalera dentro de resolverSubtarea; los
+// cuartos se crean y destruyen serializados por muCuarto.
+func correrOla(ctx context.Context, req loop.Request, a Agent, batch []task.Task, subagentes int) []resultadoSub {
+	if len(batch) == 0 {
+		return nil
+	}
+	if subagentes > len(batch) {
+		subagentes = len(batch)
+	}
+	jobs := make(chan task.Task)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	results := make([]resultadoSub, 0, len(batch))
+	for i := 0; i < subagentes; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for s := range jobs {
+				r := a.resolverSubtarea(ctx, req, s)
+				mu.Lock()
+				results = append(results, r)
+				mu.Unlock()
+			}
+		}()
+	}
+	for _, s := range batch {
+		jobs <- s
+	}
+	close(jobs)
+	wg.Wait()
+	return results
+}
+
+// separarSolapadas parte la ola en el subconjunto que puede correr junta
+// (sin cruce de tocar_solo) y el resto que espera a la próxima pasada.
+func separarSolapadas(ola []task.Task) (batch, restantes []task.Task) {
+	sort.Slice(ola, func(i, j int) bool { return ola[i].ID < ola[j].ID })
+	var aceptadas []task.Task
+	for _, s := range ola {
+		if c := gate.Cruce(s, aceptadas); c.OK {
+			aceptadas = append(aceptadas, s)
+			batch = append(batch, s)
+			continue
+		}
+		restantes = append(restantes, s)
+	}
+	return batch, restantes
+}
+
+// depsVerdes reporta si todas las dependencias de una subtarea (ids de
+// hermanas, mapeados de los índices de la descomposición) ya salieron.
+func depsVerdes(deps []string, verde map[string]bool) bool {
+	for _, d := range deps {
+		if !verde[d] {
+			return false
+		}
+	}
+	return true
+}
+
+// depsFaltantes lista las dependencias que no salieron verdes.
+func depsFaltantes(deps []string, verde map[string]bool) []string {
+	var faltantes []string
+	for _, d := range deps {
+		if !verde[d] {
+			faltantes = append(faltantes, d)
+		}
+	}
+	return faltantes
+}
+
+// sortedIDs ordena las claves de un mapa de ids.
+func sortedIDs(m map[string]string) []string {
+	ids := make([]string, 0, len(m))
+	for id := range m {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // registrar guarda el nodo de esta subtarea en arbol.json de la raíz.
 // Best-effort: un fallo al escribir el árbol no debe frenar la
 // recursión — el árbol es para que humanos lo miren, no parte del
-// contrato de verificación.
-func (a Agent) registrar(sub task.Task, verde bool, intentos int, motivo string, tk loop.Tokens) {
+// contrato de verificación. Las escrituras concurrentes de las hojas en
+// paralelo las serializa muArbol dentro de AgregarNodo.
+func (a Agent) registrar(sub task.Task, verde bool, intentos int, motivo string, tk loop.Tokens, modelo string) {
 	if a.Root == "" || a.RaizID == "" {
 		return
 	}
 	_ = AgregarNodo(a.Root, a.RaizID, NodoArbol{
 		ID: sub.ID, Titulo: sub.Titulo, Padre: a.Task.ID,
 		Profundidad: a.Profundidad + 1, Verde: verde, Intentos: intentos,
-		Motivo: motivo, Tokens: tk,
+		Motivo: motivo, Tokens: tk, Modelo: modelo,
 	})
+}
+
+// modeloInicial resuelve el modelo de una subtarea por su peso: las
+// hojas livianas usan el modelo barato de `modelos:` y las pesadas el
+// caro, en vez de heredar el de la tarea raíz. Sin mapeo, cae al
+// ModeloEjecutor (el del CLI).
+func (a Agent) modeloInicial(sub task.Task) string {
+	if m := a.Cfg.ModeloPara(sub.Peso); m != "" {
+		return m
+	}
+	return a.ModeloEjecutor
 }
 
 // correrSubtarea decide si la subtarea también recursa (si hay
 // profundidad disponible) o corre plana con el agente hoja, y la ejecuta.
-func (a Agent) correrSubtarea(ctx context.Context, req loop.Request, r room.Room, sub task.Task) (loop.Outcome, error, loop.Tokens) {
+// modelo es el id a usar en este intento — el de su peso o el escalado.
+func (a Agent) correrSubtarea(ctx context.Context, req loop.Request, r room.Room, sub task.Task, modelo string) (loop.Outcome, error, loop.Tokens) {
 	agente := a.Ejecutor
 	if sub.Recursivo && a.Profundidad+1 < a.Cfg.RecursionMax {
 		agente = Agent{
 			Cfg: a.Cfg, Constitucion: a.Constitucion,
 			Planificador: a.Planificador,
-			Ejecutor:     a.Ejecutor, ModeloEjecutor: a.ModeloEjecutor,
+			Ejecutor:     a.Ejecutor, ModeloEjecutor: modelo,
 			Task: sub, Profundidad: a.Profundidad + 1,
 			Root: a.Root, RaizID: a.RaizID,
+			Presupuesto: a.Presupuesto, Ventanas: a.Ventanas,
 		}
 	}
+	root := rootPara(a, req)
+	var agenteTimeout, pruebaTimeout time.Duration
+	if a.Cfg.TimeoutAgente > 0 {
+		agenteTimeout = time.Duration(a.Cfg.TimeoutAgente) * time.Second
+	}
+	if a.Cfg.TimeoutPruebas > 0 {
+		pruebaTimeout = time.Duration(a.Cfg.TimeoutPruebas) * time.Second
+	}
 	outcome, err := loop.Run(ctx, loop.Options{
-		Agent:        agente,
-		Root:         req.RoomPath,
-		Room:         r,
-		Task:         sub,
-		Model:        a.ModeloEjecutor,
-		Base:         "HEAD",
-		Constitucion: a.Constitucion,
+		Agent:          agente,
+		Root:           root,
+		Room:           r,
+		Task:           sub,
+		Model:          modelo,
+		Base:           "HEAD",
+		Constitucion:   a.Constitucion,
+		Interfaces:     sub.Usa,
+		PatronesPrueba: a.Cfg.PatronesPrueba,
+		AgentTimeout:   agenteTimeout,
+		PruebaTimeout:  pruebaTimeout,
+		Presupuesto:    a.Presupuesto,
+		Ventanas:       a.Ventanas,
+		Proveedor:      a.Ejecutor.Name(),
 	})
 	if err != nil {
 		return loop.Outcome{}, err, loop.Tokens{}
 	}
-	tk, _ := ultimoTokens(req.RoomPath, sub.ID)
+	tk, _ := ultimoTokens(root, sub.ID)
 	return outcome, nil, tk
+}
+
+// rootPara decide dónde viven latidos, attempts y logs de las subtareas:
+// la raíz del proyecto si el Agent la conoce (producción), o el cuarto
+// del padre como hacía antes (fixtures de prueba que no la pasan).
+func rootPara(a Agent, req loop.Request) string {
+	if a.Root != "" {
+		return a.Root
+	}
+	return req.RoomPath
 }
 
 // ultimoTokens suma los tokens de todos los intentos registrados de una
@@ -177,31 +512,176 @@ func ultimoTokens(root, id string) (loop.Tokens, error) {
 	return tk, nil
 }
 
+// huboTrabajo reporta si la subtarea llegó a tocar archivos en algún
+// intento. Es la señal que separa "el código falló" (vale escalar) de
+// "el modelo ni arrancó" (escalar no cambia nada).
+func huboTrabajo(root, id string) bool {
+	if root == "" {
+		return false
+	}
+	attempts, err := loop.ReadAttempts(root, id)
+	if err != nil {
+		return false
+	}
+	for _, at := range attempts {
+		if len(at.ArchivosTocados) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// supervisar consulta al orquestador (modelo grande) qué hacer con una
+// subtarea roja. Solo devuelve ok=true cuando el dictamen es
+// "replanificar" y el contrato nuevo es válido; cualquier otra salida
+// (omitir, detener, texto ilegible) se traduce en "sigue roja" y el
+// listo_cuando del padre decide al final — el supervisor informa, no
+// bloquea, y nunca abre una puerta a loops infinitos.
+func (a Agent) supervisar(ctx context.Context, sub task.Task, motivo string) (task.Task, bool) {
+	if a.Planificador == nil {
+		return task.Task{}, false
+	}
+	texto, err := a.Planificador.Generar(ctx, a.promptSupervisor(sub, motivo))
+	if err != nil {
+		return task.Task{}, false
+	}
+	d, err := parseDictamen(texto)
+	if err != nil || d.Decision != "replanificar" || d.Contrato == nil {
+		return task.Task{}, false
+	}
+	nuevo, err := a.replanDesdeContrato(sub, *d.Contrato)
+	if err != nil {
+		return task.Task{}, false
+	}
+	return nuevo, true
+}
+
+// dictamen es la respuesta del orquestador ante una hoja roja.
+type dictamen struct {
+	Decision string         `json:"decision"`
+	Motivo   string         `json:"motivo"`
+	Contrato *plan.Borrador `json:"contrato"`
+}
+
+// parseDictamen tolera vallas markdown y texto alrededor, como plan.Parse.
+func parseDictamen(texto string) (dictamen, error) {
+	t := strings.TrimSpace(texto)
+	t = strings.TrimPrefix(t, "```json")
+	t = strings.TrimPrefix(t, "```")
+	t = strings.TrimSuffix(t, "```")
+	t = strings.TrimSpace(t)
+	var d dictamen
+	if err := json.Unmarshal([]byte(t), &d); err != nil {
+		return d, err
+	}
+	if d.Decision == "" {
+		return d, errors.New("el orquestador no devolvió una decisión")
+	}
+	return d, nil
+}
+
+// replanDesdeContrato reescribe el contrato de una subtarea roja con lo
+// que devolvió el orquestador. Conserva el id (es el mismo slot de la
+// descomposición) y el límite de intentos; el alcance nuevo queda
+// restringido al del padre, nunca puede inventarse rutas afuera.
+func (a Agent) replanDesdeContrato(sub task.Task, b plan.Borrador) (task.Task, error) {
+	if strings.TrimSpace(b.Titulo) == "" || strings.TrimSpace(b.ListoCuando) == "" {
+		return task.Task{}, errors.New("el orquestador devolvió un contrato sin titulo ni listo_cuando")
+	}
+	if len(b.TocarSolo) == 0 {
+		b.TocarSolo = sub.TocarSolo
+	}
+	nuevo := sub
+	nuevo.Titulo = b.Titulo
+	nuevo.Porque = b.Porque
+	nuevo.ListoCuando = b.ListoCuando
+	nuevo.TocarSolo = b.TocarSolo
+	nuevo.NoTocar = mergeLists(a.Task.NoTocar, b.NoTocar)
+	nuevo.Expone = b.Expone
+	nuevo.Usa = b.Usa
+	nuevo.Riesgos = joinTexto(a.Task.Riesgos, b.Riesgos)
+	nuevo.Peso = b.Peso
+	if nuevo.Peso == "" {
+		nuevo.Peso = "liviana"
+	}
+	nuevo.Agente = b.Agente
+	nuevo.Notas = b.Como
+	nuevo.DependeDe = nil
+	if errs := nuevo.Validate(); len(errs) > 0 {
+		return task.Task{}, errs[0]
+	}
+	return nuevo, nil
+}
+
+// promptSupervisor arma el brief compacto que recibe el orquestador:
+// el contrato de la hoja roja, su fallo y lo que el padre espera al
+// final. Deliberadamente corto — se gasta solo cuando algo ya falló.
+func (a Agent) promptSupervisor(sub task.Task, motivo string) string {
+	var b strings.Builder
+	b.WriteString("Eres el supervisor de un equipo de agentes de código. Una subtarea falló tras agotar sus intentos y su modelo de escalado.\n\n")
+	fmt.Fprintf(&b, "Tarea padre %s: %s\n", a.Task.ID, a.Task.Titulo)
+	fmt.Fprintf(&b, "El padre estará listo cuando: %s\n", a.Task.ListoCuando)
+	fmt.Fprintf(&b, "\nSubtarea %s: %s\n", sub.ID, sub.Titulo)
+	if sub.Porque != "" {
+		fmt.Fprintf(&b, "Por qué: %s\n", sub.Porque)
+	}
+	fmt.Fprintf(&b, "Listo cuando: %s\n", sub.ListoCuando)
+	if len(sub.TocarSolo) > 0 {
+		fmt.Fprintf(&b, "Alcance: %s\n", strings.Join(sub.TocarSolo, ", "))
+	}
+	fmt.Fprintf(&b, "Falló: %s\n", recortar(motivo, 500))
+	b.WriteString("\nDecidí qué hacer. Devuelve SOLO JSON, sin texto alrededor, una de estas tres:\n")
+	b.WriteString("{\"decision\":\"replanificar\",\"motivo\":\"...\",\"contrato\":{\"titulo\":\"...\",\"listo_cuando\":\"un comando que HOY FALLE\",\"tocar_solo\":[\"...\"],\"porque\":\"...\",\"como\":\"enfoque\"}}\n")
+	b.WriteString("{\"decision\":\"omitir\",\"motivo\":\"...\"}  · el padre puede quedar listo sin esta subtarea\n")
+	b.WriteString("{\"decision\":\"detener\",\"motivo\":\"...\"}  · sin esta subtarea el padre no puede quedar verde\n")
+	b.WriteString("Reglas: replanificar solo si el nuevo listo_cuando sigue dentro del alcance del padre y hoy falla; omitir solo si la subtarea es opcional para el listo_cuando del padre.")
+	return b.String()
+}
+
+// listoPadreVerde corre el listo_cuando del padre en su cuarto. Es la
+// última palabra cuando quedan hojas rojas: si pasó, las hojas rojas eran
+// opcionales y el árbol se da por bueno.
+func listoPadreVerde(ctx context.Context, dir, cmd string, timeoutSeg int) bool {
+	if strings.TrimSpace(cmd) == "" {
+		return false
+	}
+	to := 5 * time.Minute
+	if timeoutSeg > 0 {
+		to = time.Duration(timeoutSeg) * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, to)
+	defer cancel()
+
+	var c *exec.Cmd
+	if runtime.GOOS == "windows" {
+		c = exec.CommandContext(ctx, "cmd", "/c", cmd)
+	} else {
+		c = exec.CommandContext(ctx, "sh", "-c", cmd)
+	}
+	c.Dir = dir
+	return c.Run() == nil
+}
+
+// recortar deja el motivo del fallo en una sola línea acotada.
+func recortar(s string, max int) string {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) > max {
+		s = s[:max] + "…"
+	}
+	return s
+}
+
 // descomponer pide al planificador que parta la tarea en subtareas
-// reales, reusando el mismo prompt y parser que `devclean plan` — la
-// descomposición no es más que un plan cuyo alcance ya viene acotado al
-// `tocar_solo` de la tarea padre.
-func (a Agent) descomponer(ctx context.Context, req loop.Request) ([]plan.Borrador, error) {
-	frase := a.Task.Titulo
-	if a.Task.Porque != "" {
-		frase += ". " + a.Task.Porque
+// reales, reusando el mismo parser que `devclean plan` — la descomposición
+// no es más que un plan cuyo alcance ya viene acotado al `tocar_solo` de
+// la tarea padre.
+func (a Agent) descomponer(ctx context.Context) ([]plan.Borrador, error) {
+	texto, err := a.Planificador.Generar(ctx, a.promptDescomposicion())
+	if err != nil {
+		return nil, err
 	}
-	limite := a.Task.LimiteSubtareas
-	if limite < 1 {
-		limite = task.DefaultLimiteSubtareas
-	}
-	requisitos := fmt.Sprintf(
-		"Es una subdivisión de la tarea %s. SOLO podés declarar \"tocar_solo\" dentro de estas rutas ya asignadas a la tarea (ninguna otra): %s. Máximo %d subtareas.",
-		a.Task.ID, strings.Join(a.Task.TocarSolo, ", "), limite,
-	)
-	ctxPlan := plan.Contexto{
-		Lenguaje:     config.DetectLanguage(req.RoomPath),
-		Pruebas:      a.Cfg.Pruebas,
-		Constitucion: a.Constitucion,
-		Requisitos:   requisitos,
-		Agentes:      a.Cfg.TodosLosAgentes(),
-	}
-	borradores, err := plan.Generar(ctx, a.Planificador, ctxPlan, frase)
+	borradores, err := plan.Parse(texto)
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +692,58 @@ func (a Agent) descomponer(ctx context.Context, req loop.Request) ([]plan.Borrad
 		}
 	}
 	return borradores, nil
+}
+
+// promptDescomposicion es la versión compacta del prompt de plan: lleva
+// el contrato del padre (por qué, para qué, cómo se sabe que está,
+// riesgos, firmas congeladas) y exige el campo "como" en cada subtarea,
+// que es la instrucción que el orquestador le deja al agente chico. Más
+// corto que plan.Prompt a propósito: la descomposición corre dentro del
+// bucle y cada token cuenta.
+//
+// Le dice al modelo que las subtareas corren en paralelo cuando pueden:
+// las independientes van juntas y una que necesita ver el código de otra
+// lo declara por índice en "depende_de".
+func (a Agent) promptDescomposicion() string {
+	t := a.Task
+	limite := t.LimiteSubtareas
+	if limite < 1 {
+		limite = task.DefaultLimiteSubtareas
+	}
+	var b strings.Builder
+	b.WriteString("Eres el planificador de devclean. Partí esta tarea en subtareas pequeñas y verificables.\n\n")
+	fmt.Fprintf(&b, "Tarea %s: %s\n", t.ID, t.Titulo)
+	if t.Porque != "" {
+		fmt.Fprintf(&b, "Para qué importa: %s\n", t.Porque)
+	}
+	fmt.Fprintf(&b, "La tarea estará lista cuando: %s (lo decide el código, no un modelo)\n", t.ListoCuando)
+	if t.Riesgos != "" {
+		fmt.Fprintf(&b, "Riesgos del padre: %s\n", t.Riesgos)
+	}
+	if len(t.Expone) > 0 {
+		fmt.Fprintf(&b, "El padre debe terminar exponiendo: %s\n", strings.Join(t.Expone, "; "))
+	}
+	if len(t.Usa) > 0 {
+		fmt.Fprintf(&b, "El padre consume de otras tareas: %s\n", strings.Join(t.Usa, "; "))
+	}
+	if len(t.NoTocar) > 0 {
+		fmt.Fprintf(&b, "Nadie toca: %s\n", strings.Join(t.NoTocar, ", "))
+	}
+	fmt.Fprintf(&b, "SOLO podés declarar \"tocar_solo\" dentro de estas rutas (ninguna otra): %s. Máximo %d subtareas.\n\n",
+		strings.Join(t.TocarSolo, ", "), limite)
+	b.WriteString("Las subtareas corren EN PARALELO cuando pueden, con un modelo barato cada una. Están numeradas en orden: la primera es 1, la segunda 2, etc. Una subtarea que necesita ver el código de otra debe declarar \"depende_de\": [n] con el número de esa otra; sin depende_de se asume independiente y va en paralelo.\n\n")
+	b.WriteString("Devuelve SOLO un array JSON, sin texto alrededor. Cada subtarea:\n")
+	b.WriteString("- \"titulo\": frase corta\n")
+	b.WriteString("- \"porque\": por qué importa (una frase)\n")
+	b.WriteString("- \"listo_cuando\": comando ejecutable que HOY FALLE y pase cuando esa subtarea esté hecha. Si apunta a un archivo de prueba, ese archivo debe estar también en tocar_solo.\n")
+	b.WriteString("- \"tocar_solo\": array de globs dentro del alcance del padre; sin cruce con otras subtareas que corran en paralelo\n")
+	b.WriteString("- \"depende_de\": array de números de subtareas que deben estar verdes antes (ej. [1]); vacío si no depende de ninguna\n")
+	b.WriteString("- \"expone\" / \"usa\": firmas que esta subtarea produce/consume, si aplica\n")
+	b.WriteString("- \"como\": una línea con el enfoque — cómo encararla, qué tocar primero, a qué no meterse (obligatorio)\n")
+	b.WriteString("- \"riesgos\": o \"\"\n")
+	b.WriteString("- \"peso\": \"liviana\", \"media\" o \"pesada\" según la complejidad (las hojas chicas van a \"liviana\")\n\n")
+	b.WriteString("El conjunto de subtareas debe lograr el listo_cuando del padre. Dividí por capas o archivos, no por pasos temporales: cada subtarea deja algo verde por su cuenta. Si una pieza es chica y bien definida, preferí \"liviana\" y un \"como\" claro — el modelo barato solo necesita seguir instrucciones precisas.\n")
+	return b.String()
 }
 
 // restringirAlcance recorta de cada borrador los globs que se salen del
@@ -252,13 +784,45 @@ func prefijo(glob string) string {
 	return glob
 }
 
+// dependenciaSibling traduce una dependencia declarada por índice ("1")
+// al id real de la subtarea hermana ("T-100001"); un id completo pasa
+// tal cual.
+func dependenciaSibling(padreID, d string) string {
+	if n, err := strconv.Atoi(strings.TrimSpace(d)); err == nil && n >= 1 {
+		return fmt.Sprintf("%s%03d", padreID, n)
+	}
+	return d
+}
+
 // tareaDesdeBorrador arma el contrato completo de una subtarea a partir
 // de lo que propuso el planificador. El id es determinístico y siempre
 // válido (`^T-\d{3,}$`): concatena el número de la tarea padre con el
 // índice, así que no colisiona ni necesita reservar nada en
 // .devclean/tasks/ — estas subtareas son efímeras, nunca se guardan en
 // disco.
+//
+// El contexto del padre se propaga a la subtarea: no_tocar y riesgos se
+// heredan, limite_lineas se recorta al presupuesto del padre, el enfoque
+// ("como") entra como nota, y las dependencias por índice se traducen a
+// ids de hermanas. Sin peso declarado, la hoja va a "liviana": el modelo
+// barato es el que corresponde a una subtarea chica con instrucciones
+// precisas.
 func (a Agent) tareaDesdeBorrador(b plan.Borrador, indice int) (task.Task, error) {
+	limiteLineas := a.Task.LimiteLineas
+	if limiteLineas < 1 {
+		limiteLineas = task.DefaultLimiteLineas
+	}
+	if b.LimiteLineas > 0 {
+		limiteLineas = plan.AcotarLimiteLineas(b.LimiteLineas, limiteLineas)
+	}
+	peso := b.Peso
+	if peso == "" {
+		peso = "liviana"
+	}
+	deps := make([]string, 0, len(b.DependeDe))
+	for _, d := range b.DependeDe {
+		deps = append(deps, dependenciaSibling(a.Task.ID, d))
+	}
 	sub := task.Task{
 		Version:        task.Version,
 		ID:             fmt.Sprintf("%s%03d", a.Task.ID, indice),
@@ -266,17 +830,47 @@ func (a Agent) tareaDesdeBorrador(b plan.Borrador, indice int) (task.Task, error
 		Porque:         b.Porque,
 		ListoCuando:    b.ListoCuando,
 		TocarSolo:      b.TocarSolo,
-		NoTocar:        b.NoTocar,
-		Riesgos:        b.Riesgos,
-		Peso:           b.Peso,
+		NoTocar:        mergeLists(a.Task.NoTocar, b.NoTocar),
+		DependeDe:      deps,
+		Expone:         b.Expone,
+		Usa:            b.Usa,
+		Riesgos:        joinTexto(a.Task.Riesgos, b.Riesgos),
+		Peso:           peso,
 		Agente:         b.Agente,
 		LimiteIntentos: task.DefaultLimiteIntentos,
-		LimiteLineas:   task.DefaultLimiteLineas,
+		LimiteLineas:   limiteLineas,
+		Notas:          b.Como,
 	}
 	if errs := sub.Validate(); len(errs) > 0 {
 		return task.Task{}, errs[0]
 	}
 	return sub, nil
+}
+
+// mergeLists une dos listas de rutas sin duplicados ni vacíos.
+func mergeLists(base, extra []string) []string {
+	visto := map[string]bool{}
+	var out []string
+	for _, l := range append(append([]string{}, base...), extra...) {
+		if l == "" || visto[l] {
+			continue
+		}
+		visto[l] = true
+		out = append(out, l)
+	}
+	return out
+}
+
+// joinTexto une las partes no vacías con " · ", para heredar el contexto
+// del padre sin pisar el de la subtarea.
+func joinTexto(partes ...string) string {
+	var out []string
+	for _, p := range partes {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, " · ")
 }
 
 // integrar mergea la rama de una subtarea verde a la rama actual del

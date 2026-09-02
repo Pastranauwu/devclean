@@ -5,12 +5,14 @@ import (
 
 	"github.com/charmbracelet/bubbletea"
 
+	"github.com/Pastranauwu/devclean/internal/budget"
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/recurse"
 	"github.com/Pastranauwu/devclean/internal/standup"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
+	"github.com/Pastranauwu/devclean/internal/ventanas"
 )
 
 // Fila es una tarea del tablero, con sus subtareas si viene de una tarea
@@ -46,7 +48,7 @@ func Tablero(root string) ([]Fila, error) {
 		if err != nil {
 			return nil, err
 		}
-		f := Fila{ID: t.ID, Titulo: t.Titulo, Estado: s.Estado, Hijos: hijosDe(nodos, t.ID)}
+		f := Fila{ID: t.ID, Titulo: t.Titulo, Estado: s.Estado, Hijos: hijosDe(root, nodos, t.ID)}
 		// el latido es lo único que sabe qué pasa DENTRO de un intento:
 		// attempts.jsonl no se escribe hasta que el intento termina
 		if l, corriendo := loop.LeerLatido(root, t.ID); corriendo {
@@ -63,8 +65,10 @@ func Tablero(root string) ([]Fila, error) {
 }
 
 // hijosDe arma recursivamente el árbol de un padre a partir de los nodos
-// planos guardados en arbol.json.
-func hijosDe(nodos []recurse.NodoArbol, padre string) []Fila {
+// planos guardados en arbol.json. Una subtarea con latido vivo — que
+// corre ahora mismo — se pinta en curso con su detalle (intento, fase,
+// modelo, tiempo), igual que la tarea raíz.
+func hijosDe(root string, nodos []recurse.NodoArbol, padre string) []Fila {
 	var hijos []Fila
 	for _, n := range nodos {
 		if n.Padre != padre {
@@ -74,7 +78,16 @@ func hijosDe(nodos []recurse.NodoArbol, padre string) []Fila {
 		if n.Verde {
 			estado = state.Lista
 		}
-		hijos = append(hijos, Fila{ID: n.ID, Titulo: n.Titulo, Estado: estado, Hijos: hijosDe(nodos, n.ID)})
+		h := Fila{ID: n.ID, Titulo: n.Titulo, Estado: estado, Hijos: hijosDe(root, nodos, n.ID)}
+		if l, corriendo := loop.LeerLatido(root, n.ID); corriendo {
+			h.Estado = state.EnCurso
+			h.Detalle = l.Descripcion() + " · " + reloj(l.EnFaseDesde())
+			if l.EnFaseDesde() >= standup.UmbralAtasco {
+				h.Atascada = true
+				h.Detalle = "ATASCO · " + h.Detalle + " sin señal"
+			}
+		}
+		hijos = append(hijos, h)
 	}
 	sort.Slice(hijos, func(i, j int) bool { return hijos[i].ID < hijos[j].ID })
 	return hijos
@@ -94,6 +107,28 @@ func selectedID(filas []Fila, cursor int) string {
 		return ""
 	}
 	return filas[cursor].ID
+}
+
+// lineasPresupuesto arma las líneas de gasto si la corrida tiene tope
+// (`presupuesto_tokens` o el bloque `presupuesto:` en config.yml), o nil
+// para no pintar nada. La primera es el tope absoluto; las siguientes,
+// una por proveedor con sus ventanas rodantes.
+func lineasPresupuesto(root string) []string {
+	cfg, err := config.Load(root)
+	if err != nil {
+		return nil
+	}
+	var lineas []string
+	if cfg.PresupuestoTokens > 0 {
+		lineas = append(lineas, budget.Barra(budget.GastoEnDisco(root), cfg.PresupuestoTokens))
+	}
+	registro := ventanas.Nuevo(ventanas.LedgerPath(), cfg.PresupuestoVentanas)
+	for _, p := range []string{"claude", "opencode"} {
+		if l := ventanas.LineaVentanas(registro, p); l != "" {
+			lineas = append(lineas, l)
+		}
+	}
+	return lineas
 }
 
 // filaConHijos arma la línea de una fila y, debajo, su árbol de
@@ -132,7 +167,7 @@ func filaConHijos(f Fila, profundidad int, sel string) []lineaSticker {
 	return ls
 }
 
-func armarTablero(filas []Fila, sel, aviso string) []lineaSticker {
+func armarTablero(filas []Fila, sel, aviso string, presupuesto []string) []lineaSticker {
 	var ls []lineaSticker
 	alto := len(logoFilas)
 	for i, fila := range logoFilas {
@@ -141,6 +176,9 @@ func armarTablero(filas []Fila, sel, aviso string) []lineaSticker {
 	}
 	ls = append(ls, lineaSticker{})
 	ls = append(ls, lineaSticker{texto: "dirige agentes · entrega código limpio", color: rgbApagado})
+	for _, l := range presupuesto {
+		ls = append(ls, lineaSticker{texto: "presupuesto " + l, color: rgbApagado})
+	}
 	ls = append(ls, lineaSticker{})
 
 	if len(filas) == 0 {
@@ -204,7 +242,7 @@ func CorrerBoard(root string) (Accion, error) {
 	if err != nil {
 		return Accion{}, err
 	}
-	m := boardModel{filas: filas, cursor: cursorInicial(filas), params: DefaultPlasma(), root: root}
+	m := boardModel{filas: filas, cursor: cursorInicial(filas), params: DefaultPlasma(), root: root, presupuesto: lineasPresupuesto(root)}
 	final, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	if err != nil {
 		return Accion{}, err
@@ -213,14 +251,15 @@ func CorrerBoard(root string) (Accion, error) {
 }
 
 type boardModel struct {
-	filas  []Fila
-	cursor int
-	accion Accion
-	aviso  string
-	ancho  int
-	alto   int
-	t      float64
-	params PlasmaParams
+	filas       []Fila
+	cursor      int
+	accion      Accion
+	aviso       string
+	presupuesto []string
+	ancho       int
+	alto        int
+	t           float64
+	params      PlasmaParams
 
 	// root y ticks sirven al refresco: el tablero releía disco una sola
 	// vez al abrirse, así que una corrida en paralelo avanzaba entera sin
@@ -313,6 +352,7 @@ func (m *boardModel) refrescar() {
 		return // un fallo de lectura no debe tumbar el tablero
 	}
 	m.filas = filas
+	m.presupuesto = lineasPresupuesto(m.root)
 	for i, f := range filas {
 		if f.ID == sel {
 			m.cursor = i
@@ -325,5 +365,5 @@ func (m *boardModel) refrescar() {
 }
 
 func (m boardModel) View() string {
-	return FondoPlasma(m.ancho, m.alto, m.t, m.params, armarTablero(m.filas, selectedID(m.filas, m.cursor), m.aviso), 2)
+	return FondoPlasma(m.ancho, m.alto, m.t, m.params, armarTablero(m.filas, selectedID(m.filas, m.cursor), m.aviso, m.presupuesto), 2)
 }

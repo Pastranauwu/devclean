@@ -4,21 +4,26 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/Pastranauwu/devclean/internal/budget"
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/recurse"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/tui"
+	"github.com/Pastranauwu/devclean/internal/ventanas"
 )
 
 type boardRow struct {
-	ID     string     `json:"id"`
-	Titulo string     `json:"titulo"`
-	Estado string     `json:"estado"`
-	Hijos  []boardRow `json:"hijos,omitempty"`
+	ID      string     `json:"id"`
+	Titulo  string     `json:"titulo"`
+	Estado  string     `json:"estado"`
+	Detalle string     `json:"detalle,omitempty"`
+	Hijos   []boardRow `json:"hijos,omitempty"`
 }
 
 func newBoardCmd() *cobra.Command {
@@ -70,7 +75,7 @@ func runBoard() error {
 		if err != nil {
 			return err
 		}
-		row := boardRow{ID: t.ID, Titulo: t.Titulo, Estado: s.Estado, Hijos: hijosBoardRow(nodos, t.ID)}
+		row := boardRow{ID: t.ID, Titulo: t.Titulo, Estado: s.Estado, Hijos: hijosBoardRow(root, nodos, t.ID)}
 		switch s.Estado {
 		case state.Lista:
 			lista = append(lista, row)
@@ -98,6 +103,23 @@ func runBoard() error {
 		return err
 	}
 
+	// barra de presupuesto si la corrida tiene tope
+	cfg, err := config.Load(root)
+	if err == nil {
+		if cfg.PresupuestoTokens > 0 {
+			out.Line("PRESUPUESTO %s", budget.Barra(budget.GastoEnDisco(root), cfg.PresupuestoTokens))
+		}
+		ventanasReg := ventanas.Nuevo(ventanas.LedgerPath(), cfg.PresupuestoVentanas)
+		for _, p := range []string{"claude", "opencode"} {
+			if l := ventanas.LineaVentanas(ventanasReg, p); l != "" {
+				out.Line("PRESUPUESTO %s", l)
+			}
+		}
+		if cfg.PresupuestoTokens > 0 || len(cfg.PresupuestoVentanas) > 0 {
+			out.Line("")
+		}
+	}
+
 	if len(tasks) == 0 {
 		out.Line("sin tareas · empieza con devclean task add \"lo que necesitas\"")
 		return nil
@@ -114,8 +136,10 @@ func byID(rows []boardRow) func(i, j int) bool {
 }
 
 // hijosBoardRow arma recursivamente el árbol de un padre a partir de los
-// nodos planos de arbol.json (§8.3).
-func hijosBoardRow(nodos []recurse.NodoArbol, padre string) []boardRow {
+// nodos planos de arbol.json (§8.3). Una subtarea con latido vivo — que
+// corre ahora mismo dentro de la recursión — se marca en curso y muestra
+// en Detalle lo que está haciendo (intento, fase, modelo, tiempo).
+func hijosBoardRow(root string, nodos []recurse.NodoArbol, padre string) []boardRow {
 	var hijos []boardRow
 	for _, n := range nodos {
 		if n.Padre != padre {
@@ -125,7 +149,12 @@ func hijosBoardRow(nodos []recurse.NodoArbol, padre string) []boardRow {
 		if n.Verde {
 			estado = state.Lista
 		}
-		hijos = append(hijos, boardRow{ID: n.ID, Titulo: n.Titulo, Estado: estado, Hijos: hijosBoardRow(nodos, n.ID)})
+		r := boardRow{ID: n.ID, Titulo: n.Titulo, Estado: estado, Hijos: hijosBoardRow(root, nodos, n.ID)}
+		if l, corriendo := loop.LeerLatido(root, n.ID); corriendo {
+			r.Estado = state.EnCurso
+			r.Detalle = l.Descripcion() + " · " + l.EnFaseDesde().Round(time.Second).String()
+		}
+		hijos = append(hijos, r)
 	}
 	sort.Slice(hijos, byID(hijos))
 	return hijos
@@ -145,11 +174,14 @@ func imprimirGrupo(nombre string, rows []boardRow) {
 
 // imprimirHijos imprime el árbol de subtareas indentado debajo de su
 // padre, recursivo (una subtarea que a su vez recursó también sale
-// anidada).
+// anidada). Una subtarea en curso muestra su detalle vivo debajo.
 func imprimirHijos(rows []boardRow, profundidad int) {
 	sangria := strings.Repeat("  ", profundidad)
 	for _, r := range rows {
 		out.Line("%-20s %s└ %s  %s", "", sangria, r.ID, r.Titulo)
+		if r.Detalle != "" {
+			out.Line("%-20s %s    %s", "", sangria, r.Detalle)
+		}
 		imprimirHijos(r.Hijos, profundidad+1)
 	}
 }
