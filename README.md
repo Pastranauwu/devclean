@@ -146,6 +146,10 @@ terminal, usan la interfaz interactiva.
   la tarea va a crear, no a la suite entera.
 - **`ship` frenado.** Dice el paso y la razón exacta. Nada se publica hasta
   que pase.
+- **Presupuesto excedido.** `limite_lineas` lo estima el planificador antes de
+  que exista el código, así que se aplica con tolerancia y solo sobre el
+  código de la solución: las pruebas se cuentan aparte. Si aun así frena, el
+  mensaje trae el número exacto a poner y en qué archivo.
 
 ## El contrato de tarea
 

@@ -143,7 +143,7 @@ func Prompt(frase string, c Contexto) string {
 	b.WriteString("- \"expone\": array de firmas públicas que esta tarea produce y otra consume (ej. \"wol.Send(mac, addr string) error\", \"POST /wake\"); vacío si no produce ninguna\n")
 	b.WriteString("- \"usa\": array de firmas de OTRAS tareas que esta consume, copiadas palabra por palabra del \"expone\" de aquella; vacío si no consume ninguna\n")
 	b.WriteString("- \"peso\": \"liviana\", \"media\" o \"pesada\" según la complejidad de la tarea (por defecto \"media\")\n")
-	b.WriteString("- \"limite_lineas\": cuántas líneas de código NUEVO crees que necesita esta tarea, con algo de margen. Estímalo por el alcance real: un archivo de configuración son decenas, un módulo con su lógica unos cientos, empaquetado con documentación puede ser más de mil. Es un tope que se verifica al entregar: quedarse corto frena la entrega de trabajo correcto, y pasarse de largo deja de avisar cuando una tarea se desborda. Si no cabe en unas 600 líneas, probablemente son dos tareas: pártela.\n")
+	b.WriteString("- \"limite_lineas\": cuántas líneas de código NUEVO crees que necesita esta tarea, con algo de margen. Cuenta solo el código de la solución: las pruebas se miden aparte y no gastan este presupuesto. Estímalo por el alcance real: un archivo de configuración son decenas, un módulo con su lógica unos cientos, empaquetado con documentación puede ser más de mil. Es un tope que se verifica al entregar: quedarse corto frena la entrega de trabajo correcto, y pasarse de largo deja de avisar cuando una tarea se desborda. Si no cabe en unas 600 líneas, probablemente son dos tareas: pártela.\n")
 	if len(c.Agentes) > 0 {
 		var ags []string
 		for nombre, a := range c.Agentes {

@@ -42,7 +42,7 @@ func enAlcance(s string, tocarSolo []string) bool {
 	if len(tocarSolo) == 0 {
 		return true
 	}
-	if matchesAny(tocarSolo, s) {
+	if config.MatchesAny(tocarSolo, s) {
 		return true
 	}
 	for _, lock := range config.LockfilesDerivados(tocarSolo) {
@@ -54,7 +54,7 @@ func enAlcance(s string, tocarSolo []string) bool {
 }
 
 func esPrueba(s string, patrones []string) bool {
-	return matchesAny(patrones, s)
+	return config.MatchesAny(patrones, s)
 }
 
 // revertir devuelve un archivo al estado de HEAD, o lo borra si no tenía

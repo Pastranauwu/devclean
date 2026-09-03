@@ -138,12 +138,35 @@ func TestVerificarPresupuesto(t *testing.T) {
 	tk := taskTitulo("x")
 	tk.LimiteLineas = 200
 
-	d, ok := verificarPresupuesto(118, 12, 3, tk)
+	d, ok := verificarPresupuesto(118, 12, 0, 3, tk)
 	if !ok || !strings.Contains(d, "118") || !strings.Contains(d, "200") {
 		t.Errorf("dentro de presupuesto: %q, %v", d, ok)
 	}
-	if _, ok := verificarPresupuesto(201, 0, 1, tk); ok {
-		t.Error("exceder limite_lineas debió fallar")
+
+	// el límite lo estima un modelo sin ver el código: pasarse por poco
+	// es ruido de estimación y no debe frenar trabajo ya verificado
+	d, ok = verificarPresupuesto(260, 0, 0, 3, tk)
+	if !ok || !strings.Contains(d, "tolerancia") {
+		t.Errorf("dentro de la tolerancia: %q, %v", d, ok)
+	}
+
+	// las pruebas del examinador no las escribe el agente: cobrárselas
+	// hacía que casi toda tarea con examen se pasara del límite
+	d, ok = verificarPresupuesto(600, 0, 450, 6, tk)
+	if !ok {
+		t.Errorf("las líneas de prueba no deben contra el presupuesto: %q", d)
+	}
+	if !strings.Contains(d, "150") || !strings.Contains(d, "450") {
+		t.Errorf("debe reportar código y pruebas por separado: %q", d)
+	}
+
+	// pasarse de largo sigue siendo desbordamiento
+	d, ok = verificarPresupuesto(700, 0, 0, 9, tk)
+	if ok {
+		t.Error("exceder la tolerancia debió fallar")
+	}
+	if !strings.Contains(d, "700") || !strings.Contains(d, tk.ID) {
+		t.Errorf("el motivo debe decir el número a poner y dónde: %q", d)
 	}
 }
 

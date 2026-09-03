@@ -94,7 +94,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	apuntar(Paso{"historial", true, itoa(cuenta) + " guardados → 1 commit"})
 
 	// el diff del commit aplanado alimenta a los escáneres
-	diff, archivos, mas, menos, err := diffAplanado(o.Room.Path, target)
+	diff, archivos, mas, menos, masPrueba, err := diffAplanado(o.Room.Path, target, patronesPruebaDe(o.Config))
 	if err != nil {
 		apuntar(Paso{"ruido", false, err.Error()})
 		return res
@@ -118,7 +118,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	apuntar(Paso{"secretos", true, "sin secretos"})
 
 	// 5. presupuesto — limite_lineas y archivos tocados
-	if detalle, ok := verificarPresupuesto(mas, menos, len(archivos), o.Task); !ok {
+	if detalle, ok := verificarPresupuesto(mas, menos, masPrueba, len(archivos), o.Task); !ok {
 		apuntar(Paso{"presupuesto", false, detalle})
 		return res
 	} else {

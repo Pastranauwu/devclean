@@ -1,4 +1,9 @@
-package loop
+package config
+
+// El matcher de rutas vive junto a los patrones que consume
+// (zonas_prohibidas, patrones_prueba, tocar_solo): el bucle lo usa para
+// revertir lo que se salió del alcance y la esclusa de salida para no
+// cobrarle al agente las pruebas del examinador.
 
 import (
 	"path"
@@ -35,7 +40,7 @@ func globRE(pattern string) string {
 }
 
 // matchGlob reports whether path matches a doublestar glob.
-func matchGlob(pattern, s string) bool {
+func MatchGlob(pattern, s string) bool {
 	re, err := regexp.Compile(globRE(pattern))
 	if err != nil {
 		return false
@@ -46,17 +51,17 @@ func matchGlob(pattern, s string) bool {
 // matchPattern reports whether path matches one contract/zone pattern.
 // Sin barra, el patrón es un nombre de archivo y casa contra la base;
 // con barra, casa contra la ruta completa.
-func matchPattern(pattern, s string) bool {
+func MatchPattern(pattern, s string) bool {
 	if !strings.Contains(pattern, "/") {
-		return matchGlob(pattern, path.Base(s))
+		return MatchGlob(pattern, path.Base(s))
 	}
-	return matchGlob(pattern, s)
+	return MatchGlob(pattern, s)
 }
 
 // matchesAny reports whether path matches any of the patterns.
-func matchesAny(patterns []string, s string) bool {
+func MatchesAny(patterns []string, s string) bool {
 	for _, p := range patterns {
-		if matchPattern(p, s) {
+		if MatchPattern(p, s) {
 			return true
 		}
 	}

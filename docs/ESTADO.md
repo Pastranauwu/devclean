@@ -169,6 +169,24 @@ persiste en `config.yml`. `plan` y `run` sueltos pasan por lo mismo
 con dos CLIs instalados pregunta cuál (`--cli` lo fija); antes tomaba
 siempre el primero, opencode, y el catálogo de claude no se veía nunca.
 
+**Presupuesto de líneas (2 sep 2026)** — era la falla más frecuente en uso
+real. Tres causas, las tres arregladas:
+1. `promptPara` (internal/loop) nunca le decía al agente que existía un
+   presupuesto: lo estimaba el planificador y lo cobraba `ship`. Ahora va
+   en el prompt.
+2. `diffNumstat` contaba las pruebas del examinador ciego contra el
+   límite. En go y python esas líneas no las escribe el agente, y suelen
+   ser tantas como la implementación: subestimación sistemática de ~2x.
+   Ahora se separan y se reportan aparte (`ToleranciaPresupuesto` en
+   internal/ship/presupuesto.go).
+3. El tope era exacto sobre una estimación hecha sin ver el código. Ahora
+   hay tolerancia de 1.5x; pasarse de largo sigue frenando, y el mensaje
+   trae el número exacto a escribir y el archivo.
+
+El matcher de rutas (`MatchGlob`/`MatchPattern`/`MatchesAny`) salió de
+`internal/loop` a `internal/config`, junto a los patrones que consume; era
+eso o una tercera copia en `ship`.
+
 ## Qué falta
 
 **El v0.1 está funcionalmente completo y el GIF grabado.**

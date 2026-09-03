@@ -465,6 +465,13 @@ func promptPara(t task.Task, interfaces []string, constitucion string, skills []
 	if len(interfaces) > 0 {
 		fmt.Fprintf(&b, "Otras tareas exponen esto; úsalo tal cual, no lo redefinas: %s\n", strings.Join(interfaces, "; "))
 	}
+	// El presupuesto se verifica al entregar, pero el agente nunca se
+	// enteraba de que existía: lo estima el planificador antes de que
+	// haya código y se hace cumplir cuando el trabajo ya está verde.
+	// Decirlo aquí es lo único que le da la chance de cumplirlo.
+	if t.LimiteLineas > 0 {
+		fmt.Fprintf(&b, "Presupuesto: unas %d líneas añadidas. Ve al grano y no infles el cambio. Si la tarea de verdad no cabe, dilo al terminar en vez de recortar la solución.\n", t.LimiteLineas)
+	}
 	if t.Riesgos != "" {
 		fmt.Fprintf(&b, "Riesgos: %s\n", t.Riesgos)
 	}
