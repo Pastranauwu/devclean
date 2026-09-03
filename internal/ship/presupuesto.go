@@ -3,19 +3,54 @@ package ship
 import (
 	"fmt"
 
+	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
+// ToleranciaPresupuesto es cuánto puede pasarse una tarea de su
+// limite_lineas sin que la entrega se frene.
+//
+// El límite lo estima un modelo antes de que exista una sola línea de
+// código, así que un desvío chico es ruido de estimación y no
+// descontrol. Frenar ahí sale caro: el trabajo ya está verde y
+// verificado, y la única salida era editar el contrato a mano y volver
+// a entregar. Un desbordamiento de verdad —una tarea que se volvió
+// tres— sigue frenando la compuerta.
+const ToleranciaPresupuesto = 1.5
+
 // verificarPresupuesto aplica §6.5.5: las líneas añadidas no pueden
-// pasar de limite_lineas; los archivos tocados se reportan.
-func verificarPresupuesto(mas, menos, archivos int, t task.Task) (string, bool) {
+// pasar de limite_lineas más la tolerancia; los archivos tocados se
+// reportan.
+func verificarPresupuesto(mas, menos, masPrueba, archivos int, t task.Task) (string, bool) {
 	limite := t.LimiteLineas
 	if limite < 1 {
 		limite = task.DefaultLimiteLineas
 	}
-	detalle := fmt.Sprintf("%d líneas de %d · %d archivos", mas, limite, archivos)
-	if mas > limite {
-		return fmt.Sprintf("presupuesto excedido · %s · reduce el cambio o sube limite_lineas", detalle), false
+	// el límite es sobre el código de la solución: las pruebas se
+	// reportan aparte porque en go y python no las escribe el agente
+	codigo := mas - masPrueba
+	detalle := fmt.Sprintf("%d líneas de %d · %d archivos", codigo, limite, archivos)
+	if masPrueba > 0 {
+		detalle += fmt.Sprintf(" · %d líneas de prueba aparte", masPrueba)
+	}
+	techo := int(float64(limite) * ToleranciaPresupuesto)
+	switch {
+	case codigo > techo:
+		// decir el número exacto ahorra el ida y vuelta: es el que hay
+		// que escribir si el cambio es correcto y el límite era corto
+		return fmt.Sprintf("presupuesto excedido · %s · reduce el cambio, o sube limite_lineas a %d en .devclean/tasks/%s.md",
+			detalle, codigo, t.ID), false
+	case codigo > limite:
+		return detalle + " · sobre lo estimado, dentro de la tolerancia", true
 	}
 	return detalle, true
+}
+
+// patronesPruebaDe devuelve los patrones de ruta de prueba efectivos:
+// los del proyecto, o los de fábrica si la config no los declara.
+func patronesPruebaDe(c config.Config) []string {
+	if len(c.PatronesPrueba) > 0 {
+		return c.PatronesPrueba
+	}
+	return config.DefaultTestPatterns()
 }

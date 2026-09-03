@@ -335,3 +335,20 @@ func TestRunCortaPorPresupuesto(t *testing.T) {
 		t.Errorf("attempts = %d, quiero 2 (se cortó antes de quemar el tercero)", len(attempts))
 	}
 }
+
+// el presupuesto se hacía cumplir al entregar sin que el agente supiera
+// nunca que existía: lo estimaba el planificador y lo cobraba ship.
+func TestPromptLlevaElPresupuesto(t *testing.T) {
+	tk := task.Task{
+		Version:        task.Version,
+		ID:             "T-001",
+		Titulo:         "exportar clientes",
+		ListoCuando:    "true",
+		LimiteIntentos: 3,
+		LimiteLineas:   250,
+	}
+	p := promptPara(tk, nil, "", nil, "", "")
+	if !strings.Contains(p, "250") {
+		t.Errorf("el prompt del agente debe declarar el presupuesto:\n%s", p)
+	}
+}

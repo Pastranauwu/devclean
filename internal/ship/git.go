@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/Pastranauwu/devclean/internal/config"
 )
 
 // gitRun ejecuta git en dir y devuelve la salida combinada.
@@ -95,20 +97,20 @@ func identity(roomPath string) []string {
 
 // diffAplanado devuelve el texto, los archivos y las líneas del commit
 // aplanado frente a la base. Alimenta a los escáneres.
-func diffAplanado(roomPath, target string) (texto string, archivos []string, mas, menos int, err error) {
+func diffAplanado(roomPath, target string, patronesPrueba []string) (texto string, archivos []string, mas, menos, masPrueba int, err error) {
 	texto, err = gitRun(roomPath, "diff", target+"..HEAD")
 	if err != nil {
-		return "", nil, 0, 0, err
+		return "", nil, 0, 0, 0, err
 	}
 	archivos, err = diffArchivos(roomPath, target)
 	if err != nil {
-		return "", nil, 0, 0, err
+		return "", nil, 0, 0, 0, err
 	}
-	mas, menos, err = diffNumstat(roomPath, target)
+	mas, menos, masPrueba, err = diffNumstat(roomPath, target, patronesPrueba)
 	if err != nil {
-		return "", nil, 0, 0, err
+		return "", nil, 0, 0, 0, err
 	}
-	return texto, archivos, mas, menos, nil
+	return texto, archivos, mas, menos, masPrueba, nil
 }
 
 func diffArchivos(roomPath, target string) ([]string, error) {
@@ -125,14 +127,22 @@ func diffArchivos(roomPath, target string) ([]string, error) {
 	return files, nil
 }
 
-func diffNumstat(roomPath, target string) (mas, menos int, err error) {
+// diffNumstat cuenta las líneas del diff y separa las que caen en rutas
+// de prueba.
+//
+// El presupuesto de una tarea lo estima un modelo pensando en el código
+// de la solución, pero el diff trae además las pruebas — y en go y
+// python las escribe el examinador ciego, no el agente. Cobrárselas
+// hacía que casi toda tarea con examen se pasara del límite por el doble
+// de lo estimado, y frenaba la entrega de trabajo correcto.
+func diffNumstat(roomPath, target string, patronesPrueba []string) (mas, menos, masPrueba int, err error) {
 	out, err := gitRun(roomPath, "diff", "--numstat", target+"..HEAD")
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 2 {
+		if len(fields) < 3 {
 			continue
 		}
 		a, errA := strconv.Atoi(fields[0])
@@ -142,8 +152,11 @@ func diffNumstat(roomPath, target string) (mas, menos int, err error) {
 		}
 		mas += a
 		menos += d
+		if config.MatchesAny(patronesPrueba, fields[2]) {
+			masPrueba += a
+		}
 	}
-	return mas, menos, nil
+	return mas, menos, masPrueba, nil
 }
 
 // tipoCommit infiere el tipo Conventional Commits del título de la tarea.
