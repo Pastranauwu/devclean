@@ -1,8 +1,9 @@
 # Estado del proyecto — traspaso entre sesiones
 
-Última actualización: 27 agosto 2026. Fases 1–5 cerradas. Última release
-publicada: **v0.2.5**, con binarios para las seis plataformas, `install.sh`
-y `checksums.txt`. Falta el tap de Homebrew y el resto de la Parte B (v0.2).
+Última actualización: 9 septiembre 2026. Fases 1–5 cerradas. Última release
+publicada: **v0.8.0**. Falta el tap de Homebrew. No es v1.0: el examinador
+ciego solo cubre go y python, y la instrumentación miente cuando el agente
+commitea por su cuenta dentro del cuarto.
 
 **Orden de lectura para quien llegue nuevo:**
 1. `docs/PRD-devclean.md` — la especificación.
@@ -11,7 +12,83 @@ y `checksums.txt`. Falta el tap de Homebrew y el resto de la Parte B (v0.2).
 4. `git log --oneline`.
 
 Ojo: la cabecera de la adenda dice "aplica sobre `docs/PRD.md`". Ese archivo no
-existe; es `docs/PRD-devclean.md`.
+existe; es `docs/PRD-devclean.md`. Ojo también: esta cabecera mentía — decía
+"falta el examinador ciego, la constitución" y ya estaban hechos. La sección
+"Qué falta" está corregida abajo.
+
+---
+
+## Sesión 9 sep 2026 — delegación y revisión por tarea
+
+Dos arreglos del pipeline "modelo grande delega, modelo barato ejecuta":
+
+**1. El `como` del planificador llegaba al ejecutor.** El prompt del
+planificador pedía un campo `como` (enfoque para quien ejecuta), el modelo
+lo generaba, y `cmd/devclean/plan.go` lo descartaba al crear el contrato:
+el agente barato corría sin la instrucción del grande. Ahora `plan` lo
+guarda en `notas` del contrato (mismo camino que la recursión,
+`recurse.replanDesdeContrato`), `spec.Marshal` lo serializa para que
+sobreviva `plan --export-spec` → `apply`, y `promptPara` ya lo inyectaba
+("Notas:") en cada intento. Test: `TestComoLlegaAlContrato`.
+
+**2. Revisor por tarea dentro del bucle.** Antes una tarea era "verde"
+cuando `listo_cuando` daba exit 0, y el revisor solo veía el diff
+integrado al final (`ship --revisar`). Con modelos baratos es habitual
+que pasen el test sin cumplir el contrato (happy path, caso exacto del
+test). Ahora, tras `listo_cuando` verde, el rol `revisor` (modelo pesado
+por defecto) juzga el diff del cuarto contra el contrato
+(`internal/loop`, interfaz `Revisor`; adapter `revisorEnBucle` en
+`cmd/devclean/run.go`). Si pide cambios, el intento queda rojo y su
+veredicto entra como `prevErr` del siguiente. Degrada en abierto (un
+revisor que no responde no frena trabajo verde), solo en tareas planas
+(la recursión ya tiene su supervisor), y su gasto cuenta en
+presupuesto/ventanas. `Attempt` gana `Revision` y el latido la fase
+`revision`. Tests: `TestRevisorVetaVerdeYElSiguienteArregla`,
+`TestSinRevisorElVerdeEsVerde`.
+
+**3. El spec es la corrida completa ("programación agéntica como
+código").** `devclean.spec.yml` ganó tres cosas que lo convierten en la
+forma principal de trabajar:
+
+- `agentes: N` — cuántos trabajadores en paralelo. Lo respetan `up` (el
+  flag `--agentes` gana) y `apply --run` (antes hardcodeado a 1).
+- `ship: true` — `up` entrega en PR al terminar aunque no se pase
+  `--ship`. El título del PR sale de `feature` si no hay `--titulo`.
+- `reglas:` se inyectan de verdad: se parseaban desde siempre pero no
+  llegaban a ningún prompt. `spec.Apply` las antepone a las `notas` de
+  cada tarea (`notasConReglas`), que es el canal que `promptPara` ya
+  inyecta. Se componen en Apply y no en Parse para que un Marshal
+  posterior no las duplique.
+
+`runApply` ahora devuelve el `spec.Spec` cargado para que `up` lea
+`agentes`/`ship`/`feature`. README: la sección "Especificación
+declarativa" pasó a "Programación agéntica como código" con la
+referencia completa. Tests: `TestParseSpecAgentesYShip`,
+`TestParseSpecAgentesInvalidos`, `TestMarshalRoundtripAgentesYShip`,
+`TestApplyInyectaReglasEnNotas`.
+
+**4. Falso positivo del solapamiento.** `overlap.mergeTree` reportaba
+`⚠ SOLAPAMIENTO T-001 ↔ T-002 · conflicto de texto en: devclean/T-001 ↔
+devclean/T-002` al arrancar la oleada. Dos causas: (a) una rama que aún
+no existe (antes del primer `wip:`) hace que `git merge-tree` salga con
+exit 1, y se trataba como conflicto; (b) el parseo buscaba el prefijo
+"CONFLICT", que con `--no-messages` no sale y además está localizado
+("CONFLICTO" en español). Ahora `mergeTree` devuelve nil en "no se pudo
+comparar" y parsea las líneas de etapa `<modo> <oid> <etapa>\t<ruta>`,
+estables e independientes del idioma. Verificado en vivo con claude
+(cuenta del usuario): dos tareas go en paralelo, cero alertas, ambas con
+`revision.aprobada`. Tests nuevos en `internal/overlap` (el paquete no
+tenía): `TestMergeTreeLimpio`, `TestMergeTreeConflictoRealConRuta`,
+`TestMergeTreeRamaInexistenteNoEsConflicto`, `TestParseLineaEtapa`.
+
+**Deuda nueva (dogfooding claude, 9 sep):** un agente real (skill `implement`
+del ejecutor) commitea por su cuenta dentro del cuarto. Entonces `git add -A`
+deja el área vacía y el intento se registra con `archivos_tocados: []`,
+`lineas_mas/menos: 0` pese a haber trabajo — falso negativo de la
+instrumentación (adenda A.2). El diff que juzga el revisor sí es correcto
+porque se toma contra la base, no contra HEAD. Arreglo pendiente: medir el
+intento contra el commit previo (el del examinador o el wip anterior), no
+contra el área staged.
 
 ---
 
@@ -221,10 +298,12 @@ y tres controles deterministas:
 De paso, `kv.ParseList` no respetaba las comas dentro de comillas, y una
 firma las lleva siempre (`wol.Send(mac, addr string) error`). Ahora sí.
 
-**v0.2:** Parte B, menos los contratos entre tareas de §6.10, que ya están
-hechos: falta el examinador ciego, el solapamiento funcional, la
-duplicación entre ramas, las reglas de dependencia y la constitución.
-Ya especificado, sin empezar.
+**v0.2:** Parte B. Ya hechos: contratos entre tareas (§6.10), examinador
+ciego (§6.8, go y python, `internal/examiner`), constitución (§6.11,
+`internal/constitution` + `devclean constitution`), solapamiento
+(`internal/overlap`, alertas en `run`), reglas de dependencia de imports
+(`reglas_import`, verificado en la esclusa de salida, `ship/ship.go`).
+Falta: duplicación entre ramas.
 
 **Deuda conocida, chica**
 - `internal/executor` aparece en el historial de dos commits (`22a48f8`,

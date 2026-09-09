@@ -180,6 +180,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 				Riesgos:        b.Riesgos,
 				Peso:           b.Peso,
 				Agente:         b.Agente,
+				Notas:          b.Como,
 				LimiteIntentos: task.DefaultLimiteIntentos,
 				LimiteLineas:   props[i].LimiteLineas,
 			})
@@ -260,6 +261,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 			Riesgos:        b.Riesgos,
 			Peso:           b.Peso,
 			Agente:         b.Agente,
+			Notas:          b.Como,
 			LimiteIntentos: task.DefaultLimiteIntentos,
 			LimiteLineas:   props[i].LimiteLineas,
 		}

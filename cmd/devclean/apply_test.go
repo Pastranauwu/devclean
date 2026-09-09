@@ -45,7 +45,7 @@ func TestRunApply(t *testing.T) {
 	// 1. Dry run
 	var b strings.Builder
 	out = ui.New(&b, false)
-	if err := runApply(root, "", false, true); err != nil {
+	if _, err := runApply(root, "", false, true); err != nil {
 		t.Fatalf("runApply dry run: %v", err)
 	}
 	if !strings.Contains(b.String(), "modo --dry-run") || !strings.Contains(b.String(), "T-001") {
@@ -59,7 +59,7 @@ func TestRunApply(t *testing.T) {
 
 	// 2. Apply real
 	b.Reset()
-	if err := runApply(root, "", false, false); err != nil {
+	if _, err := runApply(root, "", false, false); err != nil {
 		t.Fatalf("runApply real: %v", err)
 	}
 	if !strings.Contains(b.String(), "2 tareas aplicadas") {

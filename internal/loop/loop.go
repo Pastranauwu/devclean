@@ -66,6 +66,18 @@ type Examinador interface {
 	Run(ctx context.Context, roomPath string) (bool, error)
 }
 
+// Revisor juzga la implementación verde en tests contra su contrato
+// (rol `revisor`). Tests verdes no implican contrato cumplido: con
+// modelos livianos es habitual que pasen el examen sin hacer lo que
+// decía la tarea (happy path, caso exacto del test). Un revisor que
+// pide cambios deja la tarea roja y su veredicto entra como contexto
+// del intento siguiente — es revisión temprana por tarea, no al final.
+type Revisor interface {
+	// Revisar devuelve si la tarea puede darse por cumplida y, si no,
+	// qué corregir. El diff es el trabajo acumulado desde la base.
+	Revisar(ctx context.Context, roomPath string, tarea task.Task, diff string, intento int) (aprobada bool, cambios string, tokens Tokens)
+}
+
 // Request es una invocación del agente dentro de su cuarto.
 type Request struct {
 	RoomPath     string
@@ -127,6 +139,12 @@ type Options struct {
 	// implementador para escribir la suite visible y sellar la oculta
 	// (§6.8). Si falla, el bucle continúa sin pruebas ciegas.
 	Examinador Examinador
+
+	// Revisor, si no es nil, juzga cada intento verde en tests contra
+	// el contrato. Si pide cambios, el intento queda rojo y su veredicto
+	// se inyecta como contexto del siguiente. Su gasto cuenta igual que
+	// el del agente (presupuesto y ventanas).
+	Revisor Revisor
 
 	// Presupuesto, si no es nil, recibe el gasto de cada intento. Devuelve
 	// false cuando la corrida ya quemó su tope: el bucle se detiene con el
@@ -306,9 +324,6 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		if agentErr != nil {
 			a.ErrorAgente = diagnostico(res, agentErr)
 		}
-		if err := s.Append(a); err != nil {
-			return Outcome{}, err
-		}
 
 		// el gasto de este intento ya ocurrió: se registra (verde o rojo)
 		// y, si deja un tope al límite o lo pasa, el intento siguiente no
@@ -317,6 +332,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		n := res.Tokens.Entrada + res.Tokens.Salida
 		if o.Ventanas != nil && o.Proveedor != "" {
 			if !o.Ventanas.Registrar(o.Proveedor, n) {
+				_ = s.Append(a)
 				if code != nil && *code == 0 {
 					return Outcome{Verde: true, Intentos: intento}, nil
 				}
@@ -324,6 +340,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			}
 		}
 		if o.Presupuesto != nil && !o.Presupuesto.Gastar(n) {
+			_ = s.Append(a)
 			if code != nil && *code == 0 {
 				return Outcome{Verde: true, Intentos: intento}, nil
 			}
@@ -334,7 +351,44 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		// resultado, no un fallo del mecanismo (mismo criterio que
 		// agotar intentos), pero con el motivo exacto de la hoja roja
 		if detener != nil {
+			_ = s.Append(a)
 			return Outcome{Verde: false, Intentos: intento, UltimoError: detener.Motivo, Pregunta: detener.Motivo}, nil
+		}
+
+		// tests verdes no implican contrato cumplido: el revisor juzga
+		// el diff contra la tarea y puede vetar. Si pide cambios, el
+		// intento queda rojo y su veredicto va al prompt siguiente.
+		// Degrada en abierto: un revisor que no responde no frena
+		// trabajo que ya está verde.
+		if code != nil && *code == 0 && o.Revisor != nil {
+			avisar(intento, FaseRevision)
+			var diffClaro string
+			if d, err := gitRun(o.Room.Path, "diff", base+"...HEAD"); err == nil {
+				diffClaro = d
+			}
+			aprobada, cambios, tk := o.Revisor.Revisar(ctx, o.Room.Path, o.Task, diffClaro, intento)
+			a.Revision = &Revision{Aprobada: aprobada, Cambios: cambios}
+			acumulado.Entrada += tk.Entrada
+			acumulado.Salida += tk.Salida
+			m := tk.Entrada + tk.Salida
+			if o.Ventanas != nil && o.Proveedor != "" {
+				_ = o.Ventanas.Registrar(o.Proveedor, m)
+			}
+			if o.Presupuesto != nil {
+				_ = o.Presupuesto.Gastar(m)
+			}
+			if err := s.Append(a); err != nil {
+				return Outcome{}, err
+			}
+			if aprobada {
+				return Outcome{Verde: true, Intentos: intento}, nil
+			}
+			prevErr = "el revisor pide cambios sobre tests verdes:\n" + cambios
+			continue
+		}
+
+		if err := s.Append(a); err != nil {
+			return Outcome{}, err
 		}
 
 		if code != nil && *code == 0 {

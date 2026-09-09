@@ -20,6 +20,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/overlap"
 	"github.com/Pastranauwu/devclean/internal/recurse"
+	"github.com/Pastranauwu/devclean/internal/revisor"
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/skills"
 	"github.com/Pastranauwu/devclean/internal/standup"
@@ -632,6 +633,63 @@ func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagMod
 	return ex, modelo, etiquetas, paquetes
 }
 
+// revisorEnBucle adapta internal/revisor al loop: corre sobre un intento
+// verde en tests y devuelve si la tarea puede darse por cumplida. Degrada
+// en abierto: un revisor que no responde no frena trabajo que ya está
+// verde (el mismo criterio que el examinador, al revés que el revisor de
+// entrega, que falla cerrado). Invoca el ejecutor directo para capturar
+// el gasto de la revisión, que cuenta igual que el del agente.
+type revisorEnBucle struct {
+	ex     executor.Executor
+	modelo string
+	root   string
+}
+
+func (r revisorEnBucle) Revisar(ctx context.Context, _ string, tarea task.Task, diff string, _ int) (bool, string, loop.Tokens) {
+	prompt := revisor.Prompt([]task.Task{tarea}, diff)
+	res, err := r.ex.Run(ctx, executor.Request{
+		RoomPath: r.root,
+		Prompt:   prompt,
+		Model:    r.modelo,
+		Timeout:  5 * time.Minute,
+	})
+	tk := loop.Tokens{Entrada: res.Tokens.Input, Salida: res.Tokens.Output}
+	if err != nil {
+		return true, "", tk // degrada en abierto
+	}
+	v, err := revisor.Parse(res.Text, []task.Task{tarea})
+	if err != nil {
+		return true, "", tk // degrada en abierto
+	}
+	for _, t := range v.Tareas {
+		if t.ID == tarea.ID && !t.Funciona {
+			return false, strings.Join(t.Cambios, "\n"), tk
+		}
+	}
+	return true, "", tk
+}
+
+// revisorParaBucle arma el revisor del bucle con el modelo del rol
+// `revisor`, cayendo al planificador y luego al pesado. Si el CLI no
+// está disponible, devuelve nil y el bucle corre sin revisión.
+func revisorParaBucle(root string, cfg config.Config, ex executor.Executor) loop.Revisor {
+	if ex == nil {
+		var err error
+		ex, err = elegirEjecutor(cfg.Cli)
+		if err != nil {
+			return nil
+		}
+	}
+	modelo := config.ModeloRol(cfg, "revisor")
+	if modelo == "" {
+		modelo = config.ModeloRol(cfg, "planificador")
+	}
+	if modelo == "" {
+		modelo = cfg.ModeloPeso("pesada")
+	}
+	return revisorEnBucle{ex: ex, modelo: modelo, root: root}
+}
+
 // correrUno ejecuta una tarea completa: cuarto, esclusa de estado,
 // bucle, y deja el estado final (lista o detenida). El cuarto no se
 // destruye aquí: ship lo libera al entregar.
@@ -710,6 +768,9 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 	if !recursiva {
 		opts.Presupuesto = presupuesto
 		opts.Ventanas = ventanasReg
+		// el revisor solo en tareas planas: la recursión ya tiene su
+		// supervisor, y revisar dos veces la misma hoja gasta doble.
+		opts.Revisor = revisorParaBucle(root, cfg, ex)
 	}
 	opts.Proveedor = exTarea.Name()
 

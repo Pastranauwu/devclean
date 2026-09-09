@@ -42,6 +42,18 @@ type Attempt struct {
 	// Log es la ruta relativa al volcado completo de la invocación
 	// (prompt, stdout y stderr del CLI).
 	Log string `json:"log,omitempty"`
+
+	// Revision es el veredicto del revisor sobre un intento verde en
+	// tests (rol `revisor`): si pidió cambios, el intento no quedó
+	// verde pese al exit 0. Nil en intentos sin revisión.
+	Revision *Revision `json:"revision,omitempty"`
+}
+
+// Revision es lo que el revisor dictaminó sobre un intento que pasó
+// listo_cuando. Solo existe cuando el bucle corre con un Revisor.
+type Revision struct {
+	Aprobada bool   `json:"aprobada"`
+	Cambios  string `json:"cambios,omitempty"` // qué corregir, si no está aprobada
 }
 
 // Tokens is the token spend of one attempt.

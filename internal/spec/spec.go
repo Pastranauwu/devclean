@@ -33,9 +33,15 @@ type Limites struct {
 
 // Spec es la especificación declarativa de una feature o conjunto de tareas.
 type Spec struct {
-	Version int         `json:"version"`
-	Feature string      `json:"feature"`
-	Agente  string      `json:"agente,omitempty"`
+	Version int    `json:"version"`
+	Feature string `json:"feature"`
+	Agente  string `json:"agente,omitempty"`
+	// Agentes es cuántas tareas corren en paralelo (el --agentes de run/up).
+	// El flag de la línea de comandos gana sobre el spec.
+	Agentes int `json:"agentes,omitempty"`
+	// Ship pide entregar todo en un PR al terminar la corrida (el --ship de
+	// up). Es la manera de que "levantar el spec" sea también "entregarlo".
+	Ship    bool        `json:"ship,omitempty"`
 	Limites Limites     `json:"limites,omitempty"`
 	Reglas  []string    `json:"reglas,omitempty"`
 	Tasks   []task.Task `json:"tasks"`
@@ -108,6 +114,24 @@ func Parse(data []byte) (Spec, error) {
 			s.Feature = kv.Unquote(v)
 		case "agente":
 			s.Agente = kv.Unquote(v)
+		case "agentes":
+			n, err := kv.ParseInt(v)
+			if err != nil {
+				return s, fmt.Errorf("línea %d: %w", i+1, err)
+			}
+			if n < 1 {
+				return s, fmt.Errorf("línea %d: agentes inválido: %d · mínimo 1", i+1, n)
+			}
+			s.Agentes = n
+		case "ship":
+			switch kv.Unquote(v) {
+			case "true":
+				s.Ship = true
+			case "false":
+				s.Ship = false
+			default:
+				return s, fmt.Errorf("línea %d: ship inválido: %s · usa true o false", i+1, v)
+			}
 		case "limite_intentos":
 			n, err := kv.ParseInt(v)
 			if err != nil {
@@ -434,6 +458,22 @@ func AssignCorrelativeIDs(tasksDir string, tasks []task.Task) ([]task.Task, erro
 	return out, nil
 }
 
+// notasConReglas antepone las reglas de la especificación a las notas
+// propias de una tarea. El bucle inyecta las notas en cada prompt
+// ("Notas:" en loop.promptPara), así que este es el canal por el que
+// las reglas llegan al agente sin tocar el contrato ni la constitución.
+func notasConReglas(reglas []string, notas string) string {
+	var b strings.Builder
+	b.WriteString("Reglas de la especificación:\n")
+	for _, r := range reglas {
+		b.WriteString("- " + r + "\n")
+	}
+	if n := strings.TrimSpace(notas); n != "" {
+		b.WriteString("\n" + n)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
 // Apply valida y guarda las tareas de la especificación en tasksDir (.devclean/tasks/).
 func Apply(tasksDir string, s Spec, dryRun bool) ([]task.Task, error) {
 	tasksWithIDs, err := AssignCorrelativeIDs(tasksDir, s.Tasks)
@@ -463,6 +503,13 @@ func Apply(tasksDir string, s Spec, dryRun bool) ([]task.Task, error) {
 		}
 		if tasksWithIDs[i].LimiteLineas == 0 {
 			tasksWithIDs[i].LimiteLineas = defLineas
+		}
+		// las reglas de la especificación van al prompt de cada tarea:
+		// se anteponen a sus notas, que es el canal que el bucle ya
+		// inyecta ("Notas:" en promptPara). Se componen aquí y no en
+		// Parse para que un Marshal posterior no las escriba dos veces.
+		if len(s.Reglas) > 0 {
+			tasksWithIDs[i].Notas = notasConReglas(s.Reglas, tasksWithIDs[i].Notas)
 		}
 	}
 
@@ -503,6 +550,12 @@ func Marshal(s Spec) []byte {
 	}
 	if s.Agente != "" {
 		fmt.Fprintf(&b, "agente: %s\n", s.Agente)
+	}
+	if s.Agentes > 0 {
+		fmt.Fprintf(&b, "agentes: %d\n", s.Agentes)
+	}
+	if s.Ship {
+		b.WriteString("ship: true\n")
 	}
 	if s.Limites.Intentos > 0 || s.Limites.Lineas > 0 {
 		b.WriteString("limites:\n")
@@ -550,6 +603,9 @@ func Marshal(s Spec) []byte {
 		}
 		if t.Riesgos != "" {
 			fmt.Fprintf(&b, "    riesgos: %s\n", kv.Quote(t.Riesgos))
+		}
+		if t.Notas != "" {
+			fmt.Fprintf(&b, "    notas: %s\n", kv.Quote(t.Notas))
 		}
 	}
 	return []byte(b.String())

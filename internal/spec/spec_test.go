@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Pastranauwu/devclean/internal/task"
@@ -217,6 +218,91 @@ func TestMarshalRoundtrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(original, reparsed) {
 		t.Errorf("Roundtrip mismatch:\nOriginal: %+v\nReparsed: %+v", original, reparsed)
+	}
+}
+
+func TestParseSpecAgentesYShip(t *testing.T) {
+	raw := `version: 1
+feature: "Corrida declarativa"
+agentes: 3
+ship: true
+tasks:
+  - id: T-001
+    titulo: algo
+    listo_cuando: true
+`
+	s, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if s.Agentes != 3 {
+		t.Errorf("Agentes = %d, quiero 3", s.Agentes)
+	}
+	if !s.Ship {
+		t.Error("Ship = false, quiero true")
+	}
+}
+
+func TestParseSpecAgentesInvalidos(t *testing.T) {
+	raw := "version: 1\nagentes: 0\ntasks:\n  - { titulo: x, listo_cuando: true }\n"
+	if _, err := Parse([]byte(raw)); err == nil {
+		t.Fatal("agentes: 0 debió rechazarse")
+	}
+}
+
+func TestMarshalRoundtripAgentesYShip(t *testing.T) {
+	raw := `version: 1
+feature: "Roundtrip"
+agentes: 4
+ship: true
+tasks:
+  - id: T-001
+    titulo: algo
+    listo_cuando: true
+`
+	original, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	reparsed, err := Parse(Marshal(original))
+	if err != nil {
+		t.Fatalf("reparse: %v", err)
+	}
+	if reparsed.Agentes != 4 || !reparsed.Ship {
+		t.Errorf("roundtrip perdió agentes/ship: %+v", reparsed)
+	}
+}
+
+// Las reglas de la especificación llegan al agente por las notas de la
+// tarea: al aplicar, se anteponen al enfoque propio sin pisarlo.
+func TestApplyInyectaReglasEnNotas(t *testing.T) {
+	dir := t.TempDir()
+	s := Spec{
+		Version: 1,
+		Reglas:  []string{"tokens stateless", "sin sesiones en memoria"},
+		Tasks: []task.Task{
+			{Titulo: "con notas", ListoCuando: "true", Notas: "empieza por bcrypt"},
+			{Titulo: "sin notas", ListoCuando: "true"},
+		},
+	}
+	applied, err := Apply(filepath.Join(dir, "tasks"), s, true)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	n0 := applied[0].Notas
+	if !strings.Contains(n0, "Reglas de la especificación:") ||
+		!strings.Contains(n0, "- tokens stateless") ||
+		!strings.Contains(n0, "- sin sesiones en memoria") ||
+		!strings.Contains(n0, "empieza por bcrypt") {
+		t.Errorf("notas con reglas y enfoque:\n%s", n0)
+	}
+	if !strings.Contains(applied[1].Notas, "- tokens stateless") {
+		t.Errorf("tarea sin notas también recibe las reglas:\n%s", applied[1].Notas)
+	}
+	// el spec no se contamina: Marshal sigue escribiendo reglas arriba,
+	// no dentro de cada tarea
+	if len(s.Tasks[0].Notas) != 0 && strings.Contains(s.Tasks[0].Notas, "Reglas") {
+		t.Error("Apply mutó las notas del spec original")
 	}
 }
 

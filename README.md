@@ -99,7 +99,10 @@ hace código, nunca el modelo.
    se detiene con una pregunta concreta. Antes del primer intento un
    **examinador ciego** escribe pruebas contra la interfaz pública
    (`expone`) sin ver la implementación, y sella el 30% con hash (go y
-   python).
+   python). Cuando los tests dan verde, un **revisor** (rol `revisor`,
+   modelo pesado por defecto) juzga el diff contra el contrato: si pide
+   cambios, el intento queda rojo y su veredicto entra como contexto del
+   siguiente — tests verdes no implican contrato cumplido.
 4. **Esclusa de salida (`ship`).** Rebase sobre la base, historial aplanado
    en un commit por tarea, sin prints de debug, sin secretos, dentro del
    presupuesto de líneas, las interfaces prometidas están en el diff,
@@ -129,7 +132,7 @@ agentes hablen entre sí.
 | `doctor` | Verifica git, config, CLIs, keys y que los modelos existan. |
 | `init [--cli claude] [--pruebas "…"]` | Crea `.devclean/` a mano, eligiendo CLI y modelos. |
 | `task add\|edit\|rm\|list\|check\|seal` | Contratos a mano. `seal` sella tus propias pruebas ocultas. |
-| `apply spec.yml` | Crea tareas desde una especificación declarativa. |
+| `apply spec.yml [--run\|--dry-run]` | Crea tareas desde una especificación declarativa. `--run` las ejecuta con los `agentes` del spec. |
 | `constitution` | Genera la constitución del proyecto. |
 | `skills sync` | Trae las skills que los agentes inyectan en su prompt. |
 
@@ -174,31 +177,55 @@ limite_lineas: 200
 ```
 
 Solo `titulo` y `listo_cuando` son obligatorios; `plan` rellena el resto.
+El cuerpo libre bajo el frontmatter (`notas`) lleva el **enfoque** que el
+planificador deja al ejecutor (`como`): cómo encarar la tarea, qué tocar
+primero, a qué no meterse. Se inyecta en el prompt de cada intento.
 
-## Especificación declarativa
+## Programación agéntica como código
 
-Para features grandes, o para versionar el plan, un `devclean.spec.yml`:
+Para features grandes, o para versionar el plan, **todo el trabajo cabe en
+un `devclean.spec.yml`**: qué se hace, cómo se encara, cuándo se da por
+hecho, con cuántos agentes y cuáles. `devclean up` lo encuentra solo en la
+raíz del repo y hace el resto — aplicar, ejecutar en paralelo y entregar:
 
 ```yaml
 version: 1
-feature: "Autenticación de usuarios y JWT"
-agente: backend
+feature: "Autenticación de usuarios y JWT"   # qué se construye (y título del PR)
+agentes: 3                    # cuántos trabajadores en paralelo (el flag --agentes gana)
+ship: true                    # al terminar, entrega todo en un PR (equivale a --ship)
+agente: backend               # arquetipo por defecto de las tareas
 limites: { intentos: 5, lineas: 500 }
-reglas:
+reglas:                       # se inyectan en el prompt de CADA tarea
   - "tokens stateless, sin sesiones en memoria"
 tasks:
   - titulo: "modelo de usuario y hash de contraseñas"
     listo_cuando: "go test ./internal/auth/ -run TestPasswordHash"
     tocar_solo: ["internal/auth/**"]
+    notas: "empieza por bcrypt; no toques el router"   # el cómo, para el ejecutor
   - titulo: "endpoint de login con JWT"
     listo_cuando: "go test ./internal/auth/ -run TestLogin"
     depende_de: ["T-001"]
     expone: ["POST /api/login -> 200 {token}"]
+    peso: media               # liviana | media | pesada → elige modelo
 ```
 
-`devclean up -f devclean.spec.yml` o `devclean apply devclean.spec.yml`.
-`devclean plan "…" --export-spec devclean.spec.yml` genera uno desde una
-frase.
+Cada tarea acepta todos los campos del contrato (ver *El contrato de
+tarea*): `tocar_solo`, `no_tocar`, `depende_de`, `expone`, `usa`, `peso`,
+`agente`, `limite_intentos`, `limite_lineas` y `notas` (el enfoque que
+recibe el agente en cada intento). Las `reglas` globales se anteponen a
+las `notas` de cada tarea al aplicar.
+
+| Comando | Qué hace |
+|---|---|
+| `devclean up` | encuentra `devclean.spec.yml` solo, lo aplica, corre con sus `agentes` y entrega si dice `ship: true` |
+| `devclean up -f specs/auth.yml` | lo mismo con otra ruta |
+| `devclean apply [-f archivo]` | crea las tareas sin ejecutar; las revisás con `devclean board` |
+| `devclean apply --run` | aplica y ejecuta con los `agentes` del spec |
+| `devclean apply --dry-run` | valida la especificación sin escribir nada |
+| `devclean plan "…" --export-spec devclean.spec.yml` | genera un spec desde una frase, para editarlo a mano y versionarlo |
+
+Los flags de la línea de comandos siempre ganan sobre el spec:
+`devclean up --agentes 1` corre en serie aunque el spec diga `agentes: 4`.
 
 ## Configuración
 

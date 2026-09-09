@@ -14,6 +14,7 @@ const (
 	FaseExamen      = "examen"      // el examinador escribe la suite ciega
 	FaseAgente      = "agente"      // el implementador trabaja
 	FaseVerificando = "verificando" // corre listo_cuando
+	FaseRevision    = "revision"    // el revisor juzga el diff verde contra el contrato
 )
 
 // Latido es el estado vivo de una tarea: en qué fase está ahora mismo y

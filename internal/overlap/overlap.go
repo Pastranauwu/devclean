@@ -58,44 +58,63 @@ func CheckPar(root, idA, idB string, attemptsA, attemptsB []loop.Attempt) Result
 	return res
 }
 
-// mergeTree runs git merge-tree and returns conflicting file paths.
-// Returns nil, nil on clean merge or when branches don't exist yet.
+// mergeTree runs git merge-tree and returns the conflicting file paths.
+//
+// Con --write-tree --no-messages la salida es el OID del árbol escrito y,
+// cuando hay conflicto, una línea por etapa sin fusionar en formato
+// "<modo> <oid> <etapa>\t<ruta>". Esas líneas son estables y no dependen
+// del idioma de la terminal — los mensajes "CONFLICT (content)" sí (en
+// español salen "CONFLICTO (contenido)"), y el parseo por prefijo no los
+// encontraba: falso negativo que escondía el archivo en conflicto.
+//
+// Devuelve nil, nil tanto en fusión limpia como cuando no se pudo
+// comparar (rama inexistente, git viejo): una rama que aún no existe no
+// es un conflicto, y reportarlo como tal era el falso positivo
+// "devclean/T-001 ↔ devclean/T-002" que se veía antes del primer wip:.
 func mergeTree(root, ramaA, ramaB string) ([]string, error) {
 	cmd := exec.Command("git", "-C", root, "merge-tree", "--write-tree", "--no-messages", ramaA, ramaB)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	err := cmd.Run()
 	if err == nil {
-		return nil, nil // clean merge
+		return nil, nil // fusión limpia
 	}
-	// exit code 1 = conflicts; parse stdout for filenames
-	// if the command itself doesn't exist or fails for another reason, skip gracefully
 	var exitErr *exec.ExitError
-	if !isExitError(err, &exitErr) {
-		return nil, nil
+	if !isExitError(err, &exitErr) || exitErr.ExitCode() != 1 {
+		return nil, nil // no es un conflicto: no se pudo comparar
 	}
+	// exit 1 puede ser conflicto real o "no se pudo fusionar" (rama
+	// inexistente). Lo distingue la salida: un conflicto trae líneas de
+	// etapa; un error trae un mensaje y nada más.
 	var conflictos []string
 	seen := map[string]bool{}
 	for _, line := range strings.Split(stdout.String(), "\n") {
-		// git merge-tree --write-tree prints "CONFLICT (content): ..." lines
-		if !strings.HasPrefix(line, "CONFLICT") {
-			continue
+		ruta, ok := parseLineaEtapa(line)
+		if ok && !seen[ruta] {
+			conflictos = append(conflictos, ruta)
+			seen[ruta] = true
 		}
-		// last token is usually the file path
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		f := fields[len(fields)-1]
-		if !seen[f] {
-			conflictos = append(conflictos, f)
-			seen[f] = true
-		}
-	}
-	if len(conflictos) == 0 {
-		conflictos = []string{fmt.Sprintf("%s ↔ %s", ramaA, ramaB)}
 	}
 	return conflictos, nil
+}
+
+// parseLineaEtapa extrae la ruta de una línea de etapa sin fusionar de
+// merge-tree: "<modo> <oid> <etapa>\t<ruta>". La etapa (1 base, 2 la
+// nuestra, 3 la suya) es lo que la distingue del resto de la salida.
+func parseLineaEtapa(line string) (string, bool) {
+	meta, ruta, ok := strings.Cut(line, "\t")
+	if !ok || ruta == "" {
+		return "", false
+	}
+	campos := strings.Fields(meta)
+	if len(campos) != 3 {
+		return "", false
+	}
+	switch campos[2] {
+	case "1", "2", "3":
+		return ruta, true
+	}
+	return "", false
 }
 
 func isExitError(err error, target **exec.ExitError) bool {

@@ -70,6 +70,31 @@ func TestConfirmar(t *testing.T) {
 	}
 }
 
+// El "como" del planificador es la instrucción que recibe el ejecutor:
+// si se pierde al crear el contrato, el agente barato corre sin la
+// orientación del modelo grande. Debe llegar a Notas (mismo camino que
+// usa la recursión, recurse.replanDesdeContrato) y de ahí al prompt.
+func TestComoLlegaAlContrato(t *testing.T) {
+	b := plan.Borrador{
+		Titulo:      "exportar clientes",
+		ListoCuando: "go test ./internal/export/...",
+		TocarSolo:   []string{"internal/export/**"},
+		Como:        "empieza por el encoder, no toques el handler",
+	}
+	tk := task.Task{
+		Version: task.Version, ID: "T-001", Titulo: b.Titulo,
+		ListoCuando: b.ListoCuando, TocarSolo: b.TocarSolo,
+		Notas: b.Como, LimiteIntentos: 3, LimiteLineas: 200,
+	}
+	leida, err := task.Parse(tk.Marshal())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leida.Notas != b.Como {
+		t.Errorf("notas = %q, quiero %q · el como se perdió en el contrato", leida.Notas, b.Como)
+	}
+}
+
 func TestCerrarDependencias(t *testing.T) {
 	props := []propuesta{
 		{ID: "T-001"},

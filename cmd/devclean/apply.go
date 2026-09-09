@@ -34,7 +34,8 @@ Con --run (o -r), lanza inmediatamente la ejecución en paralelo (devclean run).
 			if err != nil {
 				return err
 			}
-			return runApply(root, file, runImmediately, dryRun)
+			_, err = runApply(root, file, runImmediately, dryRun)
+			return err
 		},
 	}
 
@@ -45,12 +46,14 @@ Con --run (o -r), lanza inmediatamente la ejecución en paralelo (devclean run).
 	return cmd
 }
 
-func runApply(root, filePath string, runImmediately, dryRun bool) error {
+// runApply aplica la especificación y la devuelve: quien llama (up) la
+// necesita para respetar sus `agentes` y `ship`.
+func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, error) {
 	var err error
 	if filePath == "" {
 		filePath, err = spec.Find(root)
 		if err != nil {
-			return fmt.Errorf("no se encontró archivo de especificación en %s · especifícalo con -f o crea devclean.spec.yml", root)
+			return spec.Spec{}, fmt.Errorf("no se encontró archivo de especificación en %s · especifícalo con -f o crea devclean.spec.yml", root)
 		}
 	} else if !filepath.IsAbs(filePath) {
 		filePath = filepath.Join(root, filePath)
@@ -58,13 +61,13 @@ func runApply(root, filePath string, runImmediately, dryRun bool) error {
 
 	s, err := spec.Load(filePath)
 	if err != nil {
-		return fmt.Errorf("error al leer %s: %w", filePath, err)
+		return spec.Spec{}, fmt.Errorf("error al leer %s: %w", filePath, err)
 	}
 
 	tasksDir := config.TasksDir(root)
 	applied, err := spec.Apply(tasksDir, s, dryRun)
 	if err != nil {
-		return err
+		return spec.Spec{}, err
 	}
 
 	if dryRun {
@@ -76,11 +79,11 @@ func runApply(root, filePath string, runImmediately, dryRun bool) error {
 			}
 			out.Line("  %s  %s%s  · listo cuando: %s", t.ID, t.Titulo, ag, t.ListoCuando)
 		}
-		return nil
+		return s, nil
 	}
 
 	if err := out.Data(applied); err != nil {
-		return err
+		return spec.Spec{}, err
 	}
 
 	if esTUI() {
@@ -111,9 +114,13 @@ func runApply(root, filePath string, runImmediately, dryRun bool) error {
 
 	if runImmediately {
 		out.Line("")
-		return runCmd(1, "", "", false)
+		agentes := s.Agentes
+		if agentes < 1 {
+			agentes = 1
+		}
+		return s, runCmd(agentes, "", "", false)
 	}
 
 	out.Line("\n· corre devclean run (o devclean up) para ejecutarlas en paralelo")
-	return nil
+	return s, nil
 }

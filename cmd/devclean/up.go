@@ -40,6 +40,7 @@ pregunta solo cuando no puede resolverlo solo.`,
 				return err
 			}
 
+			var s spec.Spec
 			if frase := strings.TrimSpace(strings.Join(args, " ")); frase != "" {
 				// una petición manda sobre la spec: es lo que el humano
 				// acaba de pedir, aquí y ahora
@@ -58,15 +59,29 @@ pregunta solo cuando no puede resolverlo solo.`,
 					}
 				}
 				if specFile != "" {
-					if err := runApply(root, specFile, false, false); err != nil {
+					var err error
+					s, err = runApply(root, specFile, false, false)
+					if err != nil {
 						return err
 					}
 					out.Line("")
 				}
 			}
 
+			// el spec fija agentes y entrega cuando la línea de comandos
+			// no los pide: --agentes gana sobre `agentes:`, y `ship: true`
+			// entrega aunque no se haya pasado --ship
+			if !cmd.Flags().Changed("agentes") && s.Agentes > 0 {
+				agentes = s.Agentes
+			}
 			if agentes < 1 {
 				agentes = 1
+			}
+			if s.Ship {
+				entregar = true
+			}
+			if titulo == "" {
+				titulo = s.Feature
 			}
 			if err := runCmd(agentes, ejecutor, modelo, reintentar); err != nil {
 				return err

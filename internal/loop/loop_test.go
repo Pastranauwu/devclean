@@ -222,6 +222,86 @@ func TestPromptIncluyeContenidoDeSkills(t *testing.T) {
 	}
 }
 
+// revisorFalso veto el primer intento verde y aprueba el segundo: es la
+// forma de comprobar que un veto deja la tarea roja y que su veredicto
+// llega al prompt siguiente como contexto.
+type revisorFalso struct {
+	vetos      map[int]bool // intento → vetar
+	veces      int
+	ultimoDiff string
+}
+
+func (r *revisorFalso) Revisar(_ context.Context, _ string, _ task.Task, diff string, intento int) (bool, string, Tokens) {
+	r.veces++
+	r.ultimoDiff = diff
+	if r.vetos[intento] {
+		return false, "falta el caso borde de la firma", Tokens{Entrada: 3, Salida: 2}
+	}
+	return true, "", Tokens{Entrada: 3, Salida: 2}
+}
+
+func TestRevisorVetaVerdeYElSiguienteArregla(t *testing.T) {
+	root := repoConCommit(t)
+	ag := &agenteFalso{nombre: "falso", tokens: Tokens{Entrada: 10, Salida: 5}}
+	var prompts []string
+	ag.hacer = func(veces int, req Request) (string, int, error) {
+		prompts = append(prompts, req.Prompt)
+		escribir(t, req.RoomPath, "src/done.txt", "x\n")
+		return "", 0, nil
+	}
+	tk := tareaDePrueba()
+	tk.LimiteIntentos = 3
+
+	opts := optsDePrueba(t, root, ag, tk)
+	opts.Revisor = &revisorFalso{vetos: map[int]bool{1: true}}
+
+	outcome, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !outcome.Verde || outcome.Intentos != 2 {
+		t.Fatalf("Outcome = %+v, quiero verde en el intento 2 tras el veto", outcome)
+	}
+
+	attempts, err := ReadAttempts(root, "T-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 2 {
+		t.Fatalf("attempts = %d, quiero 2", len(attempts))
+	}
+	if attempts[0].Revision == nil || attempts[0].Revision.Aprobada {
+		t.Errorf("intento 1 debió quedar vetado: %+v", attempts[0].Revision)
+	}
+	if attempts[1].Revision == nil || !attempts[1].Revision.Aprobada {
+		t.Errorf("intento 2 debió quedar aprobado: %+v", attempts[1].Revision)
+	}
+	if len(prompts) != 2 || !strings.Contains(prompts[1], "falta el caso borde") {
+		t.Errorf("el veredicto del revisor no llegó al prompt siguiente:\n%v", prompts)
+	}
+}
+
+func TestSinRevisorElVerdeEsVerde(t *testing.T) {
+	root := repoConCommit(t)
+	ag := &agenteFalso{nombre: "falso"}
+	ag.hacer = func(_ int, req Request) (string, int, error) {
+		escribir(t, req.RoomPath, "src/done.txt", "x\n")
+		return "", 0, nil
+	}
+
+	outcome, err := Run(context.Background(), optsDePrueba(t, root, ag, tareaDePrueba()))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !outcome.Verde || outcome.Intentos != 1 {
+		t.Fatalf("Outcome = %+v, quiero verde en 1 intento sin revisor", outcome)
+	}
+	attempts, _ := ReadAttempts(root, "T-001")
+	if len(attempts) != 1 || attempts[0].Revision != nil {
+		t.Errorf("sin revisor no debe haber revision: %+v", attempts[0])
+	}
+}
+
 // contadorPrueba es el mínimo que loop pide al presupuesto: Gastar.
 type contadorPrueba struct {
 	limite, usado int
