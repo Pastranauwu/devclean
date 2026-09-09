@@ -870,7 +870,11 @@ func emitirResultados(results []runResult) error {
 			if r.Tokens > 0 {
 				extra = " · " + budget.FormatearGasto(r.Tokens) + " tokens"
 			}
-			out.Line("✓ %s  %s  · verde en %d intentos%s", r.ID, r.Titulo, r.Intentos, extra)
+			intentos := "1 intento"
+			if r.Intentos != 1 {
+				intentos = fmt.Sprintf("%d intentos", r.Intentos)
+			}
+			out.Line("✓ %s  %s  · verde en %s%s", r.ID, r.Titulo, intentos, extra)
 		case "detenida":
 			out.Line("⏸ %s  %s  · %s", r.ID, r.Titulo, r.Motivo)
 		case "rechazada":

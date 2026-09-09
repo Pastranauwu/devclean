@@ -1,63 +1,111 @@
 # Tape de vhs para grabar el GIF de devclean CON la TUI.
 #   vhs docs/demo.tape
-# Graba run (corrida en vivo), board (plasma, con árbol de una tarea
-# recursiva) y ship (compuerta), sin --plain.
+#
+# Graba run (corrida en vivo), board (tablero), la recursion en subtareas
+# y ship (compuerta), sin --plain.
+#
+# La preparacion va entre Hide/Show: compilar, entrar al repo de demo y
+# exportar el entorno no le dicen nada a quien mira el GIF, y ocupaban los
+# primeros segundos del bucle.
+#
+# HOME apunta al home falso que crea demo-env.sh: el ledger de consumo vive
+# en $HOME/.devclean y sin aislarlo el GIF publica el gasto real de quien
+# graba.
+#
+# Las esperas son Wait+Screen sobre lo que el comando imprime, no Sleep a
+# ojo: un Sleep corto cortaba la corrida a la mitad en una maquina lenta y
+# uno largo dejaba segundos muertos. Cada seccion arranca con un clear
+# oculto para que el patron de Wait no matchee la salida de la anterior.
+#
 # OJO: en vhs, Type manda los caracteres literal (no escapa $). Escribir
-# \$PATH rompería el PATH. Aquí va $PATH tal cual.
-# En vhs, Width y Height son PÍXELES (tamaño de la imagen final).
+# \$PATH rompe el PATH. Aqui va $PATH tal cual.
+# En vhs, Width y Height son PIXELES (tamano de la imagen final).
 
 Output docs/demo.gif
 
 Set Shell bash
-Set FontSize 22
+Set FontSize 20
 Set Width 1200
 Set Height 700
-Set Padding 2
+Set Padding 20
+Set Framerate 24
+Set TypingSpeed 40ms
+Set WaitTimeout 180s
 
-# compila si hace falta + prepara el agente falso y el repo de demo
+# ---------- preparacion: fuera del GIF ----------
+Hide
 Type "sh scripts/demo-env.sh"
 Enter
-Sleep 3s
-
+Wait+Screen /demo lista/
 Type "cd /tmp/devclean-demo"
 Enter
-Sleep 500ms
-
 Type "export PATH=/tmp/fakebin:$PATH"
 Enter
-Sleep 500ms
+Type "export HOME=/tmp/devclean-demo-home OPENCODE_API_KEY=demo"
+Enter
+Type "clear"
+Enter
+Show
 
-# run: la corrida en vivo (spinner + barra), sale solo
+# ---------- run: la corrida en vivo, sale sola ----------
 Type "devclean run --agentes 2 --ejecutor opencode"
 Enter
-Sleep 8s
+Wait+Screen /verde en/
+Sleep 2s
 
-# board: plasma de fondo + logo, déjalo verse un rato
+Hide
+Type "clear"
+Enter
+Show
+
+# ---------- board: el tablero ----------
 Type "devclean board"
 Enter
-Sleep 10s
+Wait+Screen /LISTO PARA ENTREGAR/
+Sleep 4s
 Type "q"
-Sleep 3s
+Sleep 1s
 
-# activa la tarea recursiva (ver scripts/demo-env.sh) y corre: devclean
-# la reparte sola en subtareas, cada una en su propio cuarto anidado
+# ---------- recursion: T-003 se reparte sola en subtareas ----------
+# el mv es plomeria de la demo (ver scripts/demo-env.sh): T-003 llega
+# como .pendiente porque entrando desde el arranque la esclusa la rechaza
+# por cruce de tocar_solo con T-001/T-002 en la misma oleada (§6.9), que
+# es un chequeo real y correcto. Va oculto: no es parte de lo que se
+# muestra.
+Hide
+Type "clear"
+Enter
 Type "mv .devclean/tasks/T-003.md.pendiente .devclean/tasks/T-003.md"
 Enter
-Sleep 500ms
+Type "clear"
+Enter
+Show
+
 Type "devclean run --agentes 1 --ejecutor opencode"
 Enter
-Sleep 10s
+Wait+Screen /verde en/
+Sleep 2s
 
-# board --plain: ahora T-003 muestra su árbol de subtareas indentado.
-# --plain a propósito acá (no TUI): entrar y salir de un segundo alt-screen
-# en la misma sesión de vhs es frágil (la tecla "q" puede llegarle a la
-# shell en vez de al programa si el timing no da), y el texto plano
-# muestra el árbol con más claridad para un GIF de todos modos.
+Hide
+Type "clear"
+Enter
+Show
+
+# board --plain a proposito aqui (no TUI): entrar y salir de un segundo
+# alt-screen en la misma sesion de vhs es fragil (la tecla "q" puede
+# llegarle a la shell en vez de al programa si el timing no da), y el
+# texto plano muestra el arbol de subtareas de T-003 con mas claridad
+# para un GIF de todos modos.
 Type "devclean board --plain"
 Enter
-Sleep 6s
+Sleep 4s
 
-# ship: la compuerta animada, sale solo
+Hide
+Type "clear"
+Enter
+Show
+
+# ---------- ship: la compuerta, sale sola ----------
 Type "devclean ship T-001 --dry-run"
 Enter
-Sleep 5s
+Sleep 6s

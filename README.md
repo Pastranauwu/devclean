@@ -4,8 +4,8 @@ Dirige agentes de IA programando en paralelo sobre un mismo repositorio y
 garantiza que lo único que llega al proyecto sea **código limpio, probado y
 con historial legible**.
 
-Vos decís qué querés. devclean configura, planea, reparte, supervisa, prueba y
-entrega. Recibís un pull request, no el desorden.
+Tú dices qué quieres. devclean configura, planea, reparte, supervisa, prueba y
+entrega. Recibes un pull request, no el desorden.
 
 ```
 $ devclean up "exportar clientes a CSV y arreglar el login con tildes" --agentes 3 --ship
@@ -35,14 +35,14 @@ Deja el binario en `~/.local/bin` y lo agrega al `PATH`. Alternativas:
 go install github.com/Pastranauwu/devclean/cmd/devclean@latest
 ```
 
-**devclean no trae ningún modelo.** Dirige un CLI de agente que ya tenés
-instalado y pagás: [Claude Code](https://docs.anthropic.com/claude-code)
-(`claude`) u [OpenCode](https://opencode.ai) (`opencode`). Necesitás al menos
+**devclean no trae ningún modelo.** Dirige un CLI de agente que ya tienes
+instalado y pagas: [Claude Code](https://docs.anthropic.com/claude-code)
+(`claude`) u [OpenCode](https://opencode.ai) (`opencode`). Necesitas al menos
 uno instalado y logueado, y `git`. Para abrir PRs, además `gh`.
 
 ## Uso en una línea
 
-Entrá a la carpeta del proyecto (con o sin git, con o sin código) y pedí:
+Entra a la carpeta del proyecto (con o sin git, con o sin código) y pide:
 
 ```sh
 devclean up "api rest de tareas con sqlite" --agentes 3 --ship
@@ -67,7 +67,7 @@ queda escrito en `.devclean/config.yml`, editable a mano.
 Variantes:
 
 ```sh
-devclean up "arreglar el login con tildes"              # planea y ejecuta; vos revisás y hacés ship
+devclean up "arreglar el login con tildes"              # planea y ejecuta; tú revisas y haces ship
 devclean up "…" --ship                                    # además entrega todo en un solo PR
 devclean up "…" --revisar                                 # además un modelo revisa el diff y deja informe en el PR
 devclean up "…" --integrar                                # además mergea si el revisor no pide cambios
@@ -86,7 +86,7 @@ Cada tarea es un **contrato** con un comando ejecutable que dice "ya está"
 hace código, nunca el modelo.
 
 1. **Plan.** Un modelo (rol planificador) convierte tu frase en contratos de
-   tarea en `.devclean/tasks/T-00N.md`. En terminal aprobás con casillas;
+   tarea en `.devclean/tasks/T-00N.md`. En terminal apruebas con casillas;
    `up` los aprueba solo.
 2. **Esclusa de entrada.** Cada contrato tiene que ser válido, su
    `listo_cuando` tiene que **fallar hoy**, y su alcance no puede pisar el
@@ -106,7 +106,7 @@ hace código, nunca el modelo.
 4. **Esclusa de salida (`ship`).** Rebase sobre la base, historial aplanado
    en un commit por tarea, sin prints de debug, sin secretos, dentro del
    presupuesto de líneas, las interfaces prometidas están en el diff,
-   bisectable, la suite completa pasa sobre el conjunto integrado, y recién
+   bisectable, la suite completa pasa sobre el conjunto integrado, y hasta
    entonces el PR. El primer paso que falla frena la compuerta con la razón
    exacta.
 
@@ -120,14 +120,14 @@ agentes hablen entre sí.
 | Comando | Qué hace |
 |---|---|
 | `up "<petición>" [--agentes N] [--ship\|--revisar\|--integrar]` | Todo: configura, planea, ejecuta y entrega. |
-| `plan "<petición>"` | Solo planea. Muestra las tareas propuestas y las crea si aprobás. |
+| `plan "<petición>"` | Solo planea. Muestra las tareas propuestas y las crea si apruebas. |
 | `run [--agentes N] [--reintentar]` | Ejecuta las tareas pendientes en paralelo. `--reintentar` revive las detenidas reusando su cuarto. |
 | `ship T-001` / `ship --todas` | Esclusa de salida y PR. `--dry-run` hace todo menos abrir el PR. |
 | `board` | Tablero por estado: listas, en curso, detenidas, pendientes. |
 | `ps` | Estado de tareas y cuartos activos. |
 | `logs T-001` | Intentos de una tarea, uno por línea. |
 | `standup` | Parte de datos: qué avanza, qué colisiona, qué está atascado. |
-| `report` | Métricas con tendencia respecto de la corrida anterior. |
+| `report` | Métricas con tendencia respecto a la corrida anterior. |
 | `usage` | Gasto por ventanas (5h, semanal, mensual) contra el presupuesto. |
 | `doctor` | Verifica git, config, CLIs, keys y que los modelos existan. |
 | `init [--cli claude] [--pruebas "…"]` | Crea `.devclean/` a mano, eligiendo CLI y modelos. |
@@ -142,10 +142,10 @@ terminal, usan la interfaz interactiva.
 ### Cuando algo falla
 
 - **Tarea detenida.** Agotó sus intentos. `devclean logs T-00N` muestra qué
-  probó y qué falló. Corregí el contrato si estaba mal, o subí
+  probó y qué falló. Corrige el contrato si estaba mal, o sube
   `limite_intentos`, y `devclean run --reintentar`.
 - **Rechazada en la esclusa de entrada.** El motivo más común es
-  "`listo_cuando` ya pasa": el comando tiene que fallar hoy. Apuntá a lo que
+  "`listo_cuando` ya pasa": el comando tiene que fallar hoy. Apunta a lo que
   la tarea va a crear, no a la suite entera.
 - **`ship` frenado.** Dice el paso y la razón exacta. Nada se publica hasta
   que pase.
@@ -219,7 +219,7 @@ las `notas` de cada tarea al aplicar.
 |---|---|
 | `devclean up` | encuentra `devclean.spec.yml` solo, lo aplica, corre con sus `agentes` y entrega si dice `ship: true` |
 | `devclean up -f specs/auth.yml` | lo mismo con otra ruta |
-| `devclean apply [-f archivo]` | crea las tareas sin ejecutar; las revisás con `devclean board` |
+| `devclean apply [-f archivo]` | crea las tareas sin ejecutar; las revisas con `devclean board` |
 | `devclean apply --run` | aplica y ejecuta con los `agentes` del spec |
 | `devclean apply --dry-run` | valida la especificación sin escribir nada |
 | `devclean plan "…" --export-spec devclean.spec.yml` | genera un spec desde una frase, para editarlo a mano y versionarlo |
@@ -229,7 +229,7 @@ Los flags de la línea de comandos siempre ganan sobre el spec:
 
 ## Configuración
 
-`up` la escribe sola. Se edita a mano en `.devclean/config.yml` cuando querés
+`up` la escribe sola. Se edita a mano en `.devclean/config.yml` cuando quieres
 otra cosa:
 
 ```yaml

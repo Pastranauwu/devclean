@@ -6,7 +6,9 @@ set -e
 
 raiz="$(cd "$(dirname "$0")/.." && pwd)"
 bin="${DEVCLEAN_BIN:-$raiz/devclean}"
-if [ ! -x "$bin" ]; then
+# siempre recompila: go build es incremental y un binario viejo grababa
+# una demo que ya no corresponde al código del repo
+if [ -z "$DEVCLEAN_BIN" ]; then
   echo "compilando devclean..."
   (cd "$raiz" && go build -o devclean ./cmd/devclean) || exit 1
 fi
@@ -16,16 +18,25 @@ mkdir -p /tmp/fakebin
 cat > /tmp/fakebin/opencode <<'EOF'
 #!/bin/sh
 if [ "$1" = "--version" ]; then echo "0.1.0"; exit 0; fi
+# catalogo de modelos: sin esto init guardaba la salida JSON del agente
+# como id de modelo y la corrida lo imprimia como nombre
+if [ "$1" = "models" ]; then
+  printf '%s\n' anthropic/claude-haiku-4-5 anthropic/claude-sonnet-4-5 anthropic/claude-opus-4-1
+  exit 0
+fi
 dir="."; prev=""
 for a in "$@"; do [ "$prev" = "--dir" ] && dir="$a"; prev="$a"; done
 case "$2" in
   *"planificador de devclean"*)
-    printf '%s\n' '{"type":"message","part":{"type":"text","text":"[{\"titulo\":\"crear el módulo de exportación\",\"listo_cuando\":\"test -f src/export.go\",\"tocar_solo\":[\"src/**\"]},{\"titulo\":\"documentar la API\",\"listo_cuando\":\"test -f docs/api.md\",\"tocar_solo\":[\"docs/**\"]}]"}}'
+    printf '%s\n' '{"type":"message","part":{"type":"text","text":"[{\"titulo\":\"exportador CSV\",\"listo_cuando\":\"test -f src/csv/export.go\",\"tocar_solo\":[\"src/csv/**\"]},{\"titulo\":\"exportador JSON\",\"listo_cuando\":\"test -f src/json/export.go\",\"tocar_solo\":[\"src/json/**\"]}]"}}'
     printf '%s\n' '{"type":"step_finish","tokens":{"input":10,"output":5}}'
     ;;
   *)
-    path=$(printf '%s' "$2" | grep -o 'test -f [^ ]*' | awk '{print $3}')
-    [ -n "$path" ] && { mkdir -p "$dir/$(dirname "$path")"; echo "demo" > "$dir/$path"; }
+    for path in $(printf '%s' "$2" | grep -o 'test -f [^ ]*' | awk '{print $3}'); do
+      mkdir -p "$dir/$(dirname "$path")"
+      echo "demo" > "$dir/$path"
+      printf '%s\n' "{\"type\":\"message\",\"part\":{\"type\":\"text\",\"text\":\"escribiendo $path\"}}"
+    done
     sleep 1
     printf '%s\n' '{"type":"step_finish","tokens":{"input":100,"output":20}}'
     ;;
@@ -34,13 +45,26 @@ EOF
 chmod +x /tmp/fakebin/opencode
 cp "$bin" /tmp/fakebin/devclean
 
+# HOME aislado: el ledger de consumo vive en $HOME/.devclean, y sin esto
+# el GIF grabaria el gasto real de quien graba. El tape exporta este HOME.
+casa=/tmp/devclean-demo-home
+rm -rf "$casa"
+mkdir -p "$casa"
+cat > "$casa/.gitconfig" <<'GITCFG'
+[user]
+	name = devclean demo
+	email = demo@devclean.local
+[init]
+	defaultBranch = main
+GITCFG
+
 # repo de demo en ruta fija
 rm -rf /tmp/devclean-demo
 mkdir /tmp/devclean-demo
 cd /tmp/devclean-demo
 git init -b main -q
 git -c user.email=t@t -c user.name=t commit --allow-empty -m init -q
-PATH="/tmp/fakebin:$PATH" /tmp/fakebin/devclean init --pruebas true --plain >/dev/null
+HOME="$casa" PATH="/tmp/fakebin:$PATH" /tmp/fakebin/devclean init --pruebas true --plain >/dev/null
 echo "recursion_max: 1" >> .devclean/config.yml
 
 cat > .devclean/tasks/T-001.md <<'EOF'
@@ -74,9 +98,9 @@ cat > .devclean/tasks/T-003.md.pendiente <<'EOF'
 ---
 version: 1
 id: T-003
-titulo: preparar exportación completa (módulo + docs)
-listo_cuando: test -f src/export.go && test -f docs/api.md
-tocar_solo: ["src/**", "docs/**"]
+titulo: exportar en CSV y en JSON
+listo_cuando: test -f src/csv/export.go && test -f src/json/export.go
+tocar_solo: ["src/**"]
 limite_intentos: 3
 limite_lineas: 200
 recursivo: true

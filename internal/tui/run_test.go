@@ -15,6 +15,9 @@ func TestRenderFilaRun(t *testing.T) {
 	if s := renderFilaRun(f, &tareaViva{estado: "lista", intentos: 2}, time.Time{}, 0); !strings.Contains(s, "verde en 2 intentos") {
 		t.Errorf("lista = %q", s)
 	}
+	if s := renderFilaRun(f, &tareaViva{estado: "lista", intentos: 1}, time.Time{}, 0); !strings.Contains(s, "verde en 1 intento") || strings.Contains(s, "1 intentos") {
+		t.Errorf("un solo intento debe decir \"1 intento\", no \"1 intentos\": %q", s)
+	}
 	if s := renderFilaRun(f, &tareaViva{estado: "detenida"}, time.Time{}, 0); !strings.Contains(s, "detenida") {
 		t.Errorf("detenida = %q", s)
 	}

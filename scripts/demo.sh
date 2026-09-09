@@ -8,7 +8,9 @@ set -e
 # ruta absoluta del binario: sobrevive al `cd "$repo"` de más abajo
 raiz="$(cd "$(dirname "$0")/.." && pwd)"
 bin="${DEVCLEAN_BIN:-$raiz/devclean}"
-if [ ! -x "$bin" ]; then
+# siempre recompila: go build es incremental y un binario viejo grababa
+# una demo que ya no corresponde al código del repo
+if [ -z "$DEVCLEAN_BIN" ]; then
   echo "compilando devclean..."
   (cd "$raiz" && go build -o devclean ./cmd/devclean) || exit 1
 fi
@@ -21,6 +23,12 @@ mkdir -p "$tmp/bin"
 cat > "$tmp/bin/opencode" <<'EOF'
 #!/bin/sh
 if [ "$1" = "--version" ]; then echo "0.1.0"; exit 0; fi
+# catalogo de modelos: sin esto init guardaba la salida JSON del agente
+# como id de modelo y la corrida lo imprimia como nombre
+if [ "$1" = "models" ]; then
+  printf '%s\n' anthropic/claude-haiku-4-5 anthropic/claude-sonnet-4-5 anthropic/claude-opus-4-1
+  exit 0
+fi
 dir="."; prev=""
 for a in "$@"; do [ "$prev" = "--dir" ] && dir="$a"; prev="$a"; done
 case "$2" in

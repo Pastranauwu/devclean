@@ -201,7 +201,7 @@ func renderFilaRun(f FilaRun, v *tareaViva, inicio time.Time, tick int) string {
 		estado = estiloApagado.Render("pendiente")
 	case v.estado == "lista":
 		g = estiloPresion.Render("✓")
-		estado = estiloPresion.Render("verde en " + strconv.Itoa(v.intentos) + " intentos")
+		estado = estiloPresion.Render("verde en " + intentosTxt(v.intentos))
 	case v.estado == "detenida":
 		g = estiloAlerta.Render("⏸")
 		estado = estiloAlerta.Render("detenida")
@@ -210,4 +210,13 @@ func renderFilaRun(f FilaRun, v *tareaViva, inicio time.Time, tick int) string {
 		estado = estiloApagado.Render(reloj(time.Since(inicio)))
 	}
 	return "  " + g + " " + estiloTinta.Render(f.ID) + "  " + f.Titulo + "  " + estado + "\n"
+}
+
+// intentosTxt formatea el conteo de intentos con el singular correcto:
+// "1 intento", no "1 intentos".
+func intentosTxt(n int) string {
+	if n == 1 {
+		return "1 intento"
+	}
+	return strconv.Itoa(n) + " intentos"
 }
