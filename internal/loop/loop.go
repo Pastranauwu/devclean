@@ -238,6 +238,15 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		inicio := time.Now().UTC()
 		avisar(intento, FaseAgente)
 
+		// el punto contra el que se mide ESTE intento. No sirve HEAD al
+		// final: si el agente commitea por su cuenta dentro del cuarto,
+		// HEAD ya se movió y el intento mediría cero. Si no se puede
+		// resolver, "HEAD" al menos compara contra el árbol de trabajo.
+		antes := "HEAD"
+		if h, err := resolveCommit(o.Room.Path, "HEAD"); err == nil {
+			antes = h
+		}
+
 		req := Request{
 			RoomPath:     o.Room.Path,
 			Prompt:       promptPara(o.Task, o.Interfaces, o.Constitucion, o.Skills, o.SkillsContenido, prevErr),
@@ -263,11 +272,11 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		if _, err := gitRun(o.Room.Path, "add", "-A"); err != nil {
 			return Outcome{}, err
 		}
-		archivos, err := stagedFiles(o.Room.Path)
+		archivos, err := filesSince(o.Room.Path, antes)
 		if err != nil {
 			return Outcome{}, err
 		}
-		mas, menos, err := stagedNumstat(o.Room.Path)
+		mas, menos, err := numstatSince(o.Room.Path, antes)
 		if err != nil {
 			return Outcome{}, err
 		}

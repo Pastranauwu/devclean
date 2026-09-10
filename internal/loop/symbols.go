@@ -19,7 +19,7 @@ import (
 // no solo los añadidos línea a línea. Es señal suficiente para el cruce
 // semántico de §6.9 y no inventa nada.
 func simbolosExportados(roomPath, base string) (*[]string, error) {
-	files, err := changedVsBase(roomPath, base)
+	files, err := filesSince(roomPath, base)
 	if err != nil {
 		return nil, err
 	}

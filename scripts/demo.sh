@@ -18,6 +18,22 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+# HOME aislado: el ledger de gasto vive en $HOME/.devclean/ventanas.jsonl y
+# es global al usuario, no por repo. Sin esto la demo — agente falso, cero
+# tokens reales — escribía tokens inventados en el ledger de quien la corre,
+# y sobre ese ledger se calculan `devclean usage` y los topes de
+# `presupuesto:` que deciden si el trabajo real puede seguir. Mismo aislamiento
+# que ya hacía scripts/demo-env.sh.
+export HOME="$tmp/home"
+mkdir -p "$HOME"
+cat > "$HOME/.gitconfig" <<'GITCFG'
+[user]
+	name = devclean demo
+	email = demo@devclean.local
+[init]
+	defaultBranch = main
+GITCFG
+
 # agente falso: escribe el archivo que pide cada listo_cuando
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/opencode" <<'EOF'

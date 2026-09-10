@@ -43,26 +43,19 @@ func statusFiles(dir string) ([]string, error) {
 	return files, nil
 }
 
-// stagedFiles lista los archivos del intento: lo indexado frente a HEAD.
-// Corre después de `git add -A`, así incluye los archivos nuevos.
-func stagedFiles(dir string) ([]string, error) {
-	out, err := gitRun(dir, "diff", "--cached", "--name-only", "HEAD")
-	if err != nil {
-		return nil, err
-	}
-	var files []string
-	for _, line := range strings.Split(out, "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			files = append(files, line)
-		}
-	}
-	return files, nil
-}
-
-// stagedNumstat devuelve las líneas añadidas y quitadas del intento:
-// lo indexado frente a HEAD. Los binarios ("-") no cuentan.
-func stagedNumstat(dir string) (mas, menos int, err error) {
-	out, err := gitRun(dir, "diff", "--cached", "--numstat", "HEAD")
+// numstatSince devuelve las líneas añadidas y quitadas desde ref. Los
+// binarios ("-") no cuentan.
+//
+// Mide contra una ref y no contra el índice a propósito: `git diff <ref>`
+// compara ref con el árbol de trabajo, así que cuenta igual lo que el
+// agente dejó sin commitear y lo que commiteó por su cuenta dentro del
+// cuarto. Medirlo con `--cached HEAD` daba cero en el segundo caso — un
+// agente que commitea (la skill `implement` lo hace) movía HEAD, dejaba
+// el índice vacío y el intento se registraba con 0 líneas pese a haber
+// trabajo. Corre después de `git add -A`, que es lo que mete los
+// archivos nuevos en el árbol comparable.
+func numstatSince(dir, ref string) (mas, menos int, err error) {
+	out, err := gitRun(dir, "diff", "--numstat", ref)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -82,10 +75,12 @@ func stagedNumstat(dir string) (mas, menos int, err error) {
 	return mas, menos, nil
 }
 
-// changedVsBase lista los archivos cambiados desde base, acumulado. Corre
-// después de indexar, para que los archivos nuevos del intento cuenten.
-func changedVsBase(dir, base string) ([]string, error) {
-	out, err := gitRun(dir, "diff", "--name-only", base)
+// filesSince lista los archivos cambiados desde ref. Corre después de
+// indexar, para que los archivos nuevos cuenten. Sirve para el acumulado
+// contra la base de la tarea y para un intento suelto contra el commit
+// con que arrancó; ver numstatSince sobre por qué la ref y no el índice.
+func filesSince(dir, ref string) ([]string, error) {
+	out, err := gitRun(dir, "diff", "--name-only", ref)
 	if err != nil {
 		return nil, err
 	}

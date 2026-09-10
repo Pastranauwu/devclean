@@ -73,26 +73,62 @@ func TestRevertSinRestriccionRevierteSoloPruebas(t *testing.T) {
 	}
 }
 
-func TestStagedStatsConArchivoNuevo(t *testing.T) {
+func TestStatsConArchivoNuevo(t *testing.T) {
 	root := repoConCommit(t)
+	antes := cabeza(t, root)
 	escribir(t, root, "src/export/writer.go", "linea1\nlinea2\n")
 
 	if _, err := gitRun(root, "add", "-A"); err != nil {
 		t.Fatal(err)
 	}
-	archivos, err := stagedFiles(root)
+	comprobarStats(t, root, antes, "src/export/writer.go", 2, 0)
+}
+
+// El agente real commitea por su cuenta dentro del cuarto (la skill
+// `implement` lo hace). Medir con `git diff --cached HEAD` daba entonces
+// cero archivos y cero líneas pese a haber trabajo, y esa mentira se
+// escribía en attempts.jsonl, que es la fuente de las métricas, del
+// standup y del solapamiento semántico.
+func TestStatsCuandoElAgenteCommiteaSolo(t *testing.T) {
+	root := repoConCommit(t)
+	antes := cabeza(t, root)
+
+	escribir(t, root, "src/export/writer.go", "linea1\nlinea2\n")
+	gitCmd(t, root, "add", "-A")
+	gitCmd(t, root, "-c", "user.email=a@a", "-c", "user.name=a", "commit", "-m", "feat: lo hice yo solo")
+
+	// el bucle indexa igual antes de medir; aquí no queda nada que indexar
+	if _, err := gitRun(root, "add", "-A"); err != nil {
+		t.Fatal(err)
+	}
+	comprobarStats(t, root, antes, "src/export/writer.go", 2, 0)
+}
+
+// cabeza devuelve el commit con que arranca un intento.
+func cabeza(t *testing.T, root string) string {
+	t.Helper()
+	h, err := resolveCommit(root, "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(archivos) != 1 || archivos[0] != "src/export/writer.go" {
-		t.Errorf("archivos = %v", archivos)
-	}
-	mas, menos, err := stagedNumstat(root)
+	return h
+}
+
+func comprobarStats(t *testing.T, root, ref, quiero string, mas, menos int) {
+	t.Helper()
+	archivos, err := filesSince(root, ref)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mas != 2 || menos != 0 {
-		t.Errorf("numstat = +%d/-%d, quiero +2/-0", mas, menos)
+	if len(archivos) != 1 || archivos[0] != quiero {
+		t.Errorf("archivos = %v, quiero [%s]", archivos, quiero)
+	}
+	a, m, err := numstatSince(root, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != mas || m != menos {
+		t.Errorf("numstat = +%d/-%d, quiero +%d/-%d", a, m, mas, menos)
 	}
 }
 
