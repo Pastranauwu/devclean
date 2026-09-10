@@ -15,7 +15,7 @@ $ devclean up "exportar clientes a CSV y arreglar el login con tildes" --agentes
   T-002  login acepta tildes           listo cuando: npm test -- auth
   T-001  ✓ verde en 2 intentos
   T-002  ✓ verde en 1 intento
-  ✓ base · ✓ historial · ✓ ruido · ✓ secretos · ✓ presupuesto · ✓ interfaces · ✓ bisectable · ✓ integradas · ✓ pr
+  ✓ orden · ✓ esclusa T-001 · ✓ esclusa T-002 · ✓ rama de entrega · ✓ integrar · ✓ integradas · ✓ pr
   entregado · https://github.com/tu/repo/pull/142
 ```
 
