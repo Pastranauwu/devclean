@@ -12,6 +12,7 @@ import (
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/executor"
+	"github.com/Pastranauwu/devclean/internal/overlap"
 )
 
 type chequeoDoctor struct {
@@ -40,6 +41,12 @@ func runDoctor() error {
 	// git
 	if _, err := exec.LookPath("git"); err != nil {
 		checks = append(checks, chequeoDoctor{"git", false, "git no está instalado"})
+	} else if !overlap.SoportaWriteTree() {
+		// sin --write-tree la deteccion textual de solapamiento no
+		// funciona, y antes se apagaba en silencio: el usuario creia
+		// tener el chequeo y no lo tenia
+		checks = append(checks, chequeoDoctor{"git", false,
+			"git " + overlap.VersionGit() + " · sin 'merge-tree --write-tree' (necesita 2.38+) · la detección de solapamiento entre tareas queda apagada"})
 	} else {
 		checks = append(checks, chequeoDoctor{"git", true, ""})
 	}

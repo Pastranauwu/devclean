@@ -12,6 +12,12 @@ import (
 func escanearRuido(diff string, archivos []string) []Hallazgo {
 	var h []Hallazgo
 	for _, ad := range parseDiffAnadido(diff) {
+		// la documentacion muestra codigo a proposito: un README que
+		// explica como depurar un cliente JS lleva console.log en un
+		// bloque, y marcarlo frenaba el ship de un PR correcto
+		if esDocumentacion(ad.nombre) {
+			continue
+		}
 		entrada := esPuntoDeEntrada(ad.nombre)
 		for _, linea := range ad.lineas {
 			if t := tipoDebug(linea, entrada); t != "" {
@@ -68,6 +74,22 @@ func tipoDebug(linea string, puntoDeEntrada bool) string {
 		}
 	}
 	return ""
+}
+
+// esDocumentacion reporta si el archivo existe para ser leído, no
+// ejecutado. Ahí un print no es un descuido: es el ejemplo.
+func esDocumentacion(archivo string) bool {
+	limpio := strings.TrimPrefix(path.Clean(archivo), "./")
+	switch strings.ToLower(path.Ext(limpio)) {
+	case ".md", ".mdx", ".markdown", ".rst", ".txt", ".adoc", ".asciidoc", ".org":
+		return true
+	}
+	for _, dir := range []string{"docs/", "doc/", "documentation/", "ejemplos/", "examples/"} {
+		if strings.HasPrefix(limpio, dir) || strings.Contains(limpio, "/"+dir) {
+			return true
+		}
+	}
+	return false
 }
 
 // esPuntoDeEntrada reporta si el archivo es por dónde arranca un

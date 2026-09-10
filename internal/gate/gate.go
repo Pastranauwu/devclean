@@ -333,3 +333,9 @@ func checkAgente(t task.Task, cfg config.Config) Check {
 		Motivo: fmt.Sprintf("agente desconocido: %s · decláralo en config.yml o usa uno existente (backend, frontend, architect, tester, refactor, ejecutor)", t.Agente),
 	}
 }
+
+// GlobsSeCruzan reporta si dos globs de tocar_solo pueden alcanzar el
+// mismo archivo. `plan` lo usa para avisar de un cruce con una tarea en
+// curso ANTES de escribir el contrato, en vez de dejar que la esclusa lo
+// rechace con los tokens ya gastados.
+func GlobsSeCruzan(a, b string) bool { return globsOverlap(a, b) }

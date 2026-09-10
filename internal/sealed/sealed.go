@@ -48,7 +48,21 @@ func Write(root, id string, s SuiteOculta) error {
 }
 
 // Read loads the sealed suite. Returns os.ErrNotExist if never sealed.
-// Verifies the hash to detect accidental corruption.
+//
+// Verifies the hash to detect accidental corruption — y SOLO eso. El hash
+// se guarda en el mismo JSON que el contenido, así que quien pueda
+// escribir el archivo puede recalcularlo: no distingue una manipulación
+// deliberada de un archivo intacto.
+//
+// ponytail: integridad, no antimanipulación. Lo que de verdad separa al
+// agente de la suite es que esta vive en .devclean/sealed/ del repo
+// principal y el agente trabaja en .devclean/rooms/<id>/, y que
+// revertFueraDeAlcance deshace lo que se salga de tocar_solo — pero solo
+// DENTRO del cuarto. Un agente con shell que suba por encima del cuarto
+// llega a este archivo y nadie lo revierte. Cerrarlo de verdad pide
+// confinar el sistema de archivos del agente (contenedor, bwrap o
+// equivalente); firmar el hash con una clave fuera del repo solo mueve el
+// problema a dónde vive la clave.
 func Read(root, id string) (SuiteOculta, error) {
 	data, err := os.ReadFile(filepath.Join(Dir(root, id), fileName))
 	if errors.Is(err, os.ErrNotExist) {

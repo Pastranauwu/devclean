@@ -20,6 +20,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/gate"
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/spec"
+	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/tui"
 )
@@ -90,6 +91,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 		Vedadas:        append(append([]string{}, zonas...), patrones...),
 		PruebasPropias: !examiner.Soportado(config.DetectLanguage(root)),
 		Agentes:        cfg.TodosLosAgentes(),
+		Ocupados:       alcancesOcupados(root),
 	}
 	if esVacio && !aprobar && isTerminal(os.Stdin) {
 		ctx.Stack, ctx.Requisitos = pedirRequisitos(os.Stdin, esTUI())
@@ -110,7 +112,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 		return err
 	}
 
-	sanearAlcance(borradores, zonas, patrones)
+	sanearAlcance(borradores, zonas, patrones, ctx.Ocupados)
 
 	ids, err := idsCorrelativos(dir, len(borradores))
 	if err != nil {
@@ -318,7 +320,7 @@ func zonasYPatronesDe(cfg config.Config, root string) (zonas, patrones []string)
 // entrada rechaza sí o sí. El planificador es un modelo y a veces las
 // mete (típico: go.sum junto a go.mod); sin esto el plan entero muere
 // en `devclean run` y no hay arreglo salvo editar a mano.
-func sanearAlcance(bs []plan.Borrador, zonas, patrones []string) {
+func sanearAlcance(bs []plan.Borrador, zonas, patrones []string, ocupados map[string][]string) {
 	for i := range bs {
 		limpio := bs[i].TocarSolo[:0]
 		for _, p := range bs[i].TocarSolo {
@@ -326,10 +328,62 @@ func sanearAlcance(bs []plan.Borrador, zonas, patrones []string) {
 				out.Line("· quito %q de tocar_solo · zona vedada (%s)", p, z)
 				continue
 			}
+			if id, dueño := alcanceOcupado(p, ocupados); dueño {
+				// no se recorta: un alcance que se cruza suele ser el
+				// corazon de la tarea, y quitarlo la deja sin sentido.
+				// Se avisa para que el humano parta o espere.
+				out.Line("⚠ %q se cruza con %s, que está en curso · la esclusa la rechazará hasta que %s termine", p, id, id)
+			}
 			limpio = append(limpio, p)
 		}
 		bs[i].TocarSolo = limpio
 	}
+}
+
+// alcancesOcupados devuelve tocar_solo de las tareas en curso, por id.
+// Es lo que el planificador necesita para no proponer trabajo que la
+// esclusa de entrada va a rechazar.
+func alcancesOcupados(root string) map[string][]string {
+	estados, err := state.List(root)
+	if err != nil {
+		return nil
+	}
+	enCurso := map[string]bool{}
+	for _, st := range estados {
+		if st.Estado == state.EnCurso {
+			enCurso[st.ID] = true
+		}
+	}
+	if len(enCurso) == 0 {
+		return nil
+	}
+	tareas, err := task.List(config.TasksDir(root))
+	if err != nil {
+		return nil
+	}
+	ocupados := map[string][]string{}
+	for _, t := range tareas {
+		if enCurso[t.ID] && len(t.TocarSolo) > 0 {
+			ocupados[t.ID] = t.TocarSolo
+		}
+	}
+	if len(ocupados) == 0 {
+		return nil
+	}
+	return ocupados
+}
+
+// alcanceOcupado reporta si p se cruza con el alcance de alguna tarea en
+// curso, y con cuál.
+func alcanceOcupado(p string, ocupados map[string][]string) (string, bool) {
+	for id, globs := range ocupados {
+		for _, g := range globs {
+			if gate.GlobsSeCruzan(p, g) {
+				return id, true
+			}
+		}
+	}
+	return "", false
 }
 
 // idsCorrelativos devuelve n ids libres a partir del primero.

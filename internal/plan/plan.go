@@ -96,14 +96,19 @@ type Generador interface {
 // planear. Se lo pasa al modelo para que no adivine el stack ni
 // invente comandos que no existen en el proyecto (§8.2).
 type Contexto struct {
-	Lenguaje     string                   // go, node, python, rust, "" si no se detecta
-	EsVacio      bool                     // repo sin código fuente todavía
-	Pruebas      string                   // comando de pruebas detectado ("" si no hay)
-	Stack        string                   // stack elegido por el humano ("" si lo decide el modelo)
-	Requisitos   string                   // requisitos extra que dijo el humano, en texto libre
-	Constitucion string                   // contenido de .devclean/constitution.md (§6.11), "" si no existe
-	Vedadas      []string                 // globs que tocar_solo nunca puede incluir (zonas prohibidas + rutas de prueba)
-	Agentes      map[string]config.Agente // agentes disponibles en config.yml (§8.1 / Fase 2)
+	Lenguaje     string   // go, node, python, rust, "" si no se detecta
+	EsVacio      bool     // repo sin código fuente todavía
+	Pruebas      string   // comando de pruebas detectado ("" si no hay)
+	Stack        string   // stack elegido por el humano ("" si lo decide el modelo)
+	Requisitos   string   // requisitos extra que dijo el humano, en texto libre
+	Constitucion string   // contenido de .devclean/constitution.md (§6.11), "" si no existe
+	Vedadas      []string // globs que tocar_solo nunca puede incluir (zonas prohibidas + rutas de prueba)
+	// Ocupados son los alcances que ya tienen dueño: tocar_solo de las
+	// tareas activas, por id. Sin esto el planificador propone tareas
+	// que se cruzan con las que ya corren, la esclusa de entrada las
+	// rechaza (§6.9) y los tokens del plan se gastaron para nada.
+	Ocupados map[string][]string
+	Agentes  map[string]config.Agente // agentes disponibles en config.yml (§8.1 / Fase 2)
 	// PruebasPropias marca que este stack no tiene examinador ciego, así
 	// que las pruebas las escribe la propia tarea y su archivo tiene que
 	// entrar en tocar_solo. Sin decirlo, el planificador apunta el
@@ -138,6 +143,12 @@ func Prompt(frase string, c Contexto) string {
 	}
 	if len(c.Vedadas) > 0 {
 		b.WriteString("  · \"tocar_solo\" NUNCA puede incluir estas rutas (las maneja el proyecto o el examinador ciego, no la tarea): " + strings.Join(c.Vedadas, ", ") + "\n")
+	}
+	if len(c.Ocupados) > 0 {
+		b.WriteString("  · estas rutas YA las está tocando otra tarea en curso; \"tocar_solo\" no puede cruzarse con ellas o la tarea será rechazada sin llegar a ejecutarse:\n")
+		for _, id := range idsOrdenados(c.Ocupados) {
+			b.WriteString("      " + id + ": " + strings.Join(c.Ocupados[id], ", ") + "\n")
+		}
 	}
 	b.WriteString("- \"depende_de\": array de ids (ej. \"T-001\") de tareas que deben estar verdes antes que esta; vacío si no depende de ninguna\n")
 	b.WriteString("- \"expone\": array de firmas públicas que esta tarea produce y otra consume (ej. \"wol.Send(mac, addr string) error\", \"POST /wake\"); vacío si no produce ninguna\n")
@@ -261,4 +272,15 @@ func AcotarLimiteLineas(propuesto, porDefecto int) int {
 		return LimiteLineasMax
 	}
 	return propuesto
+}
+
+// idsOrdenados devuelve las claves en orden estable: el prompt tiene que
+// ser reproducible para que la caché del proveedor sirva de algo.
+func idsOrdenados(m map[string][]string) []string {
+	ids := make([]string, 0, len(m))
+	for id := range m {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }

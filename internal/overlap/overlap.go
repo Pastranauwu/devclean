@@ -5,6 +5,7 @@ package overlap
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -21,15 +22,23 @@ type Resultado struct {
 	Semantico  bool     `json:"semantico"`
 	Comunes    []string `json:"comunes,omitempty"`
 	Conflictos []string `json:"conflictos,omitempty"`
+
+	// Indeterminado lleva el motivo por el que la comprobacion textual
+	// no se pudo hacer. Vacio no significa "limpio" salvo que Textual
+	// tambien sea false: son tres estados, no dos.
+	Indeterminado string `json:"indeterminado,omitempty"`
 }
 
 // Alerta returns a human-readable alert if any overlap was detected.
 // Returns "" if clean.
 func (r Resultado) Alerta() string {
-	if !r.Textual && !r.Semantico {
+	if !r.Textual && !r.Semantico && r.Indeterminado == "" {
 		return ""
 	}
 	var partes []string
+	if r.Indeterminado != "" {
+		partes = append(partes, "no se pudo comprobar el cruce de texto: "+r.Indeterminado)
+	}
 	if r.Textual {
 		partes = append(partes, "conflicto de texto en: "+strings.Join(r.Conflictos, ", "))
 	}
@@ -51,7 +60,10 @@ func CheckPar(root, idA, idB string, attemptsA, attemptsB []loop.Attempt) Result
 	// textual: git merge-tree between the two branches
 	ramaA := room.Branch(idA)
 	ramaB := room.Branch(idB)
-	conflictos, _ := mergeTree(root, ramaA, ramaB)
+	conflictos, err := mergeTree(root, ramaA, ramaB)
+	if err != nil {
+		res.Indeterminado = err.Error()
+	}
 	res.Conflictos = conflictos
 	res.Textual = len(conflictos) > 0
 
@@ -67,21 +79,35 @@ func CheckPar(root, idA, idB string, attemptsA, attemptsB []loop.Attempt) Result
 // español salen "CONFLICTO (contenido)"), y el parseo por prefijo no los
 // encontraba: falso negativo que escondía el archivo en conflicto.
 //
-// Devuelve nil, nil tanto en fusión limpia como cuando no se pudo
-// comparar (rama inexistente, git viejo): una rama que aún no existe no
-// es un conflicto, y reportarlo como tal era el falso positivo
-// "devclean/T-001 ↔ devclean/T-002" que se veía antes del primer wip:.
+// Tres estados, no dos:
+//
+//   - nil, nil            fusion limpia, o no habia nada que comparar
+//     (una rama que aun no existe no es un conflicto: era el falso
+//     positivo "devclean/T-001 ↔ devclean/T-002" de antes del primer wip:)
+//   - conflictos, nil     conflicto real, con las rutas
+//   - nil, err            NO se pudo comparar, y hay que decirlo
+//
+// El tercero existía y se reportaba como el primero. --write-tree llegó
+// en git 2.38; en Ubuntu 22.04 LTS (git 2.34) el flag no existe, git sale
+// con 129 y la deteccion textual quedaba apagada sin que nadie avisara.
 func mergeTree(root, ramaA, ramaB string) ([]string, error) {
 	cmd := exec.Command("git", "-C", root, "merge-tree", "--write-tree", "--no-messages", ramaA, ramaB)
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err == nil {
 		return nil, nil // fusión limpia
 	}
 	var exitErr *exec.ExitError
-	if !isExitError(err, &exitErr) || exitErr.ExitCode() != 1 {
-		return nil, nil // no es un conflicto: no se pudo comparar
+	if !isExitError(err, &exitErr) {
+		return nil, fmt.Errorf("no se pudo ejecutar git merge-tree · %w", err)
+	}
+	if esGitSinWriteTree(exitErr.ExitCode(), stderr.String()) {
+		return nil, errGitViejo
+	}
+	if exitErr.ExitCode() != 1 {
+		return nil, nil // no es un conflicto: no habia que comparar
 	}
 	// exit 1 puede ser conflicto real o "no se pudo fusionar" (rama
 	// inexistente). Lo distingue la salida: un conflicto trae líneas de
@@ -96,6 +122,23 @@ func mergeTree(root, ramaA, ramaB string) ([]string, error) {
 		}
 	}
 	return conflictos, nil
+}
+
+// errGitViejo: el git del sistema no entiende merge-tree --write-tree.
+var errGitViejo = errors.New("git no soporta 'merge-tree --write-tree' · necesita git 2.38 o superior (Ubuntu 22.04 trae 2.34)")
+
+// esGitSinWriteTree reconoce el fallo por flag desconocido. git sale con
+// 129 en error de uso, pero se comprueba tambien el stderr porque el
+// codigo solo no distingue "flag que no existe" de otros usos malos.
+func esGitSinWriteTree(code int, stderr string) bool {
+	if code != 129 {
+		return false
+	}
+	s := strings.ToLower(stderr)
+	return strings.Contains(s, "unknown option") ||
+		strings.Contains(s, "usage:") ||
+		strings.Contains(s, "opción desconocida") ||
+		strings.Contains(s, "uso:")
 }
 
 // parseLineaEtapa extrae la ruta de una línea de etapa sin fusionar de
@@ -153,4 +196,33 @@ func ultimosSimbolos(as []loop.Attempt) []string {
 		}
 	}
 	return nil
+}
+
+// SoportaWriteTree reporta si el git del sistema entiende
+// `merge-tree --write-tree`, de la que depende la deteccion textual de
+// solapamiento. `doctor` lo usa para avisar antes de una corrida en vez
+// de dejar el chequeo apagado sin decirlo.
+func SoportaWriteTree() bool {
+	cmd := exec.Command("git", "merge-tree", "--write-tree", "-h")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	if err != nil && isExitError(err, &exitErr) {
+		return !esGitSinWriteTree(exitErr.ExitCode(), stderr.String())
+	}
+	return true
+}
+
+// VersionGit devuelve la version del git del sistema, o "" si no se pudo leer.
+func VersionGit() string {
+	out, err := exec.Command("git", "--version").Output()
+	if err != nil {
+		return ""
+	}
+	campos := strings.Fields(string(out))
+	if len(campos) < 3 {
+		return ""
+	}
+	return campos[2]
 }

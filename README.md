@@ -98,8 +98,8 @@ hace código, nunca el modelo.
    decide: verde, lista; rojo, le devuelve el error; agotados los intentos,
    se detiene con una pregunta concreta. Antes del primer intento un
    **examinador ciego** escribe pruebas contra la interfaz pública
-   (`expone`) sin ver la implementación, y sella el 30% con hash (go y
-   python). Cuando los tests dan verde, un **revisor** (rol `revisor`,
+   (`expone`) sin ver la implementación, y guarda el 30% fuera del cuarto
+   del agente (go y python). Cuando los tests dan verde, un **revisor** (rol `revisor`,
    modelo pesado por defecto) juzga el diff contra el contrato: si pide
    cambios, el intento queda rojo y su veredicto entra como contexto del
    siguiente — tests verdes no implican contrato cumplido.
@@ -282,6 +282,15 @@ No verifica interfaz gráfica ni criterios difusos.
   signifique algo. Por eso `npm test` a secas no sirve en un repo verde.
 - **Los agentes son los tuyos.** Si el CLI está sin cuota o sin login, la
   corrida falla ahí; devclean te lo dice, no lo arregla.
+- **La suite oculta se esconde, no se blinda.** Vive en `.devclean/sealed/`
+  del repo principal, fuera del cuarto donde trabaja el agente, y lleva un
+  hash que detecta corrupción accidental. Eso no es a prueba de
+  manipulación: el hash viaja en el mismo archivo que el contenido, así que
+  quien pueda escribir ese archivo puede recalcularlo. Lo que separa al
+  agente de la suite es que trabaja en otro directorio, no un sandbox —
+  devclean revierte lo que se salga de `tocar_solo` **dentro del cuarto**,
+  y un agente con shell que suba por encima de él no lo revierte nadie.
+  Vale contra un modelo que se desvía, no contra uno que ataca.
 
 ## Licencia
 

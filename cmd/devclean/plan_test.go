@@ -16,7 +16,7 @@ func TestSanearAlcance(t *testing.T) {
 		{Titulo: "init go", TocarSolo: []string{"go.mod", "go.sum", "Makefile"}},
 		{Titulo: "wol", TocarSolo: []string{"internal/wol/**"}},
 	}
-	sanearAlcance(bs, zonas, patrones)
+	sanearAlcance(bs, zonas, patrones, nil)
 
 	if got := strings.Join(bs[0].TocarSolo, ","); got != "go.mod,Makefile" {
 		t.Errorf("tocar_solo[0] = %q, quiero go.mod,Makefile", got)
