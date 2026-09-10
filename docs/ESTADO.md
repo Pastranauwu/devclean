@@ -1,335 +1,274 @@
 # Estado del proyecto — traspaso entre sesiones
 
-Última actualización: 9 septiembre 2026. Fases 1–5 cerradas. Última release
-publicada: **v0.8.0**. Falta el tap de Homebrew. No es v1.0: el examinador
-ciego solo cubre go y python, y la instrumentación miente cuando el agente
-commitea por su cuenta dentro del cuarto.
+**Última actualización: 10 septiembre 2026.** Reescrito desde cero contra el
+código, no heredado de versiones anteriores de este archivo.
 
-**Orden de lectura para quien llegue nuevo:**
-1. `docs/PRD-devclean.md` — la especificación.
-2. `docs/PRD-adenda.md` — correcciones posteriores. **Donde contradiga al PRD, gana la adenda.**
+- **HEAD:** `eea6d3b`, rama `main`, sincronizada con `origin/main`.
+- **Última release publicada:** **v0.8.2** (10 sep 2026), etiquetada en HEAD.
+  No hay commits después del tag.
+- **Compila y pasa:** `go build ./...` limpio; `go test ./...` verde. 22
+  paquetes con pruebas; tres sin ninguna: `internal/constitution`,
+  `internal/sealed`, `internal/ui`.
+- **No es v1.0.** Falta el examinador ciego fuera de go y python, y el nivel
+  funcional de la detección de solapamiento. Ver "Qué falta".
+- **Arreglado el 10 sep:** la instrumentación medía cero cuando el agente
+  commiteaba por su cuenta, y la demo escribía tokens falsos en el ledger real
+  del usuario. Los dos abajo, en "Arreglado".
+
+## Orden de lectura para quien llegue nuevo
+
+1. `README.md` — qué hace la herramienta hoy y con qué comandos.
+2. `docs/PRD-devclean.md` — la especificación.
 3. Este archivo.
 4. `git log --oneline`.
 
-Ojo: la cabecera de la adenda dice "aplica sobre `docs/PRD.md`". Ese archivo no
-existe; es `docs/PRD-devclean.md`. Ojo también: esta cabecera mentía — decía
-"falta el examinador ciego, la constitución" y ya estaban hechos. La sección
-"Qué falta" está corregida abajo.
+**`docs/PRD-adenda.md` ya no existe.** Se borró en `704f8b5` (1 sep 2026)
+junto con código muerto. Eran 216 líneas y el PRD todavía la cita por número
+(`adenda A.1`, `A.3`, `A.4`, `A.5`, `§6.7`–`§6.11`). Esas referencias apuntan a
+un archivo ausente: para recuperarla, `git show 704f8b5^:docs/PRD-adenda.md`.
+Todo lo que decía la adenda y sigue vigente está resumido abajo; no hace falta
+leerla para trabajar.
+
+**El PRD está parcialmente desactualizado a propósito**: es la especificación
+original, no un registro de avance. Los marcadores de implementación de §6.7,
+§6.8, §6.9 y §6.11 se corrigieron hoy contra el código, y la tabla de comandos
+de §7 se completó. Para saber qué existe, manda este archivo y el README.
 
 ---
 
-## Sesión 9 sep 2026 — delegación y revisión por tarea
+## Qué existe hoy
 
-Dos arreglos del pipeline "modelo grande delega, modelo barato ejecuta":
+### Comandos
 
-**1. El `como` del planificador llegaba al ejecutor.** El prompt del
-planificador pedía un campo `como` (enfoque para quien ejecuta), el modelo
-lo generaba, y `cmd/devclean/plan.go` lo descartaba al crear el contrato:
-el agente barato corría sin la instrucción del grande. Ahora `plan` lo
-guarda en `notas` del contrato (mismo camino que la recursión,
-`recurse.replanDesdeContrato`), `spec.Marshal` lo serializa para que
-sobreviva `plan --export-spec` → `apply`, y `promptPara` ya lo inyectaba
-("Notas:") en cada intento. Test: `TestComoLlegaAlContrato`.
+Todos aceptan `--plain` y `--json`. Sin ellos y con salida a terminal, usan el
+TUI.
 
-**2. Revisor por tarea dentro del bucle.** Antes una tarea era "verde"
-cuando `listo_cuando` daba exit 0, y el revisor solo veía el diff
-integrado al final (`ship --revisar`). Con modelos baratos es habitual
-que pasen el test sin cumplir el contrato (happy path, caso exacto del
-test). Ahora, tras `listo_cuando` verde, el rol `revisor` (modelo pesado
-por defecto) juzga el diff del cuarto contra el contrato
-(`internal/loop`, interfaz `Revisor`; adapter `revisorEnBucle` en
-`cmd/devclean/run.go`). Si pide cambios, el intento queda rojo y su
-veredicto entra como `prevErr` del siguiente. Degrada en abierto (un
-revisor que no responde no frena trabajo verde), solo en tareas planas
-(la recursión ya tiene su supervisor), y su gasto cuenta en
-presupuesto/ventanas. `Attempt` gana `Revision` y el latido la fase
-`revision`. Tests: `TestRevisorVetaVerdeYElSiguienteArregla`,
-`TestSinRevisorElVerdeEsVerde`.
+| Comando | Qué hace |
+|---|---|
+| `up ["<petición>"]` | De una petición a un PR limpio. Prepara el entorno, planea, ejecuta y entrega. |
+| `plan "<texto>"` | Convierte una petición en contratos de tarea; pide aprobación (`--aprobar` la salta). `--export-spec` la vuelca a YAML. |
+| `apply [-f archivo.spec.yml]` | Crea tareas desde una especificación declarativa. `--run` las ejecuta. |
+| `run [--agentes N] [--reintentar]` | Ejecuta las tareas pendientes en paralelo. `--reintentar` revive las detenidas reusando su cuarto. |
+| `ship [id] \| ship --todas` | Esclusa de salida y PR. `--dry-run` hace todo menos abrir el PR. |
+| `board` | Tablero por estado. |
+| `ps` | Estado de tareas y cuartos activos, estilo compose. |
+| `logs <id>` | Los intentos de una tarea, uno por línea. |
+| `standup` | Parte de datos duros de las tareas en curso (§6.7). |
+| `report` | Las métricas de §9 con flecha de tendencia. |
+| `usage` | Gasto por ventanas rodantes (5h, semanal, mensual) contra el presupuesto. |
+| `doctor` | Verifica git, repo, configuración, ejecutores, keys y que los modelos existan. |
+| `init` | Detecta repo, rama base y comando de pruebas; crea `.devclean/`. |
+| `task add\|edit\|rm\|list\|seal` | Contratos a mano. `seal` sella una suite oculta escrita por ti, sin gastar modelo. |
+| `check <id>` | Esclusa de entrada sobre una tarea (alias de `task check`). |
+| `constitution` | Genera `.devclean/constitution.md` (§6.11). |
+| `skills sync` | Trae con `npx` las skills que se inyectan en el prompt de cada agente. |
 
-**3. El spec es la corrida completa ("programación agéntica como
-código").** `devclean.spec.yml` ganó tres cosas que lo convierten en la
-forma principal de trabajar:
+### Paquetes
 
-- `agentes: N` — cuántos trabajadores en paralelo. Lo respetan `up` (el
-  flag `--agentes` gana) y `apply --run` (antes hardcodeado a 1).
-- `ship: true` — `up` entrega en PR al terminar aunque no se pase
-  `--ship`. El título del PR sale de `feature` si no hay `--titulo`.
-- `reglas:` se inyectan de verdad: se parseaban desde siempre pero no
-  llegaban a ningún prompt. `spec.Apply` las antepone a las `notas` de
-  cada tarea (`notasConReglas`), que es el canal que `promptPara` ya
-  inyecta. Se componen en Apply y no en Parse para que un Marshal
-  posterior no las duplique.
+24 en `internal/`. Los que no se explican solos:
 
-`runApply` ahora devuelve el `spec.Spec` cargado para que `up` lea
-`agentes`/`ship`/`feature`. README: la sección "Especificación
-declarativa" pasó a "Programación agéntica como código" con la
-referencia completa. Tests: `TestParseSpecAgentesYShip`,
-`TestParseSpecAgentesInvalidos`, `TestMarshalRoundtripAgentesYShip`,
-`TestApplyInyectaReglasEnNotas`.
+- **`kv`** — el parser YAML propio (`Pairs`, `Nested`, `ParseList`,
+  `MarshalList`). **No escribas un segundo.** Es deliberadamente chico y tiene
+  un límite que muerde: no distingue indentación, así que dos claves con el
+  mismo nombre a distinta profundidad se pisan.
+- **`task`** / **`gate`** — el contrato de §6.1 y la esclusa de entrada de
+  §6.3.
+- **`room`** — cuartos aislados: un worktree por tarea, dependencias por
+  manifiesto, puerto libre.
+- **`loop`** — el bucle de trabajo del agente (§6.4) con la instrumentación por
+  intento. Declara su propia interfaz `Agent` (lado del consumidor).
+- **`executor`** — adaptadores para las CLIs `opencode` y `claude`.
+- **`examiner`** + **`sealed`** — examinador ciego y suite oculta (§6.8). El
+  directorio sellado vive en el repo principal (`.devclean/sealed/<id>/`),
+  nunca en el cuarto: el cuarto es dominio del implementador.
+- **`revisor`** — un modelo lee el diff y puede vetar el merge. Es el único
+  paso que juzga intención en vez de mecánica. **Falla cerrado**, al revés que
+  el examinador.
+- **`ship`** — la esclusa de salida.
+- **`overlap`** — detección de solapamiento (§6.9), niveles textual y
+  semántico.
+- **`constitution`** — `.devclean/constitution.md` (§6.11), inyectada en el
+  contexto de todos los agentes.
+- **`recurse`** — ejecución recursiva (§8.3): una tarea `recursivo: true` se
+  parte en subtareas con contrato propio que corren en cuartos anidados dentro
+  del cuarto padre. **Apagada por default** (`recursion_max: 0`), porque cada
+  nivel multiplica el gasto.
+- **`budget`** — tope de gasto de una corrida (`presupuesto_tokens`). Es la
+  única salvaguarda contra una recursión que se descontrola.
+- **`ventanas`** — ledger de gasto por ventanas rodantes, **global al usuario**
+  (`~/.devclean/ventanas.jsonl`), no por repo. Existe porque los proveedores no
+  exponen los límites reales de sus ventanas de 5h/semanal.
+- **`spec`** — el modelo declarativo de `devclean.spec.yml`.
+- **`standup`** — el parte de datos de §6.7, derivado de `attempts.jsonl`. Sin
+  modelo: los detectores son deterministas.
+- **`metrics`** — las cinco métricas de §9 derivadas de los artefactos.
+- **`skills`** — trae SKILL.md reales y los inyecta como texto en el prompt, no
+  como etiqueta. El fetch corre contra la raíz del repo, nunca dentro de un
+  cuarto.
+- **`plan`**, **`config`**, **`state`**, **`tui`**, **`ui`**.
 
-**4. Falso positivo del solapamiento.** `overlap.mergeTree` reportaba
-`⚠ SOLAPAMIENTO T-001 ↔ T-002 · conflicto de texto en: devclean/T-001 ↔
-devclean/T-002` al arrancar la oleada. Dos causas: (a) una rama que aún
-no existe (antes del primer `wip:`) hace que `git merge-tree` salga con
-exit 1, y se trataba como conflicto; (b) el parseo buscaba el prefijo
-"CONFLICT", que con `--no-messages` no sale y además está localizado
-("CONFLICTO" en español). Ahora `mergeTree` devuelve nil en "no se pudo
-comparar" y parsea las líneas de etapa `<modo> <oid> <etapa>\t<ruta>`,
-estables e independientes del idioma. Verificado en vivo con claude
-(cuenta del usuario): dos tareas go en paralelo, cero alertas, ambas con
-`revision.aprobada`. Tests nuevos en `internal/overlap` (el paquete no
-tenía): `TestMergeTreeLimpio`, `TestMergeTreeConflictoRealConRuta`,
-`TestMergeTreeRamaInexistenteNoEsConflicto`, `TestParseLineaEtapa`.
+### La esclusa de salida: 9 pasos, 10 con `reglas_import`
 
-**Deuda nueva (dogfooding claude, 9 sep):** un agente real (skill `implement`
-del ejecutor) commitea por su cuenta dentro del cuarto. Entonces `git add -A`
-deja el área vacía y el intento se registra con `archivos_tocados: []`,
-`lineas_mas/menos: 0` pese a haber trabajo — falso negativo de la
-instrumentación (adenda A.2). El diff que juzga el revisor sí es correcto
-porque se toma contra la base, no contra HEAD. Arreglo pendiente: medir el
-intento contra el commit previo (el del examinador o el wip anterior), no
-contra el área staged.
+`internal/ship/ship.go`, en este orden. Se frena en el primero que falla y da
+la razón exacta. **`dependencias` es condicional**: siempre se verifica, pero
+solo aparece como paso cuando falla o cuando hay `reglas_import` declaradas —
+por eso una corrida normal lista nueve.
 
----
+1. `base` — rebase sobre la rama base; conflicto → abortar.
+2. `historial` — aplana los `wip:` en un commit Conventional con trailer `Agent:`.
+3. `ruido` — prints de debug, código comentado, temporales.
+4. `secretos` — keys de proveedores, privadas, credenciales en claro.
+5. `presupuesto` — `limite_lineas` y archivos.
+6. `interfaces` — el diff contiene lo que `expone` prometía (§6.10).
+7. `dependencias` — el grafo de imports del diff respeta `reglas_import` (§6.10). Condicional, ver arriba.
+8. `bisectable` — corre `pruebas` sobre el commit aplanado. Con `pruebas` vacío falla con `sin comando de pruebas · decláralo en config.yml`.
+9. `handoff` — qué cambió, qué no, cómo verificar. Determinista.
+10. `pr` — sube la rama, `gh pr create`, libera el cuarto.
 
-## Qué está hecho y verificado
+### Configuración (`.devclean/config.yml`)
 
-Todo lo de abajo compila en clon limpio y tiene pruebas verdes.
+`base`, `pruebas`, `cli`, `zonas_prohibidas`, `patrones_prueba`,
+`timeout_esclusa`, `timeout_agente`, `timeout_pruebas`, `recursion_max`,
+`subagentes`, `presupuesto_tokens`, `presupuesto:` (por proveedor y ventana),
+`proveedores:` (roles `planificador`/`ejecutor`/`revisor`, cada uno
+`{modelo, key_env}`), `agentes:`, `estrategia`, `modelos:`, `reglas_import`.
 
-**Fase 1 — núcleo de tareas**
-- `cmd/devclean` + `internal/{config,task,gate,ui}`. Única dependencia: cobra.
-- `devclean init` detecta repo, rama base y comando de pruebas.
-- Contrato §6.1 con parser estricto; `listo_cuando` obligatorio.
-- `task add|edit|rm|list` con ids correlativos.
-- `task check`: esclusa de entrada, ejecuta `listo_cuando` de verdad.
-- `--plain` y `--json` en todos los comandos.
+**`cli` se llama `cli` y no `ejecutor` a propósito**: ese nombre ya lo usa el
+rol `ejecutor` dentro de `proveedores`, y `kv.Pairs` no distingue indentación.
 
-**Fase 2 — hecha**
-- `internal/state`: estados en `.devclean/state/`, el cruce solo mira `en_curso`.
-- `internal/room`: cuartos aislados con worktree, deps por manifiesto, puerto libre.
-- `internal/executor`: adaptadores opencode y claude.
-- `internal/loop`: el bucle de §6.4 con la instrumentación de la adenda
-  A.2. Cada intento escribe una línea en `.devclean/runs/<id>/attempts.jsonl`
-  con `salida_codigo`, tests parseados (null si no se puede), `archivos_tocados`,
-  `lineas_mas/menos`, `simbolos_exportados` (go/ast, null si no hay Go),
-  `revertidos_fuera_de_alcance`, tokens y modelo. Reversión de fuera de
-  alcance y de rutas de prueba (A.3) incluida; puntos de restauración
-  `wip:`. Declara su propia interfaz `Agent` (lado del consumidor).
-- `devclean run [--agentes N] [--ejecutor ...] [--modelo ...]`: esclusa de
-  entrada por tarea, asignación (A.4 + cruce), N tareas en paralelo, estados
-  `en_curso → lista | detenida`. El adaptador `executor` → `loop.Agent` vive en
-  `cmd/devclean/run.go`; el cuarto no se destruye en `run`, lo libera `ship`.
+### Programación agéntica como código (`devclean.spec.yml`)
 
-**Fase 3 — hecha**
-- `internal/ship`: la esclusa de salida (§6.5), nueve pasos en orden. La
-  compuerta se frena en el primero que falla y da la razón exacta.
-  1. `base` (rebase sobre la rama base, conflicto → abortar),
-  2. `historial` (aplanar los `wip:` en un commit Conventional + trailer `Agent:`),
-  3. `ruido` (prints de debug, código comentado, temporales),
-  4. `secretos` (claves de proveedores, privadas, credenciales en claro),
-  5. `presupuesto` (`limite_lineas`, archivos),
-  6. `interfaces` (el diff contiene lo que `expone` prometía, §6.10),
-  7. `bisectable` (corre `pruebas` en el commit aplanado),
-  8. `handoff` (qué cambió, qué no, cómo verificar — determinista),
-  9. `pr` (sube la rama, `gh pr create`, libera el cuarto).
-- `devclean ship <id> [--dry-run]`: exige estado `lista`, corre la esclusa y
-  muestra un paso por línea; `--dry-run` hace todo menos abrir el PR. El
-  squash produce un solo commit (dentro de los 1–5 del criterio de
-  aceptación); el split en varios es mejora de v0.2.
+El spec define la corrida completa, no solo la lista de tareas: `feature`,
+`reglas:` (se anteponen a las `notas` de cada tarea, que es el canal que el
+prompt ya inyecta), `agentes: N` y `ship: true`. Lo respetan `up` (el flag
+`--agentes` gana) y `apply --run`.
 
-**Fase 4 — hecha**
-- `internal/metrics`: las cinco métricas de §9 derivadas de los artefactos
-  (`attempts.jsonl`, estados y un registro de entrega que `ship` deja en
-  `.devclean/runs/<id>/entrega.json`). `friccion` queda en null: necesita el
-  ciclo de revisión del PR, sin fuente en v0.1. `devclean report` las muestra
-  con su **flecha de tendencia** (§16.4): cada corrida apunta un snapshot en
-  `.devclean/historial.jsonl` y compara contra la anterior (↑ subió, ↓ bajó,
-  · igual o sin dato previo).
-- `devclean doctor`: verifica git, repo, configuración, ejecutores y keys.
-- `devclean board`: tablero por estado (listo, en curso, detenido, pendiente).
-- `devclean logs <id>`: los intentos de una tarea, uno por línea.
-- `internal/tui`: el modo interactivo con la paleta del cuarto limpio
-  (§16.2): logotipo de píxeles con degradado (fuente unsciithin de `bit`),
-  tarjetas con borde, spinner braille y barras de progreso reales. Tres
-  vistas — la compuerta animada de `ship` (§16.3), el tablero de `board` y la
-  corrida en vivo de `run` (N tareas, spinner, reloj y barra global). El
-  tablero además corre un **plasma truecolor animado** de fondo (suma de
-  cuatro senos, medio bloque ▀, paleta neón verde) con el logo centrado como
-  sticker de margen transparente. Cada comando usa el TUI cuando la salida es
-  terminal y no hay `--plain` ni `--json`; si no, texto plano.
-- `internal/plan` + `devclean plan "<texto>"`: el planificador (§5, §8.2)
-  parte una petición en contratos. El texto lo produce un modelo (vía el
-  ejecutor, cuyo `Result.Text` ahora trae la respuesta); devclean solo parsea
-  el JSON, asigna ids y pide aprobación (`--aprobar` para no preguntar). El
-  rol planificador usa `--modelo`/`--ejecutor` como `run`; la selección
-  "el mejor disponible" queda para v0.2.
-- **Config anidado `proveedores`** (§8.1): `config.yml` acepta el bloque
-  `proveedores:` con un rol por línea (`planificador`, `ejecutor`, `revisor`),
-  cada uno `{ modelo: X, key_env: Y }`. `run` y `plan` caen al modelo del rol
-  (`ejecutor` / `planificador`) cuando no hay `--modelo`; `doctor` verifica
-  también las `key_env` declaradas. El parser anidado vive en `internal/kv`
-  (`Nested` + `ParseInlineMap`/`MarshalInlineMap`), no un tercero.
+### Distribución
 
-**Adenda, Parte A y C**
-- **A.1** `version: 1` obligatoria. Un archivo con versión mayor a la del binario
-  se lee igual, ignorando lo desconocido, y avisa: `contrato versión 2, binario
-  soporta 1 · actualiza devclean`. La constante es `task.Version`.
-- **A.3** el validador rechaza `tocar_solo` que apunte a rutas de prueba. Los
-  patrones viven en `patrones_prueba` de `config.yml` y los siembra `init`.
-- **A.4** `tocar_solo` vacío: permitido con una sola tarea en curso, obligatorio
-  con dos o más.
-- **C.1** el parser yaml salió a `internal/kv`; las dos copias de `config` y
-  `task` están borradas.
-- **C.2** `timeout_esclusa` configurable, default 5 min.
-- **C.3** alias `devclean check`.
-- **C.5** `init` muestra el comando de pruebas detectado y deja corregirlo;
-  `--pruebas` lo fija sin preguntar.
-
-**Parte B** documentada en el PRD (§6.7 a §6.11). Implementados los
-contratos entre tareas de §6.10 (ver abajo); el resto sin empezar. Más
-§6.2b y el presupuesto de sobrecarga de A.5 en requisitos no funcionales.
-
-**Fase 5 — lanzamiento**
-- `README.md` con manifiesto, instalación, adopción en proyectos reales,
-  métricas y el límite honesto.
-- `.goreleaser.yml` (binario estático por plataforma) y `scripts/install.sh`.
-- `scripts/demo.sh` (demo reproducible con agente falso, se autocompila) y
-  `docs/demo.tape` para grabar el GIF con `vhs`. **El GIF (`docs/demo.gif`)
-  ya está grabado.**
-- Releases publicadas con `goreleaser` y `gh` (ambos instalados): de
-  `v0.2.0` a `v0.2.5`, cada una con los seis binarios, `checksums.txt` e
-  `install.sh` como asset. `install.sh` ahora también agrega el destino
-  al `PATH` del shell que detecte, en vez de solo avisar.
-
-**Dogfooding en un proyecto real (27 ago 2026)** — se usó devclean para
-construir `wakeup` (servicio Go de wake-on-lan + puente Hue para Alexa)
-desde un repo vacío: `plan` propuso 6 tareas, `run --agentes 3` las sacó
-las 6 en verde al primer intento. Eso destapó cinco fallas que no se ven
-en pruebas sintéticas, todas corregidas:
-
-- **`--version` no existía.** Ahora se inyecta por ldflags (`main.version`)
-  y goreleaser pasa `{{ .Version }}`; sin build tag queda `dev`.
-- **No se podía fijar el CLI de agente.** La autodetección prueba
-  `opencode` primero y lo elige aunque esté sin cuota — `Available()`
-  solo verifica que el binario responda. Nuevo campo `cli:` en
-  `config.yml`. **Ojo: se llama `cli`, no `ejecutor`**, porque `kv.Pairs`
-  no distingue indentación y chocaba con el rol `ejecutor` de
-  `proveedores`.
-- **Dos falsos positivos del escáner de ruido** frenaban todo `ship` en
-  un proyecto Go real: `log.Print*` se marcaba como debug (es el logger
-  estándar de producción, no `fmt.Println`), y el heurístico de "código
-  comentado" saltaba con cualquier `;` en medio de una oración o con
-  comentarios que empiezan con `for`/`if`/`type` como palabra suelta.
-  Ahora `;` solo cuenta al final de línea y la palabra clave exige además
-  pinta de código (`(`, `{` o `:=`).
-- **`depende_de` no cruzaba corridas.** `integrada` arrancaba vacío en
-  cada `run`, así que una tarea nueva que dependía de trabajo ya verde se
-  rechazaba con "bloqueada · depende de T-00X que no salió verde" para
-  siempre. `sembrarVerdesPrevias` ahora siembra el mapa desde el estado
-  persistido e integra esas ramas para que la oleada nueva vea el código.
-- **`ship` sin remoto daba `exit status 128`.** Ahora verifica `origin`
-  antes de empujar y dice qué hacer; además el error de git se lee de su
-  salida, no de `err.Error()`, que es solo "exit status N".
+- Releases en GitHub de `v0.2.0` a `v0.8.2`, cada una con seis binarios
+  estáticos (linux/darwin/windows × amd64/arm64), `checksums.txt` e
+  `install.sh` como asset.
+- `.goreleaser.yml` corre `go mod tidy` y `go test ./...` antes de construir.
+- `scripts/install.sh` agrega el destino al `PATH` del shell que detecte.
+- `scripts/demo.sh` + `docs/demo.tape` graban `docs/demo.gif` con `vhs`, usando
+  un agente falso.
+- `go install github.com/Pastranauwu/devclean/cmd/devclean@latest` funciona.
 
 ---
-
-**`up` plug and play (2 sep 2026)** — `cmd/devclean/preparar.go`.
-`prepararEntorno` corre antes de planear: `git init`, `runInit` sin
-preguntas, rama base, commit inicial (solo si lo único sin versionar es
-`.devclean`/`.agents`/`skills-lock.json`; si hay más, pregunta o corta),
-ejecutor instalado (cae al que haya, ofrece `npm i -g` en terminal),
-modelos contra el catálogo real (`ElegirModelos` si alguno no existe),
-comando de pruebas re-detectado, y con `--ship` exige `gh` y `origin`
-antes de gastar tokens (pide la URL en terminal). Todo lo que arregla lo
-persiste en `config.yml`. `plan` y `run` sueltos pasan por lo mismo
-(`entornoListo`, una vez por proceso). `init` queda para elegir a mano:
-con dos CLIs instalados pregunta cuál (`--cli` lo fija); antes tomaba
-siempre el primero, opencode, y el catálogo de claude no se veía nunca.
-
-**Presupuesto de líneas (2 sep 2026)** — era la falla más frecuente en uso
-real. Tres causas, las tres arregladas:
-1. `promptPara` (internal/loop) nunca le decía al agente que existía un
-   presupuesto: lo estimaba el planificador y lo cobraba `ship`. Ahora va
-   en el prompt.
-2. `diffNumstat` contaba las pruebas del examinador ciego contra el
-   límite. En go y python esas líneas no las escribe el agente, y suelen
-   ser tantas como la implementación: subestimación sistemática de ~2x.
-   Ahora se separan y se reportan aparte (`ToleranciaPresupuesto` en
-   internal/ship/presupuesto.go).
-3. El tope era exacto sobre una estimación hecha sin ver el código. Ahora
-   hay tolerancia de 1.5x; pasarse de largo sigue frenando, y el mensaje
-   trae el número exacto a escribir y el archivo.
-
-El matcher de rutas (`MatchGlob`/`MatchPattern`/`MatchesAny`) salió de
-`internal/loop` a `internal/config`, junto a los patrones que consume; era
-eso o una tercera copia en `ship`.
 
 ## Qué falta
 
-**El v0.1 está funcionalmente completo y el GIF grabado.**
+En el orden en que conviene atacarlo.
 
-- **Release `v0.2.0` publicada** en GitHub con binarios estáticos
-  (linux/darwin/windows × amd64/arm64), `install.sh` y `checksums.txt`.
-  `install.sh` y `go install github.com/Pastranauwu/devclean/cmd/devclean@v0.2.0`
-  verificados. `v0.1.0` quedó etiquetada en un commit anterior (sin release).
-- **Tap de Homebrew** pendiente: un repo `homebrew-*` aparte + `goreleaser`
-  con `brews`. Se hace tras publicar la release.
-**Contratos entre tareas (§6.10) — implementado.** Salió de la misma
-sesión: dentro de una oleada las tareas paralelas eran ciegas entre sí.
-`promptPara` le pasaba al agente solo su propio contrato. Entre oleadas
-no se nota (la siguiente arranca desde `_integra` y el agente *lee* el
-código ya mergeado — así acertó T-004 de `wakeup` la firma de
-`wol.Send`), pero dos tareas de la *misma* oleada no pueden verse.
+### 1. Árbol de trabajo sin commitear
 
-Campos nuevos `expone` / `usa` con la firma congelada en ambos contratos,
-y tres controles deterministas:
-1. `plan` los llena; el prompt le explica al modelo que las tareas son
-   ciegas entre sí.
-2. `rechazarUsaHuerfano` (`cmd/devclean/run.go`) rechaza un `usa` que
-   ningún contrato expone, antes de gastar un token. Va en `run` y no en
-   `gate.Run` porque este último solo recibe las tareas `en_curso`, y
-   quien expone suele estar `pendiente` en la misma corrida.
-3. Paso `interfaces` en la esclusa de salida: el diff tiene que contener
-   lo que `expone` prometía. **Compara el nombre, no la firma completa**
-   (`task.NombreDeFirma`): el lenguaje reescribe nombres de parámetros y
-   orden de tipos, así que el texto literal rechazaría implementaciones
-   correctas. La esclusa pasó de ocho pasos a nueve.
+`cmd/devclean/apply.go`, `plan.go`, `ps.go` tienen cambios puramente
+cosméticos: concatenaciones con `+` partidas en `WriteString` sucesivos. Cero
+cambio de conducta. Commitear o descartar antes de empezar otra cosa.
 
-De paso, `kv.ParseList` no respetaba las comas dentro de comillas, y una
-firma las lleva siempre (`wol.Send(mac, addr string) error`). Ahora sí.
+### 2. Examinador ciego: solo go y python — bloquea v1.0
 
-**v0.2:** Parte B. Ya hechos: contratos entre tareas (§6.10), examinador
-ciego (§6.8, go y python, `internal/examiner`), constitución (§6.11,
-`internal/constitution` + `devclean constitution`), solapamiento
-(`internal/overlap`, alertas en `run`), reglas de dependencia de imports
-(`reglas_import`, verificado en la esclusa de salida, `ship/ship.go`).
-Falta: duplicación entre ramas.
+`internal/examiner/lenguaje.go`. `rust` está descartado a propósito y con
+motivo escrito: la stdlib de Go no parsea rust, validar exige el crate `syn` o
+`cargo check`, y eso arrastra el toolchain completo dentro del cuarto. Node y
+el resto, sin empezar.
 
-**Deuda conocida, chica**
-- `internal/executor` aparece en el historial de dos commits (`22a48f8`,
-  `a781c73`) antes de que lo sacara con `git rm --cached`. Se limpia solo
-  reescribiendo historia.
+Sin validador de sintaxis la suite generada es basura que rompe la compilación
+del cuarto, y el implementador no puede tocarla (A.3). Por eso `lenguajeExamen`
+devuelve `""` en vez de improvisar.
+
+### 3. Solapamiento funcional (§6.9)
+
+Los tres niveles son textual, semántico y funcional. Los dos primeros están;
+falta el tercero: merge en seco de dos ramas y correr las suites de ambas sobre
+el resultado. Es el que atrapa el fallo clásico — dos ramas verdes por separado
+que rompen juntas — y el único que cuesta caro, así que solo debe dispararse
+cuando textual o semántico marcaron sospecha.
+
+### 4. Tap de Homebrew
+
+`.goreleaser.yml` no tiene bloque `brews`. Hace falta un repo `homebrew-*`
+aparte y agregarlo.
+
+### 5. Deuda chica
+
+- `internal/executor` quedó en el historial de `22a48f8` y `a781c73` antes de
+  sacarlo con `git rm --cached`. Solo se limpia reescribiendo historia.
 - `internal/task/store_test.go` construye `Task` sin `Version`. Pasa porque
   `Marshal` omite el cero y es `Validate` quien exige el campo, pero el fixture
   miente sobre el contrato.
+- `internal/constitution`, `internal/sealed` e `internal/ui` no tienen pruebas.
+- `friccion` queda en `null` en `report`: necesita el ciclo de revisión del PR
+  y no hay fuente todavía.
+
+---
+
+## Arreglado el 10 septiembre 2026
+
+**La instrumentación medía cero cuando el agente commiteaba solo.**
+`internal/loop` medía cada intento con `git diff --cached ... HEAD` después de
+`git add -A`. Un agente real commitea por su cuenta dentro del cuarto (la skill
+`implement` lo hace): HEAD se movía, el índice quedaba vacío y el intento se
+escribía en `attempts.jsonl` con `archivos_tocados: []` y `lineas_mas/menos: 0`
+pese a haber trabajo. Esa mentira era la fuente de las cinco métricas de §9,
+del `standup` y del nivel semántico de `overlap`.
+
+Ahora cada intento captura el commit con que arranca (`antes`, vía
+`resolveCommit`) y se mide con `git diff <antes>`, que compara esa ref contra
+el árbol de trabajo y por eso cuenta igual lo commiteado y lo suelto.
+`stagedFiles`/`stagedNumstat` se fueron; quedan `filesSince`/`numstatSince`, y
+`changedVsBase` era ya lo mismo que `filesSince`, así que se fusionaron.
+Pruebas: `TestStatsConArchivoNuevo`, `TestStatsCuandoElAgenteCommiteaSolo` (la
+segunda falla con el código viejo).
+
+**La demo escribía en el ledger real.** `scripts/demo.sh` no aislaba `HOME`, así
+que sus tokens inventados por el agente falso entraban en
+`~/.devclean/ventanas.jsonl` — global al usuario, y la base sobre la que
+`devclean usage` y los topes de `presupuesto:` deciden si el trabajo real puede
+seguir. De las 45 entradas del ledger, 20 eran ruido de demo. Ahora `demo.sh`
+aísla `HOME` dentro de su `mktemp -d`, igual que ya hacía `demo-env.sh`.
+Verificado: la demo corre idéntica y el ledger no cambia.
+
+**El ledger ya se limpió** (10 sep): salieron las 30 entradas de demo —
+`opencode` con `tokens` 120 o 7 del 9 y 10 sep — y quedaron 15 reales. El 120
+es el agente falso (`input:100, output:20`) y el 7 su revisor: son los dos
+sitios donde `internal/loop` llama a `Registrar`, por eso venían apareados. Las
+cuatro entradas de `claude` del 9 sep a las 20:34 son el dogfooding real y se
+conservaron. Respaldo en `~/.devclean/ventanas.jsonl.bak-20260910`.
 
 ---
 
 ## Cosas que muerden si no las sabes
 
-- **`gate.Run` devuelve 6 chequeos, no 4.** El orden cambia cada vez que la
-  adenda agrega uno: búscalos por nombre, no por índice. `Result` trae además
-  un campo `Aviso` para el aviso de versión futura.
-- **El chequeo 0 es `contrato válido`**, que llama a `Validate()`. Antes la
-  esclusa no validaba el contrato y un archivo sin `version` pasaba en verde.
+- **`gate.Run` devuelve 6 chequeos, no 4.** El orden cambia cada vez que se
+  agrega uno: **búscalos por nombre, no por índice.** `Result` trae además un
+  campo `Aviso` para el aviso de versión futura.
+- **El chequeo 0 es `contrato válido`**, que llama a `Validate()`. Sin él, un
+  archivo sin `version` pasaba en verde.
 - **A.3 es más estrecho que la letra de la adenda, a propósito.** `globsOverlap`
-  es deliberadamente conservador y `*_test.go` se cruza con *todo*, así que
-  aplicarlo tal cual rechazaba `tocar_solo: ["src/export/**"]`, o sea todo
-  contrato razonable. Lo que se rechaza es *apuntarle* a las pruebas. De los
-  archivos de prueba que se editen igual se encarga la reversión del bucle,
-  que es lo que dice la segunda frase de A.3 — **y esa reversión ya está
-  implementada en `internal/loop`** (`revertFueraDeAlcance`).
-- **El parser yaml vive en `internal/kv`.** No escribas un tercero.
-- **Lo que genere contratos tiene que poner `version: 1`.**
+  es conservador y `*_test.go` se cruza con *todo*, así que aplicarlo tal cual
+  rechazaba `tocar_solo: ["src/export/**"]`, o sea cualquier contrato
+  razonable. Lo que se rechaza es *apuntarle* a las pruebas. De los archivos de
+  prueba que se editen igual se encarga `revertFueraDeAlcance` en
+  `internal/loop`.
+- **El parser YAML vive en `internal/kv`.** No escribas un tercero. Y ojo con
+  la indentación: `kv.Pairs` no la distingue.
+- **Todo lo que genere contratos tiene que poner `version: 1`.** La constante es
+  `task.Version`.
+- **El paso `interfaces` compara el nombre, no la firma completa**
+  (`task.NombreDeFirma`). El lenguaje reescribe nombres de parámetros y orden de
+  tipos; el texto literal rechazaría implementaciones correctas.
+- **`overlap.mergeTree` no puede tratar el exit 1 de `git merge-tree` como
+  conflicto**: una rama que aún no existe sale con 1. Y el parseo va por líneas
+  de etapa (`<modo> <oid> <etapa>\t<ruta>`), no por el prefijo `CONFLICT`, que
+  está localizado y no sale con `--no-messages`.
+- **El revisor degrada en abierto, el examinador falla cerrado.** Un revisor que
+  no responde no frena trabajo verde; un examinador que no responde sí frena.
+- **La recursión viene apagada** (`recursion_max: 0`). Una tarea
+  `recursivo: true` corre plana hasta que la subas.
+- **El ledger de ventanas es global al usuario**, en `~/.devclean/`, no en el
+  repo. Borrar `.devclean/` no lo reinicia.
+- **`ship` sin `origin` fallaba con `exit status 128`.** El error de git se lee
+  de su salida, no de `err.Error()`, que es solo "exit status N".
 - Los mensajes de error siguen §16.6: minúscula, sin punto final, dicen qué pasó
   y qué hacer.

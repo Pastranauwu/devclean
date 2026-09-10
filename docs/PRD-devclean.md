@@ -4,6 +4,14 @@
 **Fecha:** 26 agosto 2026
 **Tipo:** herramienta CLI, código abierto, local-first
 
+> **Este documento es la especificación original, no el registro de avance.**
+> Para saber qué existe hoy, lee `docs/ESTADO.md` y el `README.md`.
+>
+> Las referencias a `docs/PRD-adenda.md` (`adenda A.1`, `A.3`, `A.4`, `A.5`,
+> `§6.7`–`§6.11`) apuntan a un archivo que se borró en `704f8b5`. Se recupera
+> con `git show 704f8b5^:docs/PRD-adenda.md`; lo vigente está resumido en
+> `docs/ESTADO.md`.
+
 ---
 
 ## 1. En una frase
@@ -183,7 +191,7 @@ Paralelo para trabajar, fila india para integrar. Un merge a la vez; cada merge 
 
 ### 6.7 Parte de datos duros
 
-**No implementado. v0.2** (adenda §6.7). Sustituye cualquier idea de reuniones o reportes entre agentes.
+**Implementado** (`internal/standup`, `devclean standup`). Sustituye cualquier idea de reuniones o reportes entre agentes.
 
 **Principio:** un agente nunca reporta su propio avance. Todo se mide del artefacto.
 
@@ -221,7 +229,7 @@ Bitácora inmutable en `.devclean/standups/`.
 
 ### 6.8 Examinador ciego y suite oculta
 
-**No implementado. v0.2** (adenda §6.8).
+**Implementado para go y python** (`internal/examiner` + `internal/sealed`; sellado a mano con `devclean task seal`). Rust y node siguen sin examinador: sin validador de sintaxis la suite generada rompe la compilación del cuarto, y el implementador no puede tocarla (A.3).
 
 **Orden obligatorio:**
 ```
@@ -252,7 +260,7 @@ Cercana a cero: resolvió el problema. Grande: ajustó al examen. Se detecta sin
 
 ### 6.9 Detección de solapamiento en tres niveles
 
-**No implementado. Nivel textual y semántico en v0.1, funcional en v0.2** (adenda §6.9).
+**Textual y semántico implementados** (`internal/overlap`, alertas en `run`). **El nivel funcional sigue pendiente.**
 
 | Nivel | Método | Costo | Cuándo |
 |---|---|---|---|
@@ -295,7 +303,7 @@ Ataca directamente el hallazgo de GitClear: el código "movido", señal de refac
 
 ### 6.11 Constitución del proyecto
 
-**No implementado. v0.2** (adenda §6.11).
+**Implementado** (`internal/constitution`, `devclean constitution`).
 
 Archivo `.devclean/constitution.md`, inyectado en el contexto de **todos** los agentes: convenciones de estilo, capas, manejo de errores, patrones prohibidos.
 
@@ -307,17 +315,28 @@ Se genera con el agente en modo entrevista la primera vez y se versiona en el re
 
 ## 7. Comandos
 
+Esta era la lista del MVP. La que corre hoy es más larga; el README tiene la
+tabla completa con sus banderas.
+
 | Comando | Qué hace |
 |---|---|
+| `devclean up ["<petición>"]` | de una petición a un PR limpio: prepara el entorno, planea, ejecuta y entrega |
 | `devclean init` | detecta repo, comando de pruebas, crea `.devclean/` |
 | `devclean plan "<texto>"` | convierte lenguaje natural en contratos de tarea, pide aprobación |
-| `devclean task add\|edit\|rm` | manejo manual de tareas |
-| `devclean run [--agentes N]` | ejecuta tareas en paralelo |
+| `devclean apply [-f spec.yml]` | crea tareas desde una especificación declarativa; `--run` las ejecuta |
+| `devclean task add\|edit\|rm\|list\|seal` | manejo manual de tareas; `seal` sella una suite oculta propia |
+| `devclean check <id>` | esclusa de entrada sobre una tarea (alias de `task check`) |
+| `devclean run [--agentes N]` | ejecuta tareas en paralelo; `--reintentar` revive las detenidas |
 | `devclean board` | tablero de estado |
+| `devclean ps` | estado de tareas y cuartos activos |
 | `devclean ship <id>` | esclusa de salida y PR |
 | `devclean logs <id>` | detalle interno de una tarea |
+| `devclean standup` | parte de datos duros de las tareas en curso (§6.7) |
 | `devclean report` | métricas del proyecto |
+| `devclean usage` | gasto por ventanas rodantes contra el presupuesto |
 | `devclean doctor` | verifica configuración, keys, permisos, git |
+| `devclean constitution` | genera `.devclean/constitution.md` (§6.11) |
+| `devclean skills sync` | trae las skills que se inyectan en el prompt de cada agente |
 
 ---
 
@@ -434,14 +453,18 @@ Referencia negativa: OpenClaw llegó a 42.000 instancias expuestas en internet y
 - Un proveedor de modelos funcionando de punta a punta
 
 ### v0.2
-- Cola de integración automática
-- Examinador ciego y suite oculta, métrica de brecha (§6.8)
-- Mutation score como control del examinador (§6.8)
-- Detección de solapamiento funcional (§6.9)
-- Duplicación entre ramas, contratos entre tareas, reglas de dependencia (§6.10)
-- Constitución del proyecto (§6.11)
-- Segundo y tercer proveedor
-- Modo API directa
+
+Estado al 10 sep 2026. `docs/ESTADO.md` manda sobre esta lista.
+
+- [x] Cola de integración automática — `ship --integrar` / `up --integrar`
+- [x] Examinador ciego y suite oculta (§6.8) — solo go y python
+- [ ] Mutation score como control del examinador (§6.8)
+- [ ] Detección de solapamiento funcional (§6.9) — textual y semántico ya corren
+- [x] Contratos entre tareas y reglas de dependencia (§6.10)
+- [ ] Duplicación entre ramas (§6.10)
+- [x] Constitución del proyecto (§6.11)
+- [x] Segundo proveedor — `opencode` y `claude`; falta un tercero
+- [ ] Modo API directa — hoy todo pasa por la CLI del agente
 
 ### Fuera de alcance (por ahora)
 - Debate entre agentes y auto-reportes de avance (§6.7: nunca, no "por ahora")
