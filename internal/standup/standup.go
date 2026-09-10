@@ -18,9 +18,10 @@ import (
 type TipoEvento int
 
 const (
-	EventoColision TipoEvento = iota // shared exported symbols between active tasks
-	EventoAtasco                     // no test-count progress for > UmbralAtasco
-	EventoOK                         // within scope, no issues
+	EventoColision     TipoEvento = iota // shared exported symbols between active tasks
+	EventoAtasco                         // no test-count progress for > UmbralAtasco
+	EventoInterrumpida                   // la corrida murió encima de la tarea
+	EventoOK                             // within scope, no issues
 )
 
 // Evento is one standup line.
@@ -34,8 +35,8 @@ type Evento struct {
 // UmbralAtasco sin cambiar. Es lo único que ve una invocación colgada:
 // mientras el agente no vuelve, no hay intento que registrar.
 func detectarFaseLenta(l loop.Latido) (Evento, bool) {
-	if l.ID == "" {
-		return Evento{}, false
+	if l.ID == "" || !l.Vivo() {
+		return Evento{}, false // sin latido, o con la corrida muerta encima
 	}
 	transcurrido := l.EnFaseDesde()
 	if transcurrido < UmbralAtasco {
@@ -61,11 +62,16 @@ const UmbralAtasco = 10 * time.Minute
 
 // Analizar derives all standup events from disk state. No model is used.
 //
-// latidos es el estado vivo de las tareas que corren ahora mismo
-// (internal/loop). Sin él, el parte solo veía intentos ya terminados: una
-// tarea llevaba cuarenta minutos colgada en una sola invocación y el
-// informe decía "dentro de contrato", porque attempts.jsonl todavía no
-// tenía nada que contar. Puede venir nil (comandos que no lo cargan).
+// latidos son los latidos EN CRUDO de las tareas (internal/loop), vivos
+// o no. Sin ellos el parte solo veía intentos ya terminados: una tarea
+// llevaba cuarenta minutos colgada en una sola invocación y el informe
+// decía "dentro de contrato", porque attempts.jsonl todavía no tenía
+// nada que contar. Puede venir nil (comandos que no los cargan).
+//
+// Tienen que venir en crudo, no filtrados por LeerLatidos: la diferencia
+// entre un latido fresco y uno rancio es la que separa "el agente sigue
+// trabajando y se colgó" (ATASCO) de "el proceso que la trabajaba ya no
+// existe" (MUERTA). Filtrados, las dos se ven igual que un hueco.
 func Analizar(
 	tareas []task.Task,
 	estados map[string]state.State,
@@ -85,9 +91,23 @@ func Analizar(
 		}
 	}
 
-	// 3. atasco entre intentos: no test progress for > UmbralAtasco
+	// 3. corrida muerta encima: hay latido pero nadie lo refresca. Va
+	// antes que el atasco porque explica el silencio: la tarea no está
+	// colgada, el proceso que la trabajaba ya no existe.
 	for _, t := range activas {
-		if _, corriendo := latidos[t.ID]; corriendo {
+		if l, ok := latidos[t.ID]; ok && !l.Vivo() {
+			eventos = append(eventos, Evento{
+				Tipo:    EventoInterrumpida,
+				TareaID: t.ID,
+				Detalle: fmt.Sprintf("%s quedó en curso pero su corrida murió hace %s (intento %d, fase %s) · retómala con devclean run --reintentar",
+					t.ID, redondear(l.Silencio()), l.Intento, l.Fase),
+			})
+		}
+	}
+
+	// 4. atasco entre intentos: no test progress for > UmbralAtasco
+	for _, t := range activas {
+		if l, corriendo := latidos[t.ID]; corriendo && l.Vivo() {
 			continue // ya se juzgó por su fase en vivo
 		}
 		if e, ok := detectarAtasco(t.ID, attempts[t.ID]); ok {
@@ -123,6 +143,8 @@ func Formatear(eventos []Evento, ahora time.Time, nActivas int) string {
 			fmt.Fprintf(&b, "⚠ COLISIÓN   %s\n", e.Detalle)
 		case EventoAtasco:
 			fmt.Fprintf(&b, "⚠ ATASCO     %s\n", e.Detalle)
+		case EventoInterrumpida:
+			fmt.Fprintf(&b, "⚠ MUERTA     %s\n", e.Detalle)
 		case EventoOK:
 			fmt.Fprintf(&b, "✓            %s dentro de contrato\n", e.TareaID)
 		}

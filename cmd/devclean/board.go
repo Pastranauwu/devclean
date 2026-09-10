@@ -76,6 +76,17 @@ func runBoard() error {
 			return err
 		}
 		row := boardRow{ID: t.ID, Titulo: t.Titulo, Estado: s.Estado, Hijos: hijosBoardRow(root, nodos, t.ID)}
+		// una tarea en curso puede tener encima una corrida muerta: el
+		// estado en disco dice `en_curso` para siempre porque nadie lo
+		// bajó. Decirlo es el punto del tablero — antes se pintaba igual
+		// que una tarea viva.
+		if s.Estado == state.EnCurso {
+			if l, corriendo := loop.LeerLatido(root, t.ID); corriendo {
+				row.Detalle = l.Descripcion() + " · " + l.EnFaseDesde().Round(time.Second).String()
+			} else if l, muerta := loop.Interrumpida(root, t.ID); muerta {
+				row.Detalle = fmt.Sprintf("interrumpida · sin señal hace %s · devclean run --reintentar", l.Silencio().Round(time.Second))
+			}
+		}
 		switch s.Estado {
 		case state.Lista:
 			lista = append(lista, row)
@@ -168,6 +179,9 @@ func imprimirGrupo(nombre string, rows []boardRow) {
 	for _, r := range rows {
 		out.Line("%-20s %s  %s", nombre, r.ID, r.Titulo)
 		nombre = ""
+		if r.Detalle != "" {
+			out.Line("%-20s     %s", "", r.Detalle)
+		}
 		imprimirHijos(r.Hijos, 1)
 	}
 }

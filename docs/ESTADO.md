@@ -12,8 +12,9 @@ código, no heredado de versiones anteriores de este archivo.
 - **No es v1.0.** Falta el examinador ciego fuera de go y python, y el nivel
   funcional de la detección de solapamiento. Ver "Qué falta".
 - **Arreglado el 10 sep:** la instrumentación medía cero cuando el agente
-  commiteaba por su cuenta, y la demo escribía tokens falsos en el ledger real
-  del usuario. Los dos abajo, en "Arreglado".
+  commiteaba por su cuenta, la demo escribía tokens falsos en el ledger real, y
+  una corrida muerta dejaba la tarea atascada para siempre mientras el tablero
+  la pintaba viva. Los tres abajo, en "Arreglado".
 
 ## Orden de lectura para quien llegue nuevo
 
@@ -236,6 +237,44 @@ sitios donde `internal/loop` llama a `Registrar`, por eso venían apareados. Las
 cuatro entradas de `claude` del 9 sep a las 20:34 son el dogfooding real y se
 conservaron. Respaldo en `~/.devclean/ventanas.jsonl.bak-20260910`.
 
+**Una corrida muerta dejaba la tarea atascada para siempre.** Un SIGKILL —
+la laptop suspende, se cae el ssh — mataba `run` sin bajar el estado de la
+tarea. Quedaba en `en_curso`, y `run` mandaba ese estado a `existentes` (que
+solo sirve para el cruce), así que ni `run` ni `run --reintentar` la volvían a
+mirar: recuperarla pedía editar `.devclean/state/` a mano. Peor, `latido.json`
+sobrevivía al kill, y como todo el mundo leía "existe el archivo = corre", el
+tablero decía **en curso** y el standup **"dentro de contrato"** de una tarea
+muerta. La premisa falsa estaba escrita en el propio comentario del tipo.
+
+Ahora `Latido` lleva `Visto` y una corrida viva lo refresca cada
+`LatidoIntervalo` (15 s) desde una goroutine, no solo al cambiar de fase — la
+fase `agente` dura lo que dure la invocación y se volvía rancia sola. Vivo es
+`Visto` a menos de `LatidoRancioTras` (90 s, seis intervalos). Con eso:
+
+- `LeerLatido` devuelve "no corre" si el latido está rancio; `Interrumpida`
+  distingue "murió a media tarea" de "nunca arrancó".
+- `board` y el TUI muestran `interrumpida · sin señal hace X`, el segundo en
+  rojo; `standup` levanta `⚠ MUERTA` en vez de `✓ dentro de contrato`.
+- `run --reintentar` la retoma por el mismo camino que una detenida
+  (`room.Ensure` ya reusaba el cuarto); `run` a secas dice qué pasó y qué
+  escribir.
+
+No se revive solo, a propósito: si otra corrida la está trabajando de verdad su
+latido está fresco, y revivirla pondría dos agentes en el mismo cuarto. El
+margen de 6× sobre el intervalo (en vez de los 2–3× de la regla común) es por
+lo mismo — declarar muerta una corrida viva es el error caro; al revés solo se
+esperan 90 s.
+
+Se descartó comparar el PID: en Linux un pid se reutiliza apenas el proceso
+muere, así que un pid vivo no prueba que sea *tu* proceso, y `os.FindProcess`
+en Unix devuelve un Process exista o no (haría falta `Signal(0)`, que además no
+es portable a Windows). El latido fresco no tiene ese problema y es igual en
+las tres plataformas del release.
+
+Pruebas: `TestLatidoVivoSoloMientrasLoRefrescan`,
+`TestSinLatidoNoHayCorridaNiInterrupcion`, `TestLatidoSinVistoSeDaPorMuerto`,
+`TestAnalizarDistingueAtascoDeCorridaMuerta`.
+
 ---
 
 ## Cosas que muerden si no las sabes
@@ -270,5 +309,12 @@ conservaron. Respaldo en `~/.devclean/ventanas.jsonl.bak-20260910`.
   repo. Borrar `.devclean/` no lo reinicia.
 - **`ship` sin `origin` fallaba con `exit status 128`.** El error de git se lee
   de su salida, no de `err.Error()`, que es solo "exit status N".
+- **Un latido en disco no significa que la tarea corra.** Un SIGKILL lo deja
+  ahí para siempre. La pregunta es `l.Vivo()` (o sea `Visto` reciente), y para
+  eso una corrida viva tiene que estar refrescándolo: si agregas un camino que
+  escriba latidos, tiene que latir, no solo escribir una vez.
+- **`standup.Analizar` quiere los latidos EN CRUDO** (`LeerLatidosCrudos`), no
+  los filtrados. La diferencia entre latido fresco y rancio es la que separa
+  ATASCO de MUERTA; filtrados, las dos se ven igual que un hueco.
 - Los mensajes de error siguen §16.6: minúscula, sin punto final, dicen qué pasó
   y qué hacer.

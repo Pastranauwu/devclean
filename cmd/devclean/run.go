@@ -80,7 +80,7 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
 	}
 
 	var pendientes, existentes []task.Task
-	var detenidas []string
+	var detenidas, interrumpidas, huerfanas []string
 	for _, t := range tareas {
 		s, err := state.Get(root, t.ID)
 		if err != nil {
@@ -90,6 +90,23 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
 		case state.Pendiente:
 			pendientes = append(pendientes, t)
 		case state.EnCurso:
+			// `en_curso` con la corrida muerta encima (SIGKILL: la laptop
+			// suspende, se cae el ssh) quedaba atascada para siempre —
+			// `run` la mandaba a `existentes`, que solo sirve para el
+			// cruce, y ni --reintentar la miraba. Se reconoce por el
+			// latido rancio y se revive por el mismo camino que una
+			// detenida. No es automático a propósito: si otra corrida la
+			// está trabajando de verdad su latido está fresco, y revivirla
+			// pondría dos agentes en el mismo cuarto.
+			if lat, muerta := loop.Interrumpida(root, t.ID); muerta {
+				if reintentar {
+					interrumpidas = append(interrumpidas, t.ID)
+					pendientes = append(pendientes, t)
+				} else {
+					huerfanas = append(huerfanas, fmt.Sprintf("%s (sin señal hace %s)", t.ID, lat.Silencio().Round(time.Second)))
+				}
+				continue
+			}
 			existentes = append(existentes, t)
 		case state.Detenida:
 			// una tarea detenida quedaba muerta para siempre: `run` solo
@@ -101,6 +118,12 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
 		}
 	}
 	if len(pendientes) == 0 {
+		// las huérfanas van primero: son las que el humano no sabe que
+		// tiene, porque el tablero las pintaba corriendo
+		if len(huerfanas) > 0 {
+			out.Line("sin tareas pendientes · %s quedó de una corrida que murió · retómala con devclean run --reintentar", strings.Join(huerfanas, ", "))
+			return nil
+		}
 		if len(detenidas) == 0 && tieneDetenidas(root, tareas) {
 			out.Line("sin tareas pendientes · hay tareas detenidas · revíveles con devclean run --reintentar")
 			return nil
@@ -110,6 +133,12 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
 	}
 	if len(detenidas) > 0 {
 		out.Line("· reintentando %s · se reusa el cuarto y el trabajo parcial de cada una", strings.Join(detenidas, ", "))
+	}
+	if len(interrumpidas) > 0 {
+		out.Line("· retomando %s · su corrida anterior murió a media tarea", strings.Join(interrumpidas, ", "))
+	}
+	if len(huerfanas) > 0 {
+		out.Line("· %s quedó de una corrida que murió · retómala con devclean run --reintentar", strings.Join(huerfanas, ", "))
 	}
 
 	timeout := gate.DefaultTimeout

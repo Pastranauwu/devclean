@@ -57,6 +57,12 @@ func Tablero(root string) ([]Fila, error) {
 				f.Atascada = true
 				f.Detalle = "ATASCO · " + f.Detalle + " sin señal"
 			}
+		} else if l, muerta := loop.Interrumpida(root, t.ID); muerta {
+			// la corrida murió encima de la tarea (SIGKILL). Se marca
+			// como atascada para que el tablero la pinte en rojo: es lo
+			// que el humano tiene que ver al volver.
+			f.Atascada = true
+			f.Detalle = "INTERRUMPIDA · sin señal hace " + reloj(l.Silencio()) + " · run --reintentar"
 		}
 		filas = append(filas, f)
 	}

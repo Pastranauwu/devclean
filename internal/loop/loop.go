@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Pastranauwu/devclean/internal/config"
@@ -212,16 +213,54 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	// hasta que el intento termina, y un intento puede durar veinte
 	// minutos. Se borra al salir, pase lo que pase.
 	var acumulado Tokens
+	var latMu sync.Mutex
+	var latActual Latido
 	avisar := func(intento int, fase string) {
-		EscribirLatido(o.Root, Latido{
+		l := Latido{
 			ID: o.Task.ID, Intento: intento, Limite: limite, Fase: fase,
 			Modelo: o.Model, DesdeFase: time.Now().UTC(), Tokens: acumulado,
-		})
+		}
+		latMu.Lock()
+		latActual = l
+		latMu.Unlock()
+		EscribirLatido(o.Root, l)
 		if o.OnIntento != nil {
 			o.OnIntento(intento, fase)
 		}
 	}
 	defer BorrarLatido(o.Root, o.Task.ID)
+
+	// Latir dentro de la fase, no solo al cambiarla. Una fase `agente`
+	// dura lo que dure la invocación; sin refresco el latido se vuelve
+	// rancio solo y la tarea viva se vería como interrumpida. El defer va
+	// DESPUÉS del de BorrarLatido para correr antes que él (LIFO): si se
+	// borrara primero, el latidor podría recrear el archivo de una tarea
+	// que ya terminó y dejarla en curso para siempre.
+	pararLatido := make(chan struct{})
+	var latiendo sync.WaitGroup
+	latiendo.Add(1)
+	go func() {
+		defer latiendo.Done()
+		t := time.NewTicker(LatidoIntervalo)
+		defer t.Stop()
+		for {
+			select {
+			case <-pararLatido:
+				return
+			case <-t.C:
+				latMu.Lock()
+				l := latActual
+				latMu.Unlock()
+				if l.ID != "" {
+					EscribirLatido(o.Root, l)
+				}
+			}
+		}
+	}()
+	defer func() {
+		close(pararLatido)
+		latiendo.Wait() // que no quede una escritura en vuelo tras el borrado
+	}()
 
 	// una suite sellada a mano (devclean task seal) manda sobre el
 	// examinador automático: el usuario ya pagó esas pruebas y volver a
