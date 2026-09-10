@@ -128,7 +128,7 @@ func (a Agent) Run(ctx context.Context, req loop.Request) (loop.Result, error) {
 		return loop.Result{}, fmt.Errorf("descomposición de %s falló · %s", a.Task.ID, err)
 	}
 	if len(borradores) > limite {
-		return loop.Result{}, fmt.Errorf("descomposición de %s propuso %d subtareas, el límite es %d · bajá el alcance o subí limite_subtareas", a.Task.ID, len(borradores), limite)
+		return loop.Result{}, fmt.Errorf("descomposición de %s propuso %d subtareas, el límite es %d · baja el alcance o sube limite_subtareas", a.Task.ID, len(borradores), limite)
 	}
 
 	var subs []task.Task
@@ -711,7 +711,7 @@ func (a Agent) promptDescomposicion() string {
 		limite = task.DefaultLimiteSubtareas
 	}
 	var b strings.Builder
-	b.WriteString("Eres el planificador de devclean. Partí esta tarea en subtareas pequeñas y verificables.\n\n")
+	b.WriteString("Eres el planificador de devclean. Parte esta tarea en subtareas pequeñas y verificables.\n\n")
 	fmt.Fprintf(&b, "Tarea %s: %s\n", t.ID, t.Titulo)
 	if t.Porque != "" {
 		fmt.Fprintf(&b, "Para qué importa: %s\n", t.Porque)
@@ -729,7 +729,7 @@ func (a Agent) promptDescomposicion() string {
 	if len(t.NoTocar) > 0 {
 		fmt.Fprintf(&b, "Nadie toca: %s\n", strings.Join(t.NoTocar, ", "))
 	}
-	fmt.Fprintf(&b, "SOLO podés declarar \"tocar_solo\" dentro de estas rutas (ninguna otra): %s. Máximo %d subtareas.\n\n",
+	fmt.Fprintf(&b, "SOLO puedes declarar \"tocar_solo\" dentro de estas rutas (ninguna otra): %s. Máximo %d subtareas.\n\n",
 		strings.Join(t.TocarSolo, ", "), limite)
 	b.WriteString("Las subtareas corren EN PARALELO cuando pueden, con un modelo barato cada una. Están numeradas en orden: la primera es 1, la segunda 2, etc. Una subtarea que necesita ver el código de otra debe declarar \"depende_de\": [n] con el número de esa otra; sin depende_de se asume independiente y va en paralelo.\n\n")
 	b.WriteString("Devuelve SOLO un array JSON, sin texto alrededor. Cada subtarea:\n")

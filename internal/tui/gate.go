@@ -16,13 +16,30 @@ import (
 	"github.com/Pastranauwu/devclean/internal/ship"
 )
 
-// NombresPasos es el orden fijo de la compuerta (§16.3): ocho pasos, de
-// izquierda a derecha.
-var NombresPasos = []string{"base", "historial", "ruido", "secretos", "presupuesto", "bisectable", "handoff", "pr"}
+// NombresPasos es el orden de la compuerta (§16.3), tal como los emite
+// internal/ship. Tiene que coincidir con los Paso{} de ship.go: la lista
+// se quedó en ocho mientras el código creció a once, y como el mapeo era
+// por índice, el paso "interfaces" se pintaba bajo la etiqueta "bisec" y
+// el contador llegaba a 9/8.
+var NombresPasos = []string{
+	"base", "historial", "ruido", "secretos", "presupuesto",
+	"interfaces", "dependencias", "bisectable", "suite_oculta",
+	"handoff", "pr",
+}
 
 // nombresCortos son las abreviaturas que se pintan bajo los glifos; el
-// nombre completo vive en ship.Paso.Nombre y en el JSON.
-var nombresCortos = []string{"base", "hist", "ruido", "secr", "presu", "bisec", "hand", "pr"}
+// nombre completo vive en ship.Paso.Nombre y en el JSON. Mismo largo y
+// mismo orden que NombresPasos — lo verifica TestEtiquetasAlineadas.
+var nombresCortos = []string{
+	"base", "hist", "ruido", "secr", "presu",
+	"iface", "deps", "bisec", "oculta",
+	"hand", "pr",
+}
+
+// noAplica marca un paso que esta corrida no ejecutó porque no tocaba
+// (sin suite sellada, sin dependencias declaradas). No es un fallo ni
+// algo pendiente: por eso no cuenta para el total.
+const noAplica = pendiente
 
 // estadoPaso es el estado de un paso en la compuerta.
 type estadoPaso int
@@ -34,28 +51,62 @@ const (
 	rojo
 )
 
-// clasificar devuelve el estado de cada uno de los ocho pasos dado lo que
-// ya terminó. Mientras la compuerta corre, el paso siguiente al último
-// hecho queda "trabajando".
-func clasificar(pasos []ship.Paso, terminado bool) [8]estadoPaso {
-	var e [8]estadoPaso
-	for i := range e {
-		e[i] = pendiente
+// clasificar devuelve el estado de cada paso de la compuerta dado lo que
+// ya terminó. Mientras corre, el siguiente sin resolver queda
+// "trabajando".
+//
+// El emparejamiento es por NOMBRE, no por posición: la compuerta se salta
+// pasos que no aplican (suite_oculta sin suite sellada, dependencias sin
+// declarar), así que el tercer Paso que llega no tiene por qué ser el
+// tercero de la lista. Mapeando por índice, un salto corría todas las
+// etiquetas siguientes.
+func clasificar(pasos []ship.Paso, terminado bool) []estadoPaso {
+	e := make([]estadoPaso, len(NombresPasos))
+	indice := make(map[string]int, len(NombresPasos))
+	for i, n := range NombresPasos {
+		indice[n] = i
 	}
-	for i, p := range pasos {
-		if i >= len(e) {
-			break
+	ultimo := -1
+	for _, p := range pasos {
+		i, conocido := indice[p.Nombre]
+		if !conocido {
+			continue // paso de otro camino (multitarea): no va en esta fila
 		}
 		if p.OK {
 			e[i] = verde
 		} else {
 			e[i] = rojo
 		}
+		if i > ultimo {
+			ultimo = i
+		}
 	}
-	if !terminado && len(pasos) < len(e) {
-		e[len(pasos)] = trabajando
+	if !terminado {
+		for i := ultimo + 1; i < len(e); i++ {
+			if e[i] == pendiente {
+				e[i] = trabajando
+				break
+			}
+		}
 	}
 	return e
+}
+
+// hechosYTotal cuenta para la barra. Mientras la compuerta corre el total
+// es cuántos pasos puede haber; al terminar, cuántos hubo de verdad — así
+// una corrida que se saltó un paso que no aplicaba cierra en 9/9 y no en
+// 9/11, que se lee como si faltara algo.
+func hechosYTotal(e []estadoPaso, terminado bool) (int, int) {
+	hechos := 0
+	for _, s := range e {
+		if s == verde || s == rojo {
+			hechos++
+		}
+	}
+	if terminado {
+		return hechos, hechos
+	}
+	return hechos, len(e)
 }
 
 func renderGlifo(e estadoPaso, tick int) string {
@@ -100,7 +151,9 @@ func renderGate(id string, pasos []ship.Paso, terminado bool, tick, width int) s
 	cuerpo.WriteString(strings.TrimRight(glifos.String(), " ") + "\n")
 	cuerpo.WriteString(strings.TrimRight(nombres.String(), " ") + "\n")
 
-	cuerpo.WriteString("\n" + barra(len(pasos), 8, 40) + " " + estiloApagado.Render(strconv.Itoa(len(pasos))+"/8") + "\n")
+	hechos, total := hechosYTotal(e, terminado)
+	cuerpo.WriteString("\n" + barra(hechos, total, 40) + " " +
+		estiloApagado.Render(strconv.Itoa(hechos)+"/"+strconv.Itoa(total)) + "\n")
 
 	if len(pasos) > 0 {
 		cuerpo.WriteString("\n" + estiloApagado.Render(pasos[len(pasos)-1].Detalle) + "\n")

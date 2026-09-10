@@ -124,7 +124,7 @@ implementador la ve y es su criterio de aceptación. La suite --oculta se
 sella con hash y solo corre en la esclusa de salida (devclean ship), que
 no distingue si la escribió un humano o el examinador.
 
-Los archivos se leen del disco al sellar, así que después podés borrarlos:
+Los archivos se leen del disco al sellar, así que después puedes borrarlos:
 lo sellado ya no depende de ellos.`,
 		Example: `  devclean task seal T-001 --visible pruebas/visible_test.go --oculta pruebas/oculta_test.go
   devclean task seal T-001 --visible v.py --oculta o.py --forzar`,

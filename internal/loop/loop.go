@@ -57,7 +57,7 @@ const MotivoPresupuesto = "presupuesto de tokens agotado · sube presupuesto_tok
 // gasto pasaría un tope de una ventana rodante (5h/semanal/mensual) del
 // proveedor (`presupuesto:` en config.yml). El ledger es global de la
 // cuenta, así que vale entre proyectos.
-const MotivoVentanas = "ventana de presupuesto agotada · revisá devclean usage · subí el tope en el bloque presupuesto: de config.yml"
+const MotivoVentanas = "ventana de presupuesto agotada · revisa devclean usage · sube el tope en el bloque presupuesto: de config.yml"
 
 // Examinador genera la suite de pruebas ciega antes de que el
 // implementador empiece (§6.8). La interfaz vive en loop para evitar

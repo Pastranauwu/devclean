@@ -20,8 +20,8 @@ func TestClasificar(t *testing.T) {
 	if e[3] != trabajando {
 		t.Errorf("el paso siguiente debió quedar trabajando, es %v", e[3])
 	}
-	if e[7] != pendiente {
-		t.Errorf("el último paso debió quedar pendiente, es %v", e[7])
+	if e[len(e)-1] != pendiente {
+		t.Errorf("el último paso debió quedar pendiente, es %v", e[len(e)-1])
 	}
 }
 
@@ -41,7 +41,7 @@ func TestRenderGate(t *testing.T) {
 	}
 	vista := renderGate("T-003", pasos, false, 0, 80)
 
-	for _, want := range []string{"ESCLUSA DE SALIDA · T-003", "base", "hist", "ruido", "secr", "presu", "bisec", "hand", "pr", "✓", "·", "2/8"} {
+	for _, want := range []string{"ESCLUSA DE SALIDA · T-003", "base", "hist", "ruido", "secr", "presu", "iface", "bisec", "hand", "pr", "✓", "·", "2/11"} {
 		if !strings.Contains(vista, want) {
 			t.Errorf("la vista no contiene %q:\n%s", want, vista)
 		}
@@ -77,5 +77,70 @@ func TestBarra(t *testing.T) {
 	}
 	if !strings.Contains(barra(0, 8, 10), "░░") {
 		t.Error("la barra vacía debió quedar en gris")
+	}
+}
+
+// Las dos listas se leen en paralelo: si una crece y la otra no, las
+// etiquetas se corren y nadie se entera hasta ver un GIF publicado.
+func TestEtiquetasAlineadas(t *testing.T) {
+	if len(NombresPasos) != len(nombresCortos) {
+		t.Fatalf("NombresPasos tiene %d y nombresCortos %d", len(NombresPasos), len(nombresCortos))
+	}
+}
+
+// El bug que se vio en el GIF: la compuerta emitió 9 pasos contra 8
+// etiquetas y el contador marcó 9/8.
+func TestContadorNuncaPasaDelTotal(t *testing.T) {
+	var pasos []ship.Paso
+	for _, n := range NombresPasos {
+		pasos = append(pasos, ship.Paso{Nombre: n, OK: true})
+	}
+	// más pasos de los que la fila conoce: los del camino multitarea
+	pasos = append(pasos, ship.Paso{Nombre: "esclusa T-001", OK: true})
+	pasos = append(pasos, ship.Paso{Nombre: "integradas", OK: true})
+
+	vista := renderGate("T-001", pasos, true, 0, 100)
+	if !strings.Contains(vista, "11/11") {
+		t.Errorf("contador fuera de rango, quiero 11/11:\n%s", vista)
+	}
+	for _, malo := range []string{"12/11", "13/11", "/8"} {
+		if strings.Contains(vista, malo) {
+			t.Errorf("el contador dice %q:\n%s", malo, vista)
+		}
+	}
+}
+
+// Un paso que no aplica (sin suite sellada) no debe leerse como si
+// faltara trabajo: la corrida cierra en hechos/hechos.
+func TestPasoQueNoAplicaNoDejaLaBarraCorta(t *testing.T) {
+	var pasos []ship.Paso
+	for _, n := range NombresPasos {
+		if n == "suite_oculta" || n == "dependencias" {
+			continue // esta corrida no los ejecutó
+		}
+		pasos = append(pasos, ship.Paso{Nombre: n, OK: true})
+	}
+	vista := renderGate("T-001", pasos, true, 0, 100)
+	if !strings.Contains(vista, "9/9") {
+		t.Errorf("quiero 9/9 con dos pasos que no aplican:\n%s", vista)
+	}
+}
+
+// Un salto en medio no debe correr las etiquetas siguientes: el mapeo es
+// por nombre, no por posición.
+func TestSaltoNoCorreLasEtiquetas(t *testing.T) {
+	// llega "pr" (el último) sin los intermedios
+	e := clasificar([]ship.Paso{
+		{Nombre: "base", OK: true},
+		{Nombre: "pr", OK: true},
+	}, true)
+	if e[0] != verde {
+		t.Errorf("base debió quedar verde, es %v", e[0])
+	}
+	if e[len(e)-1] != verde {
+		t.Errorf("pr debió quedar verde en su posición, es %v", e[len(e)-1])
+	}
+	if e[1] != pendiente {
+		t.Errorf("historial no corrió: debió quedar pendiente, es %v", e[1])
 	}
 }

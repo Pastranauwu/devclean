@@ -48,7 +48,7 @@ func newInitCmd() *cobra.Command {
 	cmd.Flags().StringVar(&cli, "cli", "", "CLI de agente: opencode o claude (por defecto pregunta si hay más de uno)")
 	cmd.Flags().StringVar(&pruebas, "pruebas", "", "comando de pruebas del proyecto, en vez del detectado")
 	cmd.Flags().StringVar(&plantilla, "pruebas-plantilla", "", "stack de pruebas: go, node o python")
-	cmd.Flags().BoolVar(&sinSkills, "sin-skills", false, "no traer las skills por defecto (podés hacerlo luego con devclean skills sync)")
+	cmd.Flags().BoolVar(&sinSkills, "sin-skills", false, "no traer las skills por defecto (puedes hacerlo luego con devclean skills sync)")
 	return cmd
 }
 
