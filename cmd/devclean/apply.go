@@ -92,13 +92,20 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 		if s.Feature != "" {
 			titulo += " (" + s.Feature + ")"
 		}
-		cuerpo.WriteString(tui.Titulo(titulo) + "\n\n")
+		cuerpo.WriteString(tui.Titulo(titulo))
+		cuerpo.WriteString("\n\n")
 		for _, t := range applied {
 			ag := ""
 			if t.Agente != "" {
 				ag = " [" + t.Agente + "]"
 			}
-			cuerpo.WriteString(t.ID + "  " + t.Titulo + ag + "  " + tui.Apagado("· listo cuando: "+t.ListoCuando) + "\n")
+			cuerpo.WriteString(t.ID)
+			cuerpo.WriteString("  ")
+			cuerpo.WriteString(t.Titulo)
+			cuerpo.WriteString(ag)
+			cuerpo.WriteString("  ")
+			cuerpo.WriteString(tui.Apagado("· listo cuando: " + t.ListoCuando))
+			cuerpo.WriteString("\n")
 		}
 		out.Line("%s", tui.Caja(strings.TrimRight(cuerpo.String(), "\n")))
 	} else {

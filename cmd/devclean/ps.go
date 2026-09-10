@@ -90,7 +90,8 @@ func runPs(root string) error {
 
 	if esTUI() {
 		var b strings.Builder
-		b.WriteString(tui.Titulo("ESTADO DE TAREAS Y CUARTOS") + "\n\n")
+		b.WriteString(tui.Titulo("ESTADO DE TAREAS Y CUARTOS"))
+		b.WriteString("\n\n")
 		for _, it := range items {
 			colorEstado := it.Estado
 			switch it.Estado {

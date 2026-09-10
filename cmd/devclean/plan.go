@@ -141,14 +141,20 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 	}
 	if esTUI() {
 		var cuerpo strings.Builder
-		cuerpo.WriteString(tui.Titulo(fmt.Sprintf("PROPONGO %d TAREAS", len(props))) + "\n\n")
+		cuerpo.WriteString(tui.Titulo(fmt.Sprintf("PROPONGO %d TAREAS", len(props))))
+		cuerpo.WriteString("\n\n")
 		for _, p := range props {
 			ag := ""
 			if p.Agente != "" {
 				ag = " [" + p.Agente + "]"
 			}
-			cuerpo.WriteString(p.ID + "  " + p.Titulo + ag + "  " +
-				tui.Apagado(fmt.Sprintf("· %d líneas · listo cuando: %s", p.LimiteLineas, p.ListoCuando)) + "\n")
+			cuerpo.WriteString(p.ID)
+			cuerpo.WriteString("  ")
+			cuerpo.WriteString(p.Titulo)
+			cuerpo.WriteString(ag)
+			cuerpo.WriteString("  ")
+			cuerpo.WriteString(tui.Apagado(fmt.Sprintf("· %d líneas · listo cuando: %s", p.LimiteLineas, p.ListoCuando)))
+			cuerpo.WriteString("\n")
 		}
 		out.Line("%s", tui.Caja(strings.TrimRight(cuerpo.String(), "\n")))
 	} else {
