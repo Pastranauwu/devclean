@@ -115,6 +115,12 @@ prompt para que dos tareas paralelas no elijan arquitecturas incompatibles.
 `devclean standup` deriva colisiones y atascos de los artefactos, sin que los
 agentes hablen entre sí.
 
+Y entre tareas de la misma oleada corre la **detección de solapamiento**, que
+avisa cuando dos se están pisando: si tocan las mismas líneas, si exportaron el
+mismo símbolo, y —al terminar— si fusionar sus dos ramas rompe alguna de las
+dos suites. Ese último es el que atrapa el fallo caro de correr agentes en
+paralelo: **dos ramas verdes por separado que rompen juntas.**
+
 ## Comandos
 
 | Comando | Qué hace |

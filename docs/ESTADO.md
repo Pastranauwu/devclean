@@ -1,20 +1,18 @@
 # Estado del proyecto — traspaso entre sesiones
 
-**Última actualización: 10 septiembre 2026.** Reescrito desde cero contra el
-código, no heredado de versiones anteriores de este archivo.
+**Última actualización: 14 septiembre 2026.** Reescrito contra el código.
 
-- **HEAD:** `eea6d3b`, rama `main`, sincronizada con `origin/main`.
-- **Última release publicada:** **v0.8.2** (10 sep 2026), etiquetada en HEAD.
-  No hay commits después del tag.
-- **Compila y pasa:** `go build ./...` limpio; `go test ./...` verde. 22
-  paquetes con pruebas; tres sin ninguna: `internal/constitution`,
-  `internal/sealed`, `internal/ui`.
-- **No es v1.0.** Falta el examinador ciego fuera de go y python, y el nivel
-  funcional de la detección de solapamiento. Ver "Qué falta".
-- **Arreglado el 10 sep:** la instrumentación medía cero cuando el agente
-  commiteaba por su cuenta, la demo escribía tokens falsos en el ledger real, y
-  una corrida muerta dejaba la tarea atascada para siempre mientras el tablero
-  la pintaba viva. Los tres abajo, en "Arreglado".
+- **HEAD:** `main`, sincronizada con `origin/main`.
+- **Última release publicada:** **v1.0.0** (14 sep 2026), etiquetada en HEAD.
+- **Compila y pasa:** `go build ./...` y `go vet ./...` limpios; `go test ./...`
+  verde. **Los 24 paquetes de `internal/` tienen pruebas; ninguno queda sin.**
+- **Es la 1.0.** Los tres niveles de §6.9 corren, las cinco métricas de §9 dan
+  número, y el alcance del examinador ciego (go y python) es una decisión, no
+  un hueco. Ver "Decisiones de alcance".
+- **Cerrado el 14 sep:** la corrida ya sobrevive a cerrar la terminal
+  (`--fondo`), la fricción dejó de ser `null`, el nivel funcional de
+  solapamiento entró, y no queda paquete sin pruebas. Todo abajo, en
+  "Cerrado para la 1.0".
 
 ## Orden de lectura para quien llegue nuevo
 
@@ -66,7 +64,7 @@ TUI.
 
 ### Paquetes
 
-24 en `internal/`. Los que no se explican solos:
+24 en `internal/`, **todos con pruebas**. Los que no se explican solos:
 
 - **`kv`** — el parser YAML propio (`Pairs`, `Nested`, `ParseList`,
   `MarshalList`). **No escribas un segundo.** Es deliberadamente chico y tiene
@@ -86,8 +84,9 @@ TUI.
   paso que juzga intención en vez de mecánica. **Falla cerrado**, al revés que
   el examinador.
 - **`ship`** — la esclusa de salida.
-- **`overlap`** — detección de solapamiento (§6.9), niveles textual y
-  semántico.
+- **`overlap`** — detección de solapamiento (§6.9) en sus tres niveles.
+  Textual y semántico corren antes de la oleada; el funcional
+  (`funcional.go`) **después**, y solo sobre pares verdes y sospechosos.
 - **`constitution`** — `.devclean/constitution.md` (§6.11), inyectada en el
   contexto de todos los agentes.
 - **`recurse`** — ejecución recursiva (§8.3): una tarea `recursivo: true` se
@@ -102,7 +101,9 @@ TUI.
 - **`spec`** — el modelo declarativo de `devclean.spec.yml`.
 - **`standup`** — el parte de datos de §6.7, derivado de `attempts.jsonl`. Sin
   modelo: los detectores son deterministas.
-- **`metrics`** — las cinco métricas de §9 derivadas de los artefactos.
+- **`metrics`** — las cinco métricas de §9. Cuatro salen de los artefactos del
+  repo y las calcula `Calcular`, que es pura; la fricción sale de `gh` y la
+  pone `Friccion` aparte, para no meter red en una función de cálculo.
 - **`skills`** — trae SKILL.md reales y los inyecta como texto en el prompt, no
   como etiqueta. El fetch corre contra la raíz del repo, nunca dentro de un
   cuarto.
@@ -157,54 +158,104 @@ prompt ya inyecta), `agentes: N` y `ship: true`. Lo respetan `up` (el flag
 
 ---
 
+## Decisiones de alcance
+
+No son pendientes. Son cosas que se miraron y se decidió no hacer; están acá
+para que nadie las vuelva a abrir creyendo que se olvidaron.
+
+### El examinador ciego cubre go y python, y con eso basta
+
+`internal/examiner/lenguaje.go`. No es una implementación a medias: es el
+alcance. Sin validador de sintaxis la suite generada es basura que rompe la
+compilación del cuarto y el implementador no puede tocarla (A.3), así que
+`lenguajeExamen` devuelve `""` en vez de improvisar y la tarea corre sin
+examinador ciego. Rust queda fuera con motivo escrito: la stdlib de Go no lo
+parsea, validar exige el crate `syn` o `cargo check`, y eso arrastra el
+toolchain completo dentro del cuarto. Node y el resto, igual: se agregan si
+aparece la necesidad real, no antes.
+
+### Sin Homebrew
+
+Se evaluó y se descartó el 14 sep. Un tap es un repo aparte más un PAT en los
+secretos, y `brew` solo instala casks en macOS. La distribución es
+`scripts/install.sh`, los binarios de cada release y `go install`, que es por
+donde llega todo el mundo. Si algún día hace falta empaquetar para un gestor,
+el candidato es el AUR, no Homebrew.
+
 ## Qué falta
 
-En el orden en que conviene atacarlo.
+Nada bloquea la 1.0. Lo que queda es para después:
 
-### 1. Árbol de trabajo sin commitear
+- **Mutation score como control del examinador** (§6.8). El examinador ya
+  corre; falta medir si su suite de verdad mata mutantes.
+- **Duplicación entre ramas** (§6.10).
+- **Modo API directa.** Hoy todo pasa por la CLI del agente.
+- **Un tercer proveedor.** Hoy `opencode` y `claude`.
+- **`internal/executor` quedó en el historial** de `22a48f8` y `a781c73` antes
+  de sacarlo con `git rm --cached`; hoy está versionado normal, así que la
+  nota es de historia y nada más. Solo se limpiaría reescribiendo historia y
+  no vale la pena: es código, no secretos.
 
-`cmd/devclean/apply.go`, `plan.go`, `ps.go` tienen cambios puramente
-cosméticos: concatenaciones con `+` partidas en `WriteString` sucesivos. Cero
-cambio de conducta. Commitear o descartar antes de empezar otra cosa.
+## Cerrado para la 1.0 — 14 septiembre 2026
 
-### 2. Examinador ciego: solo go y python — bloquea v1.0
+**La corrida no sobrevivía a cerrar la terminal.** Ver el detalle abajo, en la
+entrada del 10 sep: el trabajo estaba hecho y sin commitear, y entró tal cual.
 
-`internal/examiner/lenguaje.go`. `rust` está descartado a propósito y con
-motivo escrito: la stdlib de Go no parsea rust, validar exige el crate `syn` o
-`cargo check`, y eso arrastra el toolchain completo dentro del cuarto. Node y
-el resto, sin empezar.
+**El solapamiento funcional (§6.9, nivel 3).** Era el único de los tres
+niveles que faltaba, y el que atrapa el fallo que justifica al resto: dos
+ramas verdes por separado que rompen juntas. Los niveles 1 y 2 miran el diff
+y ahí no hay nada que ver — no hay conflicto de texto ni símbolo en común
+cuando lo que cambió fue un comportamiento del que la otra dependía.
 
-Sin validador de sintaxis la suite generada es basura que rompe la compilación
-del cuarto, y el implementador no puede tocarla (A.3). Por eso `lenguajeExamen`
-devuelve `""` en vez de improvisar.
+`overlap.CheckFuncional` monta la fusión en un worktree suelto y corre ahí los
+`listo_cuando` de las dos tareas. El árbol no se recalcula: `merge-tree` ya lo
+escribía en `CheckPar` y se tiraba; ahora vuelve en `Resultado.Arbol` y de él
+sale un commit detached con los dos padres. No toca las ramas de las tareas ni
+el árbol de trabajo del repo.
 
-### 3. Solapamiento funcional (§6.9)
+Tres cosas que muerden si las tocas:
 
-Los tres niveles son textual, semántico y funcional. Los dos primeros están;
-falta el tercero: merge en seco de dos ramas y correr las suites de ambas sobre
-el resultado. Es el que atrapa el fallo clásico — dos ramas verdes por separado
-que rompen juntas — y el único que cuesta caro, así que solo debe dispararse
-cuando textual o semántico marcaron sospecha.
+- **Corre DESPUÉS de la oleada**, al revés que los otros dos niveles. "Verdes
+  por separado" exige que las dos estén verdes; al arrancar, las ramas están
+  vacías. Por lo mismo el repaso vuelve a llamar a `CheckPar` en vez de reusar
+  el de antes, y saltea las alertas que ya se dijeron.
+- **Dos filtros antes de gastar:** solo pares verdes (una suite que ya fallaba
+  en su rama no dice nada sobre la fusión) y solo pares sospechosos
+  (`Resultado.Sospechoso`), porque es el único nivel que ejecuta código.
+- **El worktree se destruye con contexto propio.** Con el de la corrida ya
+  cancelado quedaría montado y el próximo par chocaría contra él.
 
-### 4. Tap de Homebrew
+Pruebas: `TestDosVerdesQueRompenAlFusionarse` (el caso real),
+`TestElWorktreeDeLaFusionNoSobrevive`, `TestSinListoCuandoAvisaQueNoSePudo`.
 
-`.goreleaser.yml` no tiene bloque `brews`. Hace falta un repo `homebrew-*`
-aparte y agregarlo.
+**La fricción dejó de ser `null`.** De las cinco métricas de §9 era la única
+que `report` imprimía siempre como "— sin datos". Su fuente no está en el
+repo: el ciclo de revisión pasa en GitHub, así que se le pregunta a `gh` por
+cada entrega que dejó URL de PR.
 
-### 5. Deuda chica
+Se mide contra la **primera** aprobación, no la última: lo que §9 mide es
+cuánto tarda el trabajo en quedar desbloqueado, y una segunda aprobación ya no
+desbloquea nada. Un PR sin aprobar no cuenta como cero —cero minutos de
+fricción sería un número excelente y una mentira—, cuenta como sin dato.
+Degrada en abierto, como el revisor: sin `gh`, sin red o sin PRs aprobados
+vuelve a `null`. Techo de 20 s, porque `report` es de lectura y colgarse contra
+una red mala es peor que no dar el número. `metrics.Calcular` sigue siendo
+pura y sin red; la fricción se pone aparte, en `metrics.Friccion`.
 
-- `internal/executor` quedó en el historial de `22a48f8` y `a781c73` antes de
-  sacarlo con `git rm --cached`. Solo se limpia reescribiendo historia.
-- `internal/task/store_test.go` construye `Task` sin `Version`. Pasa porque
-  `Marshal` omite el cero y es `Validate` quien exige el campo, pero el fixture
-  miente sobre el contrato.
-- `internal/constitution`, `internal/sealed` e `internal/ui` no tienen pruebas.
-- `friccion` queda en `null` en `report`: necesita el ciclo de revisión del PR
-  y no hay fuente todavía.
+**Ya no hay paquetes sin pruebas.** `internal/constitution`, `internal/sealed`
+e `internal/ui` tenían cero. Cubren lo que se puede romper en silencio: que
+una constitución ausente no sea un error (todo el mundo la carga al arrancar),
+que el directorio sellado nunca caiga dentro del cuarto, y que `--json` no
+mezcle líneas de texto con el documento.
 
----
+**El fixture de `internal/task/store_test.go` mentía sobre el contrato.**
+Construía `Task` sin `Version`. Pasaba porque `Marshal` omite el cero y es
+`Validate` quien exige el campo, así que guardaba en verde una tarea que
+`Validate` rechaza. Ahora lo pone y verifica que dé la vuelta y valide.
 
 ## Arreglado el 10 septiembre 2026
+
+(La entrada de `--fondo`, al final, se implementó el 10 y se commiteó el 14.)
 
 **La instrumentación medía cero cuando el agente commiteaba solo.**
 `internal/loop` medía cada intento con `git diff --cached ... HEAD` después de
@@ -343,5 +394,12 @@ terminó la tarea en verde.
 - **`standup.Analizar` quiere los latidos EN CRUDO** (`LeerLatidosCrudos`), no
   los filtrados. La diferencia entre latido fresco y rancio es la que separa
   ATASCO de MUERTA; filtrados, las dos se ven igual que un hueco.
+- **El nivel funcional de overlap corre después de la oleada, no antes.** Si
+  lo mueves al arranque mide ramas vacías y no encuentra nada. Y necesita el
+  árbol de `merge-tree` en `Resultado.Arbol`: si alguien deja de devolverlo,
+  el nivel 3 se apaga en silencio.
+- **`report` toca la red.** La fricción pregunta a `gh` por cada PR. Tiene
+  techo de 20 s y degrada a `null`, pero si agregas otro llamador de
+  `metrics.Friccion` acuérdate de que no es una función de cálculo.
 - Los mensajes de error siguen §16.6: minúscula, sin punto final, dicen qué pasó
   y qué hacer.
