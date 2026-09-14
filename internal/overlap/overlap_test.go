@@ -60,12 +60,16 @@ func repoConRamas(t *testing.T, cambioA, cambioB string) (root, ramaA, ramaB str
 // Cada tarea toca su propio archivo: fusión limpia, sin alerta.
 func TestMergeTreeLimpio(t *testing.T) {
 	root, a, b := repoConRamas(t, "src/a.txt=aaa", "docs/b.txt=bbb")
-	conflictos, err := mergeTree(root, a, b)
+	arbol, conflictos, err := mergeTree(root, a, b)
 	if err != nil {
 		t.Fatalf("mergeTree: %v", err)
 	}
 	if len(conflictos) != 0 {
 		t.Errorf("conflictos = %v, quiero ninguno", conflictos)
+	}
+	// el árbol de la fusión limpia es lo que monta el nivel funcional
+	if arbol == "" {
+		t.Error("fusión limpia sin árbol: el nivel funcional se queda sin qué montar")
 	}
 }
 
@@ -73,9 +77,12 @@ func TestMergeTreeLimpio(t *testing.T) {
 // archivo (antes salía "ramaA ↔ ramaB", que no dice nada).
 func TestMergeTreeConflictoRealConRuta(t *testing.T) {
 	root, a, b := repoConRamas(t, "f.txt=version a", "f.txt=version b")
-	conflictos, err := mergeTree(root, a, b)
+	arbol, conflictos, err := mergeTree(root, a, b)
 	if err != nil {
 		t.Fatalf("mergeTree: %v", err)
+	}
+	if arbol != "" {
+		t.Errorf("con conflicto no debe salir árbol utilizable, salió %q", arbol)
 	}
 	if len(conflictos) != 1 || conflictos[0] != "f.txt" {
 		t.Errorf("conflictos = %v, quiero [f.txt]", conflictos)
@@ -86,7 +93,7 @@ func TestMergeTreeConflictoRealConRuta(t *testing.T) {
 // positivo que se veía al arrancar la oleada, antes del primer wip:.
 func TestMergeTreeRamaInexistenteNoEsConflicto(t *testing.T) {
 	root, a, _ := repoConRamas(t, "src/a.txt=aaa", "docs/b.txt=bbb")
-	conflictos, err := mergeTree(root, a, "devclean/T-999")
+	_, conflictos, err := mergeTree(root, a, "devclean/T-999")
 	if err != nil {
 		t.Fatalf("mergeTree: %v", err)
 	}

@@ -64,7 +64,7 @@ func TestRamaInexistenteSigueEnSilencio(t *testing.T) {
 	}
 	_ = os.WriteFile(filepath.Join(root, "x"), []byte("x"), 0o644)
 
-	conflictos, err := mergeTree(root, "no-existe-a", "no-existe-b")
+	_, conflictos, err := mergeTree(root, "no-existe-a", "no-existe-b")
 	if len(conflictos) != 0 {
 		t.Errorf("rama inexistente reportada como conflicto: %v", conflictos)
 	}

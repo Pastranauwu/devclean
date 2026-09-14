@@ -597,6 +597,14 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 	}
 	close(jobs)
 	wg.Wait()
+
+	// §6.9 nivel 3. Va DESPUÉS de la oleada y no antes como los otros
+	// dos: lo que mide es "verdes por separado, rompen juntas", y eso
+	// exige que las dos estén verdes. Antes de correr, las ramas están
+	// vacías y no hay nada que fusionar.
+	for _, a := range checkFuncionalOla(ctx, root, cfg, asignadas, results, alertasOverlap) {
+		out.Line("⚠ SOLAPAMIENTO  %s", a)
+	}
 	return results
 }
 
@@ -611,6 +619,61 @@ func checkOverlapOla(root string, tareas []task.Task) []string {
 			r := overlap.CheckPar(root, a.ID, b.ID, asA, asB)
 			if alert := r.Alerta(); alert != "" {
 				alertas = append(alertas, alert)
+			}
+		}
+	}
+	return alertas
+}
+
+// checkFuncionalOla corre el nivel funcional de §6.9 sobre los pares de
+// la oleada que terminaron verdes: fusiona sus dos ramas en seco y corre
+// las suites de las dos sobre el resultado.
+//
+// Dos filtros, y los dos importan. Solo pares verdes, porque una suite
+// que ya fallaba en su propia rama no dice nada sobre la fusión. Y solo
+// pares sospechosos, porque este es el único nivel que ejecuta código:
+// un par limpio en texto y en símbolos no se merece dos suites.
+//
+// El repaso vuelve a llamar a CheckPar en vez de reusar el de antes de la
+// oleada: aquel corrió contra ramas vacías. Lo que encuentre de nuevo se
+// reporta, salteando lo que ya se dijo al arrancar.
+func checkFuncionalOla(ctx context.Context, root string, cfg config.Config, tareas []task.Task, results []runResult, yaDichas []string) []string {
+	verdes := make(map[string]bool, len(results))
+	for _, r := range results {
+		if r.Estado == "lista" {
+			verdes[r.ID] = true
+		}
+	}
+	dicha := make(map[string]bool, len(yaDichas))
+	for _, a := range yaDichas {
+		dicha[a] = true
+	}
+	timeout := time.Duration(cfg.TimeoutPruebas) * time.Second
+
+	var alertas []string
+	for i, a := range tareas {
+		if !verdes[a.ID] {
+			continue
+		}
+		for _, b := range tareas[i+1:] {
+			if !verdes[b.ID] {
+				continue
+			}
+			asA, _ := loop.ReadAttempts(root, a.ID)
+			asB, _ := loop.ReadAttempts(root, b.ID)
+			r := overlap.CheckPar(root, a.ID, b.ID, asA, asB)
+			if alerta := r.Alerta(); alerta != "" && !dicha[alerta] {
+				alertas = append(alertas, alerta)
+			}
+			if !r.Sospechoso() {
+				continue
+			}
+			rf := overlap.CheckFuncional(ctx, root, r,
+				overlap.Suite{ID: a.ID, ListoCuando: a.ListoCuando},
+				overlap.Suite{ID: b.ID, ListoCuando: b.ListoCuando},
+				timeout)
+			if alerta := rf.Alerta(); alerta != "" {
+				alertas = append(alertas, alerta)
 			}
 		}
 	}

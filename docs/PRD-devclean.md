@@ -260,7 +260,7 @@ Cercana a cero: resolvió el problema. Grande: ajustó al examen. Se detecta sin
 
 ### 6.9 Detección de solapamiento en tres niveles
 
-**Textual y semántico implementados** (`internal/overlap`, alertas en `run`). **El nivel funcional sigue pendiente.**
+**Los tres niveles implementados** (`internal/overlap`, alertas en `run`).
 
 | Nivel | Método | Costo | Cuándo |
 |---|---|---|---|
@@ -269,6 +269,8 @@ Cercana a cero: resolvió el problema. Grande: ajustó al examen. Se detecta sin
 | Funcional | merge en seco + correr las suites de ambas ramas sobre el resultado | alto | solo si textual o semántico marcaron sospecha |
 
 El nivel funcional es el que atrapa el fallo clásico: dos ramas verdes por separado que rompen juntas.
+
+Corre **después** de la oleada y no antes como los otros dos: "verdes por separado" exige que las dos estén verdes, y al arrancar las ramas están vacías. Monta el árbol que `merge-tree` ya escribió en un worktree suelto y detached —sin tocar las ramas de las tareas ni el árbol de trabajo— y corre ahí los dos `listo_cuando`. Un par que no se pudo comprobar lo dice; no se reporta limpio sin haber mirado.
 
 El chequeo 3 de la esclusa de entrada (§6.3) es la versión barata y estática de esto: compara `tocar_solo` declarados antes de que exista una sola línea de código.
 
@@ -459,7 +461,7 @@ Estado al 10 sep 2026. `docs/ESTADO.md` manda sobre esta lista.
 - [x] Cola de integración automática — `ship --integrar` / `up --integrar`
 - [x] Examinador ciego y suite oculta (§6.8) — solo go y python
 - [ ] Mutation score como control del examinador (§6.8)
-- [ ] Detección de solapamiento funcional (§6.9) — textual y semántico ya corren
+- [x] Detección de solapamiento funcional (§6.9) — los tres niveles corren
 - [x] Contratos entre tareas y reglas de dependencia (§6.10)
 - [ ] Duplicación entre ramas (§6.10)
 - [x] Constitución del proyecto (§6.11)

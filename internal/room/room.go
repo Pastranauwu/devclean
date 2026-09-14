@@ -136,7 +136,7 @@ func Create(ctx context.Context, root, id, base string) (Room, error) {
 		return Room{}, err
 	}
 
-	if err := installDeps(ctx, r.Path); err != nil {
+	if err := InstalarDependencias(ctx, r.Path); err != nil {
 		return fail(err)
 	}
 	puerto, err := freePort()
@@ -210,9 +210,13 @@ func freePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-// installDeps installs dependencies per manifest: npm install for
-// package.json, go mod download for go.mod.
-func installDeps(ctx context.Context, path string) error {
+// InstalarDependencias installs dependencies per manifest: npm install
+// for package.json, go mod download for go.mod. Lo usa Create y tambien
+// el nivel funcional de overlap, que monta un arbol fusionado en un
+// worktree suelto y necesita las mismas dependencias para correr las
+// suites: sin node_modules una suite falla por motivos que no son el
+// solapamiento que se esta midiendo.
+func InstalarDependencias(ctx context.Context, path string) error {
 	if exists(filepath.Join(path, "package.json")) {
 		if out, err := run(ctx, path, "npm", "install"); err != nil {
 			return fmt.Errorf("npm install falló en el cuarto · %s", tail(out))
