@@ -1,10 +1,18 @@
 package main
 
 import (
+	"context"
+	"time"
+
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/metrics"
 )
+
+// TimeoutFriccion es el techo de lo que report se permite esperar a gh
+// para medir la fricción. report es un comando de lectura: más vale
+// imprimir "— sin datos" que quedarse colgado contra una red mala.
+const TimeoutFriccion = 20 * time.Second
 
 func newReportCmd() *cobra.Command {
 	return &cobra.Command{
@@ -12,12 +20,12 @@ func newReportCmd() *cobra.Command {
 		Short: "métricas del proyecto",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReport()
+			return runReport(cmd)
 		},
 	}
 }
 
-func runReport() error {
+func runReport(cmd *cobra.Command) error {
 	root, err := projectRoot()
 	if err != nil {
 		return err
@@ -27,6 +35,13 @@ func runReport() error {
 		return err
 	}
 	m := metrics.Calcular(d)
+
+	// la fricción es la única métrica que no sale de los artefactos del
+	// repo: el ciclo de revisión pasa en el PR. Se pregunta a gh y, si no
+	// se puede, queda en null como estaba.
+	ctx, cancel := context.WithTimeout(cmd.Context(), TimeoutFriccion)
+	defer cancel()
+	m.Friccion = metrics.Friccion(ctx, root, d.Entregas)
 
 	historial, err := metrics.LeerHistorial(root)
 	if err != nil {

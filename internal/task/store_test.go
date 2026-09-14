@@ -61,6 +61,7 @@ func TestNextID(t *testing.T) {
 func TestSaveLoadRemove(t *testing.T) {
 	dir := t.TempDir()
 	task := Task{
+		Version:        Version,
 		ID:             "T-001",
 		Titulo:         "algo",
 		ListoCuando:    "make test",
@@ -78,6 +79,14 @@ func TestSaveLoadRemove(t *testing.T) {
 	if loaded.Titulo != "algo" || loaded.ListoCuando != "make test" {
 		t.Errorf("Load = %+v", loaded)
 	}
+	// el contrato exige version y Marshal omite el cero: sin esto el
+	// fixture pasaba en verde guardando una tarea que Validate rechaza.
+	if loaded.Version != Version {
+		t.Errorf("Load().Version = %d, quiero %d", loaded.Version, Version)
+	}
+	if problemas := loaded.Validate(); len(problemas) > 0 {
+		t.Errorf("la tarea guardada no valida: %v", problemas)
+	}
 	if err := Remove(dir, "T-001"); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
@@ -92,7 +101,7 @@ func TestSaveLoadRemove(t *testing.T) {
 func TestList(t *testing.T) {
 	dir := t.TempDir()
 	for _, id := range []string{"T-003", "T-001", "T-002"} {
-		task := Task{ID: id, Titulo: "x", ListoCuando: "true", LimiteIntentos: 3, LimiteLineas: 200}
+		task := Task{Version: Version, ID: id, Titulo: "x", ListoCuando: "true", LimiteIntentos: 3, LimiteLineas: 200}
 		if err := Save(dir, task); err != nil {
 			t.Fatal(err)
 		}

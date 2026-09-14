@@ -26,9 +26,11 @@ type Datos struct {
 	Entregas []Entrega
 }
 
-// Calcular aplica las cinco métricas sobre los artefactos. Friccion no
-// tiene fuente en v0.1 (requiere el ciclo de revisión del PR), así que
-// queda en null; las demás salen de attempts.jsonl y de las entregas.
+// Calcular aplica las cinco métricas sobre los artefactos del repo:
+// attempts.jsonl y las entregas. Friccion NO se llena acá y queda en
+// null: su fuente es el ciclo de revisión del PR, que vive en GitHub y no
+// en el disco. La pone Friccion() aparte, para que esto siga siendo una
+// función pura que no toca la red.
 func Calcular(d Datos) Metricas {
 	m := Metricas{}
 
