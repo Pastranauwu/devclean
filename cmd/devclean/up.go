@@ -12,7 +12,7 @@ func newUpCmd() *cobra.Command {
 	var file string
 	var agentes int
 	var modelo, ejecutor, titulo string
-	var reintentar, entregar, integrar, revisar bool
+	var reintentar, entregar, integrar, revisar, fondo bool
 
 	cmd := &cobra.Command{
 		Use:   `up ["<petición>"]`,
@@ -38,6 +38,13 @@ pregunta solo cuando no puede resolverlo solo.`,
 			root, _, err := entornoListo(entregar || integrar || revisar)
 			if err != nil {
 				return err
+			}
+			// en up el desprendimiento cubre el encadenado completo
+			// (plan, run y la entrega), no solo la corrida: lo que dura
+			// es el conjunto. Va después de preparar el entorno, que es
+			// lo único que puede preguntar.
+			if fondo {
+				return lanzarEnFondo(root)
 			}
 
 			var s spec.Spec
@@ -83,7 +90,7 @@ pregunta solo cuando no puede resolverlo solo.`,
 			if titulo == "" {
 				titulo = s.Feature
 			}
-			if err := runCmd(agentes, ejecutor, modelo, reintentar); err != nil {
+			if err := runCmd(agentes, ejecutor, modelo, reintentar, false); err != nil {
 				return err
 			}
 			if !entregar && !integrar && !revisar {
@@ -103,6 +110,7 @@ pregunta solo cuando no puede resolverlo solo.`,
 	cmd.Flags().BoolVar(&revisar, "revisar", false, "además de entregar, un modelo revisa el diff y deja el informe en el PR")
 	cmd.Flags().BoolVar(&integrar, "integrar", false, "además de revisar, mergea el PR si el revisor no pide cambios")
 	cmd.Flags().StringVar(&titulo, "titulo", "", "título del PR (por defecto, la petición)")
+	cmd.Flags().BoolVar(&fondo, "fondo", false, "desprende todo el encadenado de la terminal y devuelve el control; sigue corriendo si la cierras")
 
 	return cmd
 }

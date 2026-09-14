@@ -46,10 +46,10 @@ TUI.
 
 | Comando | Qué hace |
 |---|---|
-| `up ["<petición>"]` | De una petición a un PR limpio. Prepara el entorno, planea, ejecuta y entrega. |
+| `up ["<petición>"]` | De una petición a un PR limpio. Prepara el entorno, planea, ejecuta y entrega. `--fondo` desprende todo el encadenado de la terminal. |
 | `plan "<texto>"` | Convierte una petición en contratos de tarea; pide aprobación (`--aprobar` la salta). `--export-spec` la vuelca a YAML. |
 | `apply [-f archivo.spec.yml]` | Crea tareas desde una especificación declarativa. `--run` las ejecuta. |
-| `run [--agentes N] [--reintentar]` | Ejecuta las tareas pendientes en paralelo. `--reintentar` revive las detenidas reusando su cuarto. |
+| `run [--agentes N] [--reintentar] [--fondo]` | Ejecuta las tareas pendientes en paralelo. `--reintentar` revive las detenidas y las interrumpidas reusando su cuarto. `--fondo` la desprende de la terminal. |
 | `ship [id] \| ship --todas` | Esclusa de salida y PR. `--dry-run` hace todo menos abrir el PR. |
 | `board` | Tablero por estado. |
 | `ps` | Estado de tareas y cuartos activos, estilo compose. |
@@ -274,6 +274,33 @@ las tres plataformas del release.
 Pruebas: `TestLatidoVivoSoloMientrasLoRefrescan`,
 `TestSinLatidoNoHayCorridaNiInterrupcion`, `TestLatidoSinVistoSeDaPorMuerto`,
 `TestAnalizarDistingueAtascoDeCorridaMuerta`.
+
+**La corrida no sobrevivía a cerrar la terminal.** `run` y `up` eran de primer
+plano: cerrar la terminal les mandaba SIGHUP y se iban con ella, justo en el
+escenario que devclean existe para servir —dejar tareas pesadas e irse.
+
+`--fondo` (en `run` y en `up`) vuelve a arrancar el mismo comando desprendido y
+devuelve el control. Detalles que importan:
+
+- **Se desprende después de preparar el entorno.** La preparación es lo único
+  que puede preguntar, y preguntar sirve mientras el humano sigue ahí. El hijo
+  hereda un `config.yml` ya completo.
+- En `up` cubre el encadenado entero (plan, run y entrega), no solo la corrida.
+- La salida va a `.devclean/corridas/<fecha>.log`. Como stdout deja de ser
+  terminal, `esTUI()` cae a texto plano solo, sin tocar nada.
+- `sinFondo` quita la bandera al relanzar. Sin eso el hijo se desprende otra
+  vez, y otra, para siempre — por eso tiene prueba propia.
+- Unix usa `Setsid`; Windows, `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` en
+  archivos con etiqueta de build. Las seis plataformas del release compilan.
+
+Parar es `kill <pid>`, y retomar `run --reintentar` — que funciona justo por el
+arreglo del latido de arriba: sin él, matar una corrida desprendida dejaba la
+tarea atascada para siempre.
+
+Pruebas: `TestSinFondoQuitaLaBanderaYNadaMas`, `TestDesprenderPideSesionPropia`.
+Verificado en vivo: corrida lanzada con `--fondo`, SIGHUP a la sesión de la
+terminal, la corrida sobrevivió (sesión propia, sin tty, reparentada a init) y
+terminó la tarea en verde.
 
 ---
 

@@ -125,7 +125,7 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 		if agentes < 1 {
 			agentes = 1
 		}
-		return s, runCmd(agentes, "", "", false)
+		return s, runCmd(agentes, "", "", false, false)
 	}
 
 	out.Line("\n· corre devclean run (o devclean up) para ejecutarlas en paralelo")

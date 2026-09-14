@@ -120,6 +120,7 @@ agentes hablen entre sí.
 | Comando | Qué hace |
 |---|---|
 | `up "<petición>" [--agentes N] [--ship\|--revisar\|--integrar]` | Todo: configura, planea, ejecuta y entrega. |
+| `up … --fondo` / `run --fondo` | Desprende la corrida de la terminal y te devuelve el control. Sigue corriendo si la cierras. |
 | `plan "<petición>"` | Solo planea. Muestra las tareas propuestas y las crea si apruebas. |
 | `run [--agentes N] [--reintentar]` | Ejecuta las tareas pendientes en paralelo. `--reintentar` revive las detenidas reusando su cuarto. |
 | `ship T-001` / `ship --todas` | Esclusa de salida y PR. `--dry-run` hace todo menos abrir el PR. |
@@ -138,6 +139,27 @@ agentes hablen entre sí.
 
 Todos aceptan `--plain` (una línea por evento) y `--json`. Sin ellos y en
 terminal, usan la interfaz interactiva.
+
+### Dejarlo trabajando y volver
+
+Una tarea de agente dura lo que dura. Con `--fondo` la corrida se desprende de
+la terminal y puedes cerrarla:
+
+```
+devclean up "migra la API a la versión 2" --agentes 4 --ship --fondo
+corriendo en segundo plano · pid 41287
+registro · .devclean/corridas/2026-09-10T18-02-29.log
+avance · devclean board · en vivo · tail -f .devclean/corridas/…
+parar · kill 41287 · retomar después · devclean run --reintentar
+```
+
+Las preguntas de configuración se hacen **antes** de desprenderse, mientras
+sigues ahí; después nadie necesita terminal.
+
+Al volver, `devclean board` te dice en qué va. Si la corrida murió de verdad
+—suspendiste la laptop, se cayó el ssh— el tablero lo dice (`interrumpida · sin
+señal hace X`) en vez de fingir que sigue viva, y `devclean run --reintentar`
+la retoma reusando el cuarto y el trabajo parcial que quedó dentro.
 
 ### Cuando algo falla
 
@@ -214,6 +236,41 @@ tarea*): `tocar_solo`, `no_tocar`, `depende_de`, `expone`, `usa`, `peso`,
 `agente`, `limite_intentos`, `limite_lineas` y `notas` (el enfoque que
 recibe el agente en cada intento). Las `reglas` globales se anteponen a
 las `notas` de cada tarea al aplicar.
+
+### Plantilla vacía
+
+Copia esto a `devclean.spec.yml` en la raíz del repo y llénalo. Tal cual
+—sin llenar— ya parsea: sirve de esqueleto. Los campos que se dejen vacíos
+o en `0` toman su valor por defecto; borra los que no uses.
+
+```yaml
+version: 1                            # obligatorio
+feature: ""                           # qué se construye · es el título del PR
+agentes: 1                            # tareas en paralelo · el flag --agentes gana
+ship: false                           # true = al terminar abre el PR
+agente: ""                            # arquetipo por defecto de las tareas
+limites: { intentos: 3, lineas: 200 } # topes por defecto de cada tarea
+reglas: []                            # se anteponen a las notas de CADA tarea
+tasks:
+  - id: ""                            # lo asigna devclean si lo dejas vacío
+    titulo: ""                        # OBLIGATORIO
+    porque: ""                        # para qué · lo lee el revisor
+    listo_cuando: ""                  # OBLIGATORIO · comando que falla hoy y pasa al terminar
+    tocar_solo: []                    # globs que el agente puede editar
+    no_tocar: []                      # globs prohibidos
+    depende_de: []                    # ids que deben estar verdes antes
+    expone: []                        # firmas que otras tareas consumen
+    usa: []                           # firmas de otras tareas, copiadas igual
+    riesgos: ""                       # qué se puede romper
+    peso: ""                          # liviana | media | pesada → elige modelo
+    agente: ""                        # arquetipo o agente de config.yml
+    limite_intentos: 0                # 0 = hereda de limites
+    limite_lineas: 0                  # 0 = hereda de limites
+    notas: ""                         # el enfoque · se inyecta en el prompt de cada intento
+```
+
+Un campo que no esté en esta lista es un error de parseo, no un campo
+ignorado: `devclean apply --dry-run` te dice el número de línea.
 
 | Comando | Qué hace |
 |---|---|

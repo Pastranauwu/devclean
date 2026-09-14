@@ -47,28 +47,37 @@ func newRunCmd() *cobra.Command {
 	var ejecutor string
 	var modelo string
 	var reintentar bool
+	var fondo bool
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "ejecuta las tareas pendientes en paralelo",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCmd(agentes, ejecutor, modelo, reintentar)
+			return runCmd(agentes, ejecutor, modelo, reintentar, fondo)
 		},
 	}
 	cmd.Flags().IntVar(&agentes, "agentes", 1, "tareas en paralelo")
 	cmd.Flags().StringVar(&ejecutor, "ejecutor", "", "opencode o claude (por defecto, el primero disponible)")
 	cmd.Flags().StringVar(&modelo, "modelo", "", "modelo del ejecutor (por defecto, el suyo)")
 	cmd.Flags().BoolVar(&reintentar, "reintentar", false, "vuelve a correr también las tareas detenidas, reusando su cuarto")
+	cmd.Flags().BoolVar(&fondo, "fondo", false, "desprende la corrida de la terminal y devuelve el control; sigue corriendo si la cierras")
 	return cmd
 }
 
-func runCmd(agentes int, ejecutor, modelo string, reintentar bool) error {
+func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error {
 	if agentes < 1 {
 		return errors.New("--agentes inválido · mínimo 1")
 	}
 	root, cfg, err := entornoListo(false)
 	if err != nil {
 		return err
+	}
+	// desprenderse DESPUÉS de preparar el entorno: la preparación es lo
+	// único que puede preguntar, y preguntar sirve mientras el humano
+	// sigue frente a la terminal. El hijo hereda el config.yml ya
+	// completo y no necesita contestar nada.
+	if fondo {
+		return lanzarEnFondo(root)
 	}
 	constitucion, err := constitution.Load(root)
 	if err != nil {

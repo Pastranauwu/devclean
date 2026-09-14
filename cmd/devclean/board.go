@@ -219,5 +219,5 @@ func reintentarTarea(root, id string) error {
 		return err
 	}
 	out.Line("· %s vuelve a la cola · se reusa su cuarto y su trabajo parcial", id)
-	return runCmd(1, "", "", true)
+	return runCmd(1, "", "", true, false)
 }
