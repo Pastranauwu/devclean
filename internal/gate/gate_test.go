@@ -180,6 +180,11 @@ func TestGlobsOverlap(t *testing.T) {
 		{"src/*", "src/x", true},
 		{"docs/**", "src/**", false},
 		{"a.go", "b.go", false},
+		{"**/*.tsx", "package-lock.json", false},
+		{"**/*.json", "package-lock.json", true},
+		{"**/*.ts", "migrations/**", true},
+		{"**/*.ts", "CHANGELOG*", true},
+		{"internal/**/x.go", "internal/y.go", false},
 	}
 	for _, tc := range cases {
 		if got := globsOverlap(tc.a, tc.b); got != tc.want {

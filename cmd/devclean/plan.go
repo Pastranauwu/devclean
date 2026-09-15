@@ -118,6 +118,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 	if err != nil {
 		return err
 	}
+	traducirDependencias(borradores, ids)
 	props := make([]propuesta, len(borradores))
 	for i, b := range borradores {
 		props[i] = propuesta{
@@ -407,6 +408,16 @@ func idsCorrelativos(dir string, n int) ([]string, error) {
 		ids[i] = fmt.Sprintf("T-%03d", num+i)
 	}
 	return ids, nil
+}
+
+// traducirDependencias pasa depende_de de la numeración del planificador
+// a los ids reales. El modelo no sabe qué ids existen y numera su plan
+// desde T-001; sin traducir, con tareas previas en el repo todo el plan
+// quedaba colgado de tareas ajenas y "bloqueada · depende de T-001".
+func traducirDependencias(bs []plan.Borrador, ids []string) {
+	for i := range bs {
+		bs[i].DependeDe = task.DependenciasPorPosicion(bs[i].DependeDe, ids)
+	}
 }
 
 // confirmar pregunta s/n y devuelve si el usuario aprobó.

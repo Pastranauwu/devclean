@@ -288,8 +288,18 @@ func globsOverlap(a, b string) bool {
 	if ok, _ := path.Match(b, a); ok {
 		return true
 	}
+	// cabeza y cola literales tienen que ser compatibles las dos: con solo
+	// la cabeza, "**/*.tsx" (cabeza vacía) se cruzaba con todo, incluso
+	// con package-lock.json
 	ha, hb := literalHead(a), literalHead(b)
-	return strings.HasPrefix(ha, hb) || strings.HasPrefix(hb, ha)
+	ta, tb := literalTail(a), literalTail(b)
+	return (strings.HasPrefix(ha, hb) || strings.HasPrefix(hb, ha)) &&
+		(strings.HasSuffix(ta, tb) || strings.HasSuffix(tb, ta))
+}
+
+// literalTail returns the pattern after its last wildcard.
+func literalTail(p string) string {
+	return p[strings.LastIndexAny(p, "*?]")+1:]
 }
 
 // dirPrefix returns the directory a pattern covers when it ends in

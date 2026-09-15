@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -8,9 +9,11 @@ import (
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/task"
+	"github.com/Pastranauwu/devclean/internal/ui"
 )
 
 func TestSanearAlcance(t *testing.T) {
+	out = ui.New(io.Discard, false) // sin printer, sanearAlcance revienta al avisar
 	zonas, patrones := zonasYPatrones(config.Config{})
 	bs := []plan.Borrador{
 		{Titulo: "init go", TocarSolo: []string{"go.mod", "go.sum", "Makefile"}},
@@ -55,6 +58,25 @@ func TestIdsCorrelativosVacio(t *testing.T) {
 	}
 	if ids[0] != "T-001" {
 		t.Errorf("primer id = %s, quiero T-001", ids[0])
+	}
+}
+
+// con T-001 y T-002 ya en el repo, el plan arranca en T-003: su "T-001"
+// es la T-003 real, no la vieja
+func TestTraducirDependencias(t *testing.T) {
+	bs := []plan.Borrador{
+		{Titulo: "base"},
+		{Titulo: "mac", DependeDe: []string{"T-001"}},
+		{Titulo: "wol", DependeDe: []string{"T-001", "2"}},
+		{Titulo: "ajena", DependeDe: []string{"T-099"}},
+	}
+	traducirDependencias(bs, []string{"T-003", "T-004", "T-005", "T-006"})
+	got := [][]string{bs[1].DependeDe, bs[2].DependeDe, bs[3].DependeDe}
+	want := [][]string{{"T-003"}, {"T-003", "T-004"}, {"T-099"}}
+	for i := range want {
+		if strings.Join(got[i], ",") != strings.Join(want[i], ",") {
+			t.Errorf("tarea %d: depende_de = %v, quiero %v", i+1, got[i], want[i])
+		}
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/Pastranauwu/devclean/internal/kv"
@@ -74,6 +75,26 @@ type Task struct {
 
 // ValidID reports whether id has the contract format.
 func ValidID(id string) bool { return idPattern.MatchString(id) }
+
+// DependenciasPorPosicion traduce dependencias escritas por posición en
+// una lista ("T-001" o "1" = la primera) a los ids reales de esa lista.
+// Quien escribe un plan o un spec no sabe qué ids le van a tocar: con
+// tareas previas en el repo, su "T-001" es ids[0], no la T-001 vieja. Lo
+// que no cae dentro de la lista queda tal cual.
+func DependenciasPorPosicion(deps, ids []string) []string {
+	if deps == nil {
+		return nil
+	}
+	out := make([]string, len(deps))
+	for i, d := range deps {
+		out[i] = d
+		n, err := strconv.Atoi(strings.TrimPrefix(strings.ToUpper(strings.TrimSpace(d)), "T-"))
+		if err == nil && n >= 1 && n <= len(ids) {
+			out[i] = ids[n-1]
+		}
+	}
+	return out
+}
 
 // NombreDeFirma reduce una firma de `expone`/`usa` al identificador que
 // tiene que aparecer sí o sí en el código: "wol.Send(mac string) error"
