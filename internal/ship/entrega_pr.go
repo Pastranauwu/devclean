@@ -156,8 +156,15 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 		apuntar(Paso{"rama de entrega", false, tail(out)})
 		return e
 	}
+	local := sinRemoto(o.Root)
 	defer func() {
 		if !e.Aprobado || o.DryRun {
+			return
+		}
+		if local && !e.Integrado {
+			// la rama ES el PR local: se quita solo la carpeta, para que
+			// la rama pueda revisarse o mergearse desde el repo
+			_, _ = gitRun(o.Root, "worktree", "remove", "--force", path)
 			return
 		}
 		_ = limpiarEntrega(o.Root, path)
@@ -212,7 +219,12 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 		e.Aprobado = true
 		return e
 	}
-	url, err := abrirPREntrega(ctx, o.Root, path, o.Base, titulo, cuerpo)
+	var url string
+	if local {
+		url, err = abrirPRLocal(o.Root, RamaEntrega, o.Base, titulo, cuerpo)
+	} else {
+		url, err = abrirPREntrega(ctx, o.Root, path, o.Base, titulo, cuerpo)
+	}
 	if err != nil {
 		apuntar(Paso{"pr", false, err.Error()})
 		return e
@@ -232,11 +244,15 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	}
 
 	if o.Integrar {
-		if err := mergearPR(ctx, o.Root, path, o.Base, url); err != nil {
+		integrar, como := func() error { return mergearPR(ctx, o.Root, path, o.Base, url) }, "mergeado por rebase · un commit por tarea"
+		if local {
+			integrar, como = func() error { return integrarLocal(ctx, o.Root, path, o.Base) }, "fast-forward local · un commit por tarea"
+		}
+		if err := integrar(); err != nil {
 			apuntar(Paso{"integrar en " + o.Base, false, err.Error()})
 			return e
 		}
-		apuntar(Paso{"integrar en " + o.Base, true, "mergeado por rebase · un commit por tarea"})
+		apuntar(Paso{"integrar en " + o.Base, true, como})
 		e.Integrado = true
 	}
 
@@ -265,7 +281,11 @@ func revisarEntrega(ctx context.Context, o OpcionesEntrega, path, target, url st
 		apuntar(Paso{"revisión", false, err.Error() + " · el PR queda abierto sin revisar"})
 		return false, false
 	}
-	if err := comentarPR(ctx, o.Root, url, informe); err != nil {
+	comentar := func() error { return comentarPR(ctx, o.Root, url, informe) }
+	if sinRemoto(o.Root) {
+		comentar = func() error { return comentarPRLocal(o.Root, RamaEntrega, informe) }
+	}
+	if err := comentar(); err != nil {
 		// el informe es el producto de la revisión: si no llega al PR,
 		// quien aprueba no lo va a ver
 		apuntar(Paso{"revisión", false, "no se pudo publicar el informe en el PR · " + err.Error()})
@@ -526,10 +546,11 @@ func realinearConBase(ctx context.Context, root, path, base string) error {
 		}
 		return fmt.Errorf("no se pudo rebasear sobre %s · %s", target, tail(salida))
 	}
+	if sinRemoto(root) {
+		return nil // PR local: no hay a dónde subirla
+	}
 	if salida, err := gitRun(path, "push", "--force", "origin", RamaEntrega); err != nil {
 		return fmt.Errorf("no se pudo subir la rama realineada · %s", tail(salida))
-	} else {
-		_ = salida
 	}
 	return nil
 }

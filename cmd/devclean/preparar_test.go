@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -123,20 +122,12 @@ func TestCommitInicialPreguntaSiHayArchivosAjenos(t *testing.T) {
 	}
 }
 
+// Sin remoto el PR es local: no se pide origin ni gh, y la entrega sigue.
 func TestPrepararEntregaSinRemoto(t *testing.T) {
 	root := repoTemporal(t)
 	out = ui.New(io.Discard, false)
-	if _, err := exec.LookPath("gh"); err != nil {
-		t.Skip("sin gh")
-	}
-	if err := prepararEntrega(root, nil); err == nil || !strings.Contains(err.Error(), "origin") {
-		t.Errorf("sin remoto y sin terminal debió cortar pidiendo origin, dio: %v", err)
-	}
-	if err := prepararEntrega(root, lector("git@example.com:x/y.git\n")); err != nil {
-		t.Fatalf("con url: %v", err)
-	}
-	if _, err := gitEn(root, "remote", "get-url", "origin"); err != nil {
-		t.Error("no agregó el remoto")
+	if err := prepararEntrega(root); err != nil {
+		t.Errorf("sin remoto la entrega es local, no un error: %v", err)
 	}
 }
 

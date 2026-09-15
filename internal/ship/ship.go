@@ -178,7 +178,13 @@ func Run(ctx context.Context, o Opciones) Resultado {
 		res.Aprobado = true
 		return res
 	}
-	url, err := abrirPR(ctx, o.Root, o.Room, o.Base, o.Task.Titulo, cuerpo)
+	var url string
+	if sinRemoto(o.Root) {
+		// la rama se queda con su cuarto: es lo que se revisa y se mergea
+		url, err = abrirPRLocal(o.Root, o.Room.Rama, o.Base, o.Task.Titulo, cuerpo)
+	} else {
+		url, err = abrirPR(ctx, o.Root, o.Room, o.Base, o.Task.Titulo, cuerpo)
+	}
 	if err != nil {
 		apuntar(Paso{"pr", false, err.Error()})
 		return res

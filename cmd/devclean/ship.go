@@ -165,7 +165,18 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 	if opciones.Revisor != nil {
 		out.Line("· el informe del revisor está en el PR · la aprobación es tuya")
 	}
+	siguientePasoLocal(e.PR, e.Rama, cfg.Base)
 	return nil
+}
+
+// siguientePasoLocal dice cómo revisar e integrar un PR local, que no
+// tiene una página donde darle "merge".
+func siguientePasoLocal(pr, rama, base string) {
+	if !strings.HasPrefix(pr, ship.PRLocal) {
+		return
+	}
+	out.Line("· revisa · git log -p %s..%s", base, rama)
+	out.Line("· integra · git merge --ff-only %s", rama)
 }
 
 // revisorAgente adapta el ejecutor al generador de texto del revisor,
@@ -281,6 +292,7 @@ func runShip(id string, dryRun bool) error {
 			out.Line("entregable · --dry-run, sin PR")
 		} else {
 			out.Line("entregado · %s", res.PR)
+			siguientePasoLocal(res.PR, r.Rama, cfg.Base)
 		}
 		return nil
 	}
@@ -302,6 +314,7 @@ func runShip(id string, dryRun bool) error {
 		out.Line("entregable · --dry-run, sin PR")
 	} else {
 		out.Line("entregado · %s", res.PR)
+		siguientePasoLocal(res.PR, r.Rama, cfg.Base)
 	}
 	return nil
 }

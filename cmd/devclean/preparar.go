@@ -180,7 +180,7 @@ func prepararEntorno(cwd string, in io.Reader, entregar bool) (string, config.Co
 
 	// 8. entrega: fallar acá, antes de gastar un token, no al final
 	if entregar {
-		if err := prepararEntrega(root, lector); err != nil {
+		if err := prepararEntrega(root); err != nil {
 			return "", config.Config{}, err
 		}
 	}
@@ -249,26 +249,17 @@ func instalarEjecutor(lector *bufio.Reader) (executor.Executor, error) {
 	return ex, nil
 }
 
-// prepararEntrega verifica lo que `ship` necesita: gh y un remoto origin.
-// Sin remoto, en terminal lo pide; si no, corta con la instrucción.
-func prepararEntrega(root string, lector *bufio.Reader) error {
-	if _, err := exec.LookPath("gh"); err != nil {
-		return errors.New("--ship necesita gh para abrir el PR · instálalo (https://cli.github.com) o corre sin --ship")
-	}
-	if _, err := gitEn(root, "remote", "get-url", "origin"); err == nil {
+// prepararEntrega verifica lo que `ship` necesita. Sin remoto origin el PR
+// es local (rama + descripción en .devclean/pr/) y no hace falta nada más;
+// con remoto, gh abre el PR y tiene que estar instalado.
+func prepararEntrega(root string) error {
+	if _, err := gitEn(root, "remote", "get-url", "origin"); err != nil {
+		out.Line("· sin remoto origin · el PR queda local: la rama y su descripción en .devclean/pr/")
 		return nil
 	}
-	if lector == nil {
-		return errors.New("--ship necesita un remoto origin · git remote add origin <url>, o corre sin --ship")
+	if _, err := exec.LookPath("gh"); err != nil {
+		return errors.New("--ship necesita gh para abrir el PR en origin · instálalo (https://cli.github.com) o corre sin --ship")
 	}
-	url := preguntar(lector, "sin remoto origin · url del repositorio (enter para correr sin entregar):")
-	if url == "" {
-		return errors.New("sin remoto origin · corre sin --ship o agrégalo con git remote add origin <url>")
-	}
-	if salida, err := gitEn(root, "remote", "add", "origin", url); err != nil {
-		return fmt.Errorf("no se pudo agregar el remoto · %s", strings.TrimSpace(salida))
-	}
-	out.Line("· remoto origin: %s", url)
 	return nil
 }
 
