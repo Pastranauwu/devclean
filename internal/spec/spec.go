@@ -314,7 +314,14 @@ func parseTaskChunk(chunk []string, lineNum int) (task.Task, error) {
 		return buildTaskFromMap(m, lineNum)
 	}
 
-	// Caso 2: bloque de pares clave-valor
+	// Caso 2: la forma rápida, "- enviar magic packet por udp". La tarea es
+	// solo su titulo; lo demás lo completa el planificador al aplicar.
+	if len(chunk) == 1 && contentFirst != "" && !empiezaConCampo(contentFirst) {
+		t.Titulo = kv.Unquote(contentFirst)
+		return t, nil
+	}
+
+	// Caso 3: bloque de pares clave-valor
 	var kvLines []string
 	if contentFirst != "" {
 		kvLines = append(kvLines, contentFirst)
@@ -373,6 +380,21 @@ func parseTaskChunk(chunk []string, lineNum int) (task.Task, error) {
 	}
 
 	return t, nil
+}
+
+// camposTarea son las claves que acepta una tarea del spec.
+var camposTarea = map[string]bool{
+	"id": true, "titulo": true, "porque": true, "listo_cuando": true,
+	"tocar_solo": true, "no_tocar": true, "depende_de": true, "expone": true,
+	"usa": true, "limite_intentos": true, "limite_lineas": true, "riesgos": true,
+	"peso": true, "agente": true, "notas": true,
+}
+
+// empiezaConCampo distingue "titulo: x" de un titulo suelto que lleva dos
+// puntos, como "fix: login con tildes".
+func empiezaConCampo(linea string) bool {
+	clave, _, ok := strings.Cut(linea, ":")
+	return ok && camposTarea[strings.TrimSpace(clave)]
 }
 
 func buildTaskFromMap(m map[string]string, lineNum int) (task.Task, error) {
@@ -452,6 +474,19 @@ func AssignCorrelativeIDs(tasksDir string, tasks []task.Task) ([]task.Task, erro
 		for _, idx := range needID {
 			out[idx].ID = fmt.Sprintf("T-%03d", nextNum)
 			nextNum++
+		}
+	}
+
+	// sin un solo id escrito, quien armó el spec no pudo saber qué ids le
+	// iban a tocar: su "T-001" es la primera tarea DEL SPEC, no la T-001
+	// que ya hubiera en el repo
+	if len(needID) == len(out) {
+		ids := make([]string, len(out))
+		for i := range out {
+			ids[i] = out[i].ID
+		}
+		for i := range out {
+			out[i].DependeDe = task.DependenciasPorPosicion(out[i].DependeDe, ids)
 		}
 	}
 

@@ -64,6 +64,20 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 		return spec.Spec{}, fmt.Errorf("error al leer %s: %w", filePath, err)
 	}
 
+	if n := contarSinContrato(s.Tasks); n > 0 {
+		if dryRun {
+			// en seco no se gastan tokens: se marca lo que completará la IA
+			out.Line("· %d tareas sin contrato completo · el planificador las completa al aplicar", n)
+			for i := range s.Tasks {
+				if strings.TrimSpace(s.Tasks[i].ListoCuando) == "" {
+					s.Tasks[i].ListoCuando = "(lo completa el planificador)"
+				}
+			}
+		} else if err := completarSpec(root, &s); err != nil {
+			return spec.Spec{}, fmt.Errorf("no se pudo completar %s: %w", filepath.Base(filePath), err)
+		}
+	}
+
 	tasksDir := config.TasksDir(root)
 	applied, err := spec.Apply(tasksDir, s, dryRun)
 	if err != nil {

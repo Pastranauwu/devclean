@@ -130,6 +130,54 @@ func TestAssignCorrelativeIDs(t *testing.T) {
 	}
 }
 
+// La forma rápida: una línea por tarea, mezclable con tareas completas.
+// Un titulo con dos puntos sigue siendo titulo.
+func TestParseSpecRapido(t *testing.T) {
+	s, err := Parse([]byte(`feature: wake on lan
+tareas:
+  - enviar magic packet por udp
+  - "fix: login con tildes"
+  - titulo: guardar la mac
+    listo_cuando: go test ./internal/store/...
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(s.Tasks) != 3 {
+		t.Fatalf("tareas = %d, quiero 3", len(s.Tasks))
+	}
+	if s.Tasks[0].Titulo != "enviar magic packet por udp" || s.Tasks[0].ListoCuando != "" {
+		t.Errorf("t0 = %+v", s.Tasks[0])
+	}
+	if s.Tasks[1].Titulo != "fix: login con tildes" {
+		t.Errorf("t1 titulo = %q", s.Tasks[1].Titulo)
+	}
+	if s.Tasks[2].ListoCuando != "go test ./internal/store/..." {
+		t.Errorf("t2 = %+v", s.Tasks[2])
+	}
+}
+
+// Con T-001 y T-002 ya en el repo y un spec sin ids, su "T-001" es su
+// primera tarea (T-003), no la vieja.
+func TestAssignCorrelativeIDsDependenciasPorPosicion(t *testing.T) {
+	dir := t.TempDir()
+	for _, id := range []string{"T-001", "T-002"} {
+		if err := task.Save(dir, task.Task{Version: 1, ID: id, Titulo: "vieja", ListoCuando: "true", LimiteIntentos: 1, LimiteLineas: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := AssignCorrelativeIDs(dir, []task.Task{
+		{Titulo: "base"},
+		{Titulo: "encima", DependeDe: []string{"T-001"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].ID != "T-003" || !reflect.DeepEqual(got[1].DependeDe, []string{"T-003"}) {
+		t.Errorf("ids %s,%s · depende_de %v · quiero T-003,T-004 · [T-003]", got[0].ID, got[1].ID, got[1].DependeDe)
+	}
+}
+
 func TestApplyYDryRun(t *testing.T) {
 	dir := t.TempDir()
 	tasksDir := filepath.Join(dir, ".devclean", "tasks")

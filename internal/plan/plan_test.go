@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/task"
 )
 
 type generadorFijo struct {
@@ -204,5 +205,26 @@ func TestPromptPideLasPruebasEnAlcanceSinExaminador(t *testing.T) {
 	sin := Prompt("algo", Contexto{Lenguaje: "go"})
 	if strings.Contains(sin, "las pruebas las escribe la propia tarea") {
 		t.Error("con examinador ciego el implementador NO escribe las pruebas")
+	}
+}
+
+// Completar no reparte: un modelo que devuelve otra cantidad de contratos
+// desalinearía cada tarea con el de su vecina.
+func TestCompletarExigeUnoPorTarea(t *testing.T) {
+	tareas := []task.Task{{ID: "T-003", Titulo: "a"}, {ID: "T-004", Titulo: "b"}}
+	uno := `[{"titulo":"a","listo_cuando":"go test ./a"}]`
+	if _, err := Completar(context.Background(), generadorFijo{texto: uno}, Contexto{}, "", nil, tareas); err == nil {
+		t.Fatal("1 contrato para 2 tareas debió fallar")
+	}
+	dos := `[{"titulo":"a","listo_cuando":"go test ./a"},{"titulo":"b","listo_cuando":"go test ./b"}]`
+	bs, err := Completar(context.Background(), generadorFijo{texto: dos}, Contexto{}, "", nil, tareas)
+	if err != nil || len(bs) != 2 {
+		t.Fatalf("Completar = %v, %v", bs, err)
+	}
+	p := PromptCompletar("wol", []string{"sin dependencias"}, tareas, Contexto{})
+	for _, want := range []string{"exactamente 2", "1. T-003 · a", "2. T-004 · b", "sin dependencias", "\"T-003\""} {
+		if !strings.Contains(p, want) {
+			t.Errorf("el prompt no contiene %q", want)
+		}
 	}
 }

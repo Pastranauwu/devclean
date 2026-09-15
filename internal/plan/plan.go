@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/task"
 )
 
 // Borrador es una tarea propuesta por el planificador, antes de asignarle
@@ -121,14 +122,59 @@ type Contexto struct {
 // array JSON de contratos sale. El contexto del repo se inyecta para
 // que el modelo use el lenguaje y el comando de pruebas reales.
 func Prompt(frase string, c Contexto) string {
+	return prompt("Eres el planificador de devclean. Parte esta petición en tareas independientes, pequeñas y verificables:\n\n", "\""+frase+"\"\n\n", c)
+}
+
+// PromptCompletar pide el contrato de tareas que el humano ya decidió en
+// un spec rápido. El planificador no reparte: escribe listo_cuando,
+// alcance, dependencias y firmas de exactamente esas tareas, en ese orden.
+func PromptCompletar(feature string, reglas []string, tareas []task.Task, c Contexto) string {
+	n := len(tareas)
+	intro := fmt.Sprintf("Eres el planificador de devclean. El humano ya decidió estas %d tareas; tu trabajo es escribir su contrato. "+
+		"NO partas, juntes, quites ni agregues tareas: devuelve exactamente %d, en este mismo orden y con el mismo \"titulo\". "+
+		"Si una tarea ya trae un campo, cópialo tal cual.\n\n", n, n)
+
+	var p strings.Builder
+	if feature != "" {
+		fmt.Fprintf(&p, "Feature: %s\n", feature)
+	}
+	for _, r := range reglas {
+		fmt.Fprintf(&p, "Regla para todas: %s\n", r)
+	}
+	p.WriteString("Tareas:\n")
+	for i, t := range tareas {
+		fmt.Fprintf(&p, "%d. %s · %s", i+1, t.ID, t.Titulo)
+		if t.ListoCuando != "" {
+			fmt.Fprintf(&p, " · listo_cuando: %s", t.ListoCuando)
+		}
+		if len(t.TocarSolo) > 0 {
+			fmt.Fprintf(&p, " · tocar_solo: %s", strings.Join(t.TocarSolo, ", "))
+		}
+		if len(t.DependeDe) > 0 {
+			fmt.Fprintf(&p, " · depende_de: %s", strings.Join(t.DependeDe, ", "))
+		}
+		if t.Notas != "" {
+			fmt.Fprintf(&p, " · notas: %s", t.Notas)
+		}
+		p.WriteString("\n")
+	}
+	if n > 0 {
+		fmt.Fprintf(&p, "En \"depende_de\" usa los ids de esta lista (ej. \"%s\").\n\n", tareas[0].ID)
+	}
+	return prompt(intro, p.String(), c)
+}
+
+// prompt arma la instrucción común a planear y a completar: qué se pide,
+// el contexto del repo y el formato de cada contrato.
+func prompt(intro, peticion string, c Contexto) string {
 	var b strings.Builder
-	b.WriteString("Eres el planificador de devclean. Parte esta petición en tareas independientes, pequeñas y verificables:\n\n")
+	b.WriteString(intro)
 	if c.Constitucion != "" {
 		b.WriteString("Constitución del proyecto (convenciones establecidas que el plan debe respetar):\n")
 		b.WriteString(c.Constitucion)
 		b.WriteString("\n\n")
 	}
-	b.WriteString("\"" + frase + "\"\n\n")
+	b.WriteString(peticion)
 	b.WriteString(contextoPrompt(c))
 	b.WriteString("\n\nDevuelve SOLO un array JSON, sin texto alrededor, con estos campos por tarea:\n")
 	b.WriteString("- \"titulo\": frase corta en minúscula\n")
@@ -138,6 +184,7 @@ func Prompt(frase string, c Contexto) string {
 	b.WriteString("  · Por eso no sirve el comando de pruebas del proyecto tal cual si la suite ya está verde (`npm test`, `go test ./...`, `pytest`): acótalo a lo que esta tarea va a crear — el archivo de prueba, el módulo o el paquete que todavía no existe.\n")
 	b.WriteString("  · Ejemplos que fallan hoy porque el destino no existe: \"go test ./internal/wol/...\", \"node --test test/validator.test.js\", \"pytest tests/test_wol.py\", \"npm test -- validator\".\n")
 	b.WriteString("- \"tocar_solo\": array de globs de archivos que la tarea puede tocar\n")
+	b.WriteString("  · dos tareas NUNCA comparten un archivo en \"tocar_solo\": corren en paralelo y chocan al integrar. Si varias necesitan el mismo (go.mod, package.json, un router), lo toca solo una y las demás la ponen en \"depende_de\".\n")
 	if c.PruebasPropias {
 		b.WriteString("  · en este proyecto las pruebas las escribe la propia tarea: si el \"listo_cuando\" apunta a un archivo de prueba, ESE archivo tiene que estar también en \"tocar_solo\", o nadie podrá crearlo.\n")
 	}
@@ -248,6 +295,24 @@ func Generar(ctx context.Context, g Generador, c Contexto, frase string) ([]Borr
 		return nil, err
 	}
 	return Parse(texto)
+}
+
+// Completar pide los contratos de las tareas de un spec rápido y exige
+// uno por tarea: un modelo que reparte o se salta una desalinea todo lo
+// que viene después.
+func Completar(ctx context.Context, g Generador, c Contexto, feature string, reglas []string, tareas []task.Task) ([]Borrador, error) {
+	texto, err := g.Generar(ctx, PromptCompletar(feature, reglas, tareas, c))
+	if err != nil {
+		return nil, err
+	}
+	bs, err := Parse(texto)
+	if err != nil {
+		return nil, err
+	}
+	if len(bs) != len(tareas) {
+		return nil, fmt.Errorf("el modelo devolvió %d contratos para %d tareas · vuelve a intentarlo", len(bs), len(tareas))
+	}
+	return bs, nil
 }
 
 // Límites del presupuesto que propone el planificador. Es un modelo:

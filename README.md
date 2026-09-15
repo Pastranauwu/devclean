@@ -38,7 +38,7 @@ go install github.com/Pastranauwu/devclean/cmd/devclean@latest
 **devclean no trae ningún modelo.** Dirige un CLI de agente que ya tienes
 instalado y pagas: [Claude Code](https://docs.anthropic.com/claude-code)
 (`claude`) u [OpenCode](https://opencode.ai) (`opencode`). Necesitas al menos
-uno instalado y logueado, y `git`. Para abrir PRs, además `gh`.
+uno instalado y logueado, y `git`. Para abrir PRs en GitHub, además `gh`; sin remoto `origin` el PR es local y no hace falta.
 
 ## Uso en una línea
 
@@ -58,7 +58,7 @@ falte:
 | commits | hace el inicial si lo único sin versionar es lo suyo; si hay archivos tuyos, pregunta |
 | el CLI configurado no está instalado | usa el que sí esté |
 | un modelo que el CLI no reconoce | lo reasigna del catálogo real |
-| `gh` o remoto `origin` (con `--ship`) | pide la URL en terminal; sin terminal, corta **antes** de gastar un token |
+| remoto `origin` (con `--ship`) | sin remoto, el PR queda **local**: la rama `devclean/_entrega` y su descripción en `.devclean/pr/`. Con remoto hace falta `gh`, y sin él corta **antes** de gastar un token |
 | ningún CLI de agente | ofrece instalar `claude` con npm; sin terminal, corta con la instrucción |
 
 Con dos CLIs instalados pregunta cuál usar una sola vez. Todo lo que decide
@@ -129,7 +129,7 @@ paralelo: **dos ramas verdes por separado que rompen juntas.**
 | `up … --fondo` / `run --fondo` | Desprende la corrida de la terminal y te devuelve el control. Sigue corriendo si la cierras. |
 | `plan "<petición>"` | Solo planea. Muestra las tareas propuestas y las crea si apruebas. |
 | `run [--agentes N] [--reintentar]` | Ejecuta las tareas pendientes en paralelo. `--reintentar` revive las detenidas reusando su cuarto. |
-| `ship T-001` / `ship --todas` | Esclusa de salida y PR. `--dry-run` hace todo menos abrir el PR. |
+| `ship T-001` / `ship --todas` | Esclusa de salida y PR. `--dry-run` hace todo menos abrir el PR. Sin remoto el PR es local (rama + `.devclean/pr/`), y `--integrar` hace fast-forward de la base. |
 | `board` | Tablero por estado: listas, en curso, detenidas, pendientes. |
 | `ps` | Estado de tareas y cuartos activos. |
 | `logs T-001` | Intentos de una tarea, uno por línea. |
@@ -212,9 +212,34 @@ primero, a qué no meterse. Se inyecta en el prompt de cada intento.
 ## Programación agéntica como código
 
 Para features grandes, o para versionar el plan, **todo el trabajo cabe en
-un `devclean.spec.yml`**: qué se hace, cómo se encara, cuándo se da por
-hecho, con cuántos agentes y cuáles. `devclean up` lo encuentra solo en la
-raíz del repo y hace el resto — aplicar, ejecutar en paralelo y entregar:
+un `devclean.spec.yml`**. `devclean up` lo encuentra solo en la raíz del
+repo y hace el resto — aplicar, ejecutar en paralelo y entregar. Hay dos
+formas, y se pueden mezclar en el mismo archivo.
+
+### Rápida: tú dices qué, la IA escribe el contrato
+
+Una línea por tarea. Tú decides **qué** se hace; el planificador escribe
+el `listo_cuando`, el alcance (`tocar_solo`), las dependencias y las firmas
+de las tareas que no los traigan, sin partirlas ni agregar otras:
+
+```yaml
+feature: "wake on lan con alexa"
+tareas:
+  - enviar magic packet por udp
+  - guardar la mac en json
+  - titulo: endpoint de la skill alexa          # lo que escribas se respeta
+    listo_cuando: go test ./internal/alexa/...
+```
+
+`devclean apply --dry-run` muestra qué va a completar sin gastar tokens;
+`devclean apply` lo completa y crea las tareas para revisarlas con
+`devclean board` antes de correrlas.
+
+### Completa: el contrato entero, a mano o de un modelo
+
+Lo que genera `devclean plan "…" --export-spec devclean.spec.yml`, o lo que
+escribe un modelo pesado cuando hay que repartir el trabajo entre muchos
+agentes con interfaces cerradas:
 
 ```yaml
 version: 1
@@ -232,7 +257,8 @@ tasks:
     notas: "empieza por bcrypt; no toques el router"   # el cómo, para el ejecutor
   - titulo: "endpoint de login con JWT"
     listo_cuando: "go test ./internal/auth/ -run TestLogin"
-    depende_de: ["T-001"]
+    tocar_solo: ["internal/api/**"]
+    depende_de: ["T-001"]     # sin ids escritos, T-001 es la primera tarea DE ESTE spec
     expone: ["POST /api/login -> 200 {token}"]
     peso: media               # liviana | media | pesada → elige modelo
 ```
@@ -243,7 +269,7 @@ tarea*): `tocar_solo`, `no_tocar`, `depende_de`, `expone`, `usa`, `peso`,
 recibe el agente en cada intento). Las `reglas` globales se anteponen a
 las `notas` de cada tarea al aplicar.
 
-### Plantilla vacía
+### Plantilla completa
 
 Copia esto a `devclean.spec.yml` en la raíz del repo y llénalo. Tal cual
 —sin llenar— ya parsea: sirve de esqueleto. Los campos que se dejen vacíos

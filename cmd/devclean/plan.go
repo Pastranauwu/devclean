@@ -77,23 +77,11 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 		return err
 	}
 
-	constitucion, err := constitution.Load(root)
+	ctx, zonas, patrones, err := contextoPlan(root, cfg)
 	if err != nil {
 		return err
 	}
-	esVacio := config.DetectEmpty(root)
-	zonas, patrones := zonasYPatronesDe(cfg, root)
-	ctx := plan.Contexto{
-		Lenguaje:       config.DetectLanguage(root),
-		EsVacio:        esVacio,
-		Pruebas:        cfg.Pruebas,
-		Constitucion:   constitucion,
-		Vedadas:        append(append([]string{}, zonas...), patrones...),
-		PruebasPropias: !examiner.Soportado(config.DetectLanguage(root)),
-		Agentes:        cfg.TodosLosAgentes(),
-		Ocupados:       alcancesOcupados(root),
-	}
-	if esVacio && !aprobar && isTerminal(os.Stdin) {
+	if ctx.EsVacio && !aprobar && isTerminal(os.Stdin) {
 		ctx.Stack, ctx.Requisitos = pedirRequisitos(os.Stdin, esTUI())
 	}
 
@@ -295,6 +283,28 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 		out.Line("· sin comando de pruebas en config.yml · decláralo antes de devclean ship")
 	}
 	return nil
+}
+
+// contextoPlan reúne lo que el planificador sabe del repo, y las zonas y
+// patrones con los que después se sanea lo que proponga.
+func contextoPlan(root string, cfg config.Config) (ctx plan.Contexto, zonas, patrones []string, err error) {
+	constitucion, err := constitution.Load(root)
+	if err != nil {
+		return ctx, nil, nil, err
+	}
+	zonas, patrones = zonasYPatronesDe(cfg, root)
+	lenguaje := config.DetectLanguage(root)
+	ctx = plan.Contexto{
+		Lenguaje:       lenguaje,
+		EsVacio:        config.DetectEmpty(root),
+		Pruebas:        cfg.Pruebas,
+		Constitucion:   constitucion,
+		Vedadas:        append(append([]string{}, zonas...), patrones...),
+		PruebasPropias: !examiner.Soportado(lenguaje),
+		Agentes:        cfg.TodosLosAgentes(),
+		Ocupados:       alcancesOcupados(root),
+	}
+	return ctx, zonas, patrones, nil
 }
 
 // zonasYPatrones devuelve las zonas prohibidas y los patrones de prueba
