@@ -177,6 +177,12 @@ la retoma reusando el cuarto y el trabajo parcial que quedó dentro.
   la tarea va a crear, no a la suite entera.
 - **`ship` frenado.** Dice el paso y la razón exacta. Nada se publica hasta
   que pase.
+- **"`listo_cuando` pasó sin ejecutar ninguna prueba".** El comando salió con
+  0 pero no corrió nada: `go test ./pkg/...` sobre un paquete sin archivos de
+  prueba devuelve 0. Un verde así no prueba nada, así que la tarea se detiene
+  en vez de entregarse. Pasa cuando el examinador ciego no pudo escribir la
+  suite; sella la tuya con `devclean task seal T-00N` o apunta `listo_cuando`
+  a pruebas que existan.
 - **Presupuesto excedido.** `limite_lineas` lo estima el planificador antes de
   que exista el código, así que se aplica con tolerancia y solo sobre el
   código de la solución: las pruebas se cuentan aparte. Si aun así frena, el
@@ -367,6 +373,11 @@ No verifica interfaz gráfica ni criterios difusos.
   pruebas las escribe quien implementa; el `listo_cuando` sigue siendo
   vinculante, pero sin la garantía de que el examen lo redactó alguien que no
   vio la implementación.
+- **Sin suite, la tarea se detiene; no se entrega.** El examinador ciego
+  degrada en silencio en los casos que no puede cubrir (`package main`, un
+  stack sin parser, un modelo que no devuelve las pruebas ocultas). Si con eso
+  `listo_cuando` pasaría sin ejecutar nada, devclean corta la tarea con ese
+  motivo: prefiere dejarla roja a abrir un PR que nadie juzgó.
 - **`listo_cuando` tiene que fallar hoy.** Es lo que hace que una tarea
   signifique algo. Por eso `npm test` a secas no sirve en un repo verde.
 - **Los agentes son los tuyos.** Si el CLI está sin cuota o sin login, la
