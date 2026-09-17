@@ -34,16 +34,17 @@ func verificarSuiteOculta(ctx context.Context, root, roomPath string, t task.Tas
 	if err := os.WriteFile(hiddenPath, []byte(s.Content), 0o644); err != nil {
 		return nil, "no se pudo escribir la suite oculta · " + err.Error(), false
 	}
-	defer func() {
-		_ = os.Remove(hiddenPath)
-		_ = sealed.Burn(root, t.ID)
-	}()
+	// el cuarto no se queda con el examen; la suite sellada sigue en el
+	// repo principal salvo que este examen la consuma (ver abajo)
+	defer func() { _ = os.Remove(hiddenPath) }()
 
 	salida, code := runComando(ctx, roomPath, pruebas, timeout)
 	pasaron, fallaron := loop.ParseTestCounts(salida)
 	brechaVal := calcularBrecha(root, t.ID, pasaron, fallaron)
 
 	if code != nil && *code == 0 {
+		// examen aprobado: se consume, no se vuelve a correr
+		_ = sealed.Burn(root, t.ID)
 		detalle = "suite oculta superada"
 		if brechaVal != nil {
 			detalle = fmt.Sprintf("suite oculta superada · brecha=%.1f%%", *brechaVal)
@@ -55,12 +56,37 @@ func verificarSuiteOculta(ctx context.Context, root, roomPath string, t task.Tas
 	if brechaVal != nil {
 		brechaStr = fmt.Sprintf("%.1f%%", *brechaVal)
 	}
+	// La suite NO se quema cuando falla: quemarla dejaba el paso saltado
+	// en el siguiente `ship` —sin suite sellada se omite en silencio— y la
+	// misma tarea que la compuerta acababa de frenar salía en un PR con
+	// solo repetir el comando. Y con el examen borrado no quedaba nada que
+	// mirar, así que el detalle también guarda la salida completa.
 	detalle = fmt.Sprintf(
-		"suite oculta falló · brecha=%s · requiere nuevo examinador",
+		"suite oculta falló · brecha=%s · %s",
 		// ponytail: --reexaminar flag not yet implemented, referenced for future UX
-		brechaStr,
+		brechaStr, tail(salida),
 	)
+	if ruta := guardarSalidaOculta(root, t.ID, pruebas, salida); ruta != "" {
+		detalle += " · detalle en " + ruta
+	}
 	return brechaVal, detalle, false
+}
+
+// guardarSalidaOculta deja la salida del examen oculto junto a los
+// intentos de la tarea, que es donde el usuario ya busca el detalle de un
+// fallo. Devuelve la ruta relativa al repo, o "" si no se pudo escribir:
+// no tener el log no cambia el veredicto de la compuerta.
+func guardarSalidaOculta(root, id, pruebas, salida string) string {
+	dir := filepath.Join(loop.RunsDir(root), id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return ""
+	}
+	rel := filepath.Join(".devclean", "runs", id, "suite-oculta.log")
+	cuerpo := fmt.Sprintf("$ %s\n\n%s", pruebas, salida)
+	if err := os.WriteFile(filepath.Join(root, rel), []byte(cuerpo), 0o644); err != nil {
+		return ""
+	}
+	return filepath.ToSlash(rel)
 }
 
 // calcularBrecha computes visible_pct - hidden_pct.
