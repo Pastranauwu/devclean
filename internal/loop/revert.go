@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 
 	"github.com/Pastranauwu/devclean/internal/config"
 )
@@ -14,17 +15,31 @@ import (
 // de lo revertido para anotarlo en attempts.jsonl. La reversión es el
 // enforcement real de los límites: la verificación la hace el código, no
 // la confianza en el modelo (§6.4, §11).
-func revertFueraDeAlcance(roomPath string, tocarSolo, patrones []string) ([]string, error) {
+//
+// antes es el commit con que arrancó el intento, y es contra él que se
+// mide y se restaura. Mirar solo `git status` dejaba la reversión ciega
+// cuando el agente commitea por su cuenta dentro del cuarto (la skill
+// `implement` lo hace): con el árbol limpio no había nada que revertir y
+// las pruebas que el propio agente se escribió —o cualquier archivo
+// fuera de alcance— viajaban al PR. Vacío cae de vuelta a HEAD.
+func revertFueraDeAlcance(roomPath, antes string, tocarSolo, patrones []string) ([]string, error) {
 	files, err := statusFiles(roomPath)
 	if err != nil {
 		return nil, err
+	}
+	if antes != "" {
+		commiteados, err := filesSince(roomPath, antes)
+		if err != nil {
+			return nil, err
+		}
+		files = unir(files, commiteados)
 	}
 	var revertidos []string
 	for _, f := range files {
 		if enAlcance(f, tocarSolo) && !esPrueba(f, patrones) {
 			continue
 		}
-		if err := revertir(roomPath, f); err != nil {
+		if err := revertir(roomPath, antes, f); err != nil {
 			return revertidos, err
 		}
 		revertidos = append(revertidos, f)
@@ -57,17 +72,41 @@ func esPrueba(s string, patrones []string) bool {
 	return config.MatchesAny(patrones, s)
 }
 
-// revertir devuelve un archivo al estado de HEAD, o lo borra si no tenía
-// seguimiento (nuevo).
-func revertir(roomPath, s string) error {
-	if _, err := gitRun(roomPath, "ls-files", "--error-unmatch", "--", s); err != nil {
-		// sin seguimiento: lo creó el agente, no hay HEAD al que volver
+// unir junta dos listas de rutas sin repetir y en orden estable, para
+// que la lista de revertidos no dependa del orden en que git las liste.
+func unir(a, b []string) []string {
+	vistos := make(map[string]bool, len(a)+len(b))
+	var out []string
+	for _, l := range [][]string{a, b} {
+		for _, s := range l {
+			if s == "" || vistos[s] {
+				continue
+			}
+			vistos[s] = true
+			out = append(out, s)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// revertir devuelve un archivo al estado con que arrancó el intento, o lo
+// borra si ahí no existía (lo creó el agente). Borrarlo del árbol basta:
+// el bucle indexa con `git add -A` justo después, así que el commit de
+// respaldo registra la baja aunque el agente lo hubiera commiteado.
+func revertir(roomPath, antes, s string) error {
+	fuente := antes
+	if fuente == "" {
+		fuente = "HEAD"
+	}
+	if _, err := gitRun(roomPath, "cat-file", "-e", fuente+":"+s); err != nil {
+		// no existía en el punto de partida: lo creó el agente
 		if err := os.Remove(filepath.Join(roomPath, s)); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("no se pudo borrar %s · %s", s, err)
 		}
 		return nil
 	}
-	if _, err := gitRun(roomPath, "restore", "--source=HEAD", "--", s); err != nil {
+	if _, err := gitRun(roomPath, "restore", "--source="+fuente, "--", s); err != nil {
 		return fmt.Errorf("no se pudo revertir %s · %s", s, err)
 	}
 	return nil

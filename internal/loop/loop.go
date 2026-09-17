@@ -302,7 +302,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		var detener *ErrDetener
 		errors.As(agentErr, &detener)
 
-		revertidos, err := revertFueraDeAlcance(o.Room.Path, o.Task.TocarSolo, o.PatronesPrueba)
+		revertidos, err := revertFueraDeAlcance(o.Room.Path, antes, o.Task.TocarSolo, o.PatronesPrueba)
 		if err != nil {
 			return Outcome{}, err
 		}

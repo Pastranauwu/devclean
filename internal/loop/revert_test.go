@@ -17,7 +17,7 @@ func TestRevertFueraDeAlcance(t *testing.T) {
 	// archivo de prueba: se revierte aunque caiga dentro del alcance
 	escribir(t, root, "src/export/writer_test.go", "prueba\n")
 
-	revertidos, err := revertFueraDeAlcance(root, []string{"src/export/**"}, []string{"*_test.go"})
+	revertidos, err := revertFueraDeAlcance(root, "HEAD", []string{"src/export/**"}, []string{"*_test.go"})
 	if err != nil {
 		t.Fatalf("revert: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestRevertArchivoExistenteModificado(t *testing.T) {
 
 	escribir(t, root, "src/auth/login.go", "modificado por el agente\n")
 
-	if _, err := revertFueraDeAlcance(root, []string{"src/export/**"}, nil); err != nil {
+	if _, err := revertFueraDeAlcance(root, "HEAD", []string{"src/export/**"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "src/auth/login.go"))
@@ -61,7 +61,7 @@ func TestRevertSinRestriccionRevierteSoloPruebas(t *testing.T) {
 	escribir(t, root, "src/x.go", "codigo\n")
 	escribir(t, root, "src/x_test.go", "prueba\n")
 
-	revertidos, err := revertFueraDeAlcance(root, nil, []string{"*_test.go"})
+	revertidos, err := revertFueraDeAlcance(root, "HEAD", nil, []string{"*_test.go"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,5 +152,45 @@ func TestEnAlcanceLockfileDerivado(t *testing.T) {
 	}
 	if enAlcance("Cargo.lock", []string{"go.mod"}) {
 		t.Error("un lockfile de otro stack no entra por la puerta de atrás")
+	}
+}
+
+// El agente que commitea por su cuenta dentro del cuarto dejaba el árbol
+// limpio, y la reversión —que solo miraba `git status`— no veía nada: sus
+// propias pruebas y cualquier archivo fuera de alcance llegaban al PR.
+func TestRevertCuandoElAgenteCommiteaSolo(t *testing.T) {
+	root := repoConCommit(t)
+	escribir(t, root, "src/export/base.go", "package export\n")
+	gitCmd(t, root, "add", "-A")
+	gitCmd(t, root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "base")
+	antes := cabeza(t, root)
+
+	escribir(t, root, "src/export/writer.go", "nuevo dentro\n")
+	escribir(t, root, "src/export/writer_test.go", "prueba propia\n")
+	escribir(t, root, "src/auth/login.go", "fuera de alcance\n")
+	escribir(t, root, "src/export/base.go", "package export // tocado\n")
+	gitCmd(t, root, "add", "-A")
+	gitCmd(t, root, "-c", "user.email=a@a", "-c", "user.name=a", "commit", "-m", "feat: lo commiteé yo solo")
+
+	revertidos, err := revertFueraDeAlcance(root, antes, []string{"src/export/**"}, []string{"*_test.go"})
+	if err != nil {
+		t.Fatalf("revert: %v", err)
+	}
+	if len(revertidos) != 2 {
+		t.Fatalf("revertidos = %v, quiero la prueba y el archivo fuera de alcance", revertidos)
+	}
+	if _, err := os.Stat(filepath.Join(root, "src/export/writer_test.go")); !os.IsNotExist(err) {
+		t.Error("la prueba que se escribió el agente sigue en disco")
+	}
+	if _, err := os.Stat(filepath.Join(root, "src/auth/login.go")); !os.IsNotExist(err) {
+		t.Error("el archivo fuera de alcance sigue en disco")
+	}
+	if _, err := os.Stat(filepath.Join(root, "src/export/writer.go")); err != nil {
+		t.Error("el archivo dentro de alcance no debió tocarse")
+	}
+	// un archivo en alcance que ya existía sigue con el cambio del agente
+	data, err := os.ReadFile(filepath.Join(root, "src/export/base.go"))
+	if err != nil || string(data) != "package export // tocado\n" {
+		t.Errorf("base.go = %q, quiero el cambio del agente intacto", data)
 	}
 }
