@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Pastranauwu/devclean/internal/loop"
@@ -61,15 +62,33 @@ func verificarSuiteOculta(ctx context.Context, root, roomPath string, t task.Tas
 	// misma tarea que la compuerta acababa de frenar salía en un PR con
 	// solo repetir el comando. Y con el examen borrado no quedaba nada que
 	// mirar, así que el detalle también guarda la salida completa.
-	detalle = fmt.Sprintf(
-		"suite oculta falló · brecha=%s · %s",
-		// ponytail: --reexaminar flag not yet implemented, referenced for future UX
-		brechaStr, tail(salida),
-	)
+	// Una suite que no compila no juzga nada, y el implementador no puede
+	// arreglarla: sin nombrar la salida, la tarea quedaba frenada para
+	// siempre sin pista de qué borrar.
+	if noCompila(salida, s.Archivo) {
+		detalle = fmt.Sprintf(
+			"la suite oculta no compila · %s · no juzga nada: borra %s y vuelve a correr la tarea",
+			tail(salida), filepath.ToSlash(filepath.Join(".devclean", "sealed", t.ID)),
+		)
+	} else {
+		detalle = fmt.Sprintf(
+			"suite oculta falló · brecha=%s · %s",
+			// ponytail: --reexaminar flag not yet implemented, referenced for future UX
+			brechaStr, tail(salida),
+		)
+	}
 	if ruta := guardarSalidaOculta(root, t.ID, pruebas, salida); ruta != "" {
 		detalle += " · detalle en " + ruta
 	}
 	return brechaVal, detalle, false
+}
+
+// noCompila reporta si el fallo es del propio examen y no de la
+// implementación: el compilador nombra el archivo de la suite.
+func noCompila(salida, archivo string) bool {
+	base := filepath.Base(archivo)
+	return base != "" && strings.Contains(salida, base) &&
+		(strings.Contains(salida, "build failed") || strings.Contains(salida, "setup failed"))
 }
 
 // guardarSalidaOculta deja la salida del examen oculto junto a los

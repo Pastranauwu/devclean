@@ -48,3 +48,23 @@ func TestSuiteOcultaSeQuemaAlAprobar(t *testing.T) {
 		t.Error("el examen aprobado debe consumirse, no volver a correr")
 	}
 }
+
+// Una suite oculta que no compila no juzga nada y el implementador no
+// puede arreglarla: el motivo tiene que nombrar qué borrar, o la tarea
+// queda frenada para siempre sin pista.
+func TestSuiteOcultaQueNoCompilaLoDice(t *testing.T) {
+	root := repoConCommit(t)
+	tarea := taskTitulo("una tarea")
+	s := sealed.SuiteOculta{Content: "contenido\n", Archivo: "cmd/calc/devclean_hidden_test.go"}
+	if err := sealed.Write(root, tarea.ID, s); err != nil {
+		t.Fatal(err)
+	}
+	salida := "# calc/cmd/calc_test\ncmd/calc/devclean_hidden_test.go:8:2: imported as main and not used\nFAIL\tcalc/cmd/calc [build failed]\n"
+	if !noCompila(salida, s.Archivo) {
+		t.Fatal("un fallo de compilación del examen tiene que reconocerse")
+	}
+	// un fallo de aserción normal no es lo mismo
+	if noCompila("--- FAIL: TestX\nFAIL\tcalc/cmd/calc\t0.01s\n", s.Archivo) {
+		t.Error("una prueba que falla no es una suite que no compila")
+	}
+}
