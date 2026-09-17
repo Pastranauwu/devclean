@@ -659,7 +659,11 @@ func listoPadreVerde(ctx context.Context, dir, cmd string, timeoutSeg int) bool 
 		c = exec.CommandContext(ctx, "sh", "-c", cmd)
 	}
 	c.Dir = dir
-	return c.Run() == nil
+	var salida strings.Builder
+	c.Stdout = &salida
+	c.Stderr = &salida
+	// un 0 sin pruebas ejecutadas no vuelve verde al padre (loop.SinPruebas)
+	return c.Run() == nil && !loop.SinPruebas(salida.String())
 }
 
 // recortar deja el motivo del fallo en una sola línea acotada.

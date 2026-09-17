@@ -37,3 +37,26 @@ func TestParseTestCountsSinFormato(t *testing.T) {
 		t.Fatalf("salida vacía = %v/%v, quiero nil/nil", p, f)
 	}
 }
+
+func TestSinPruebas(t *testing.T) {
+	casos := []struct {
+		nombre string
+		salida string
+		quiero bool
+	}{
+		{"go paquete sin pruebas", "?   \tsandbox/numeros\t[no test files]\n", true},
+		{"go sin pruebas que correr", "testing: warning: no tests to run\nPASS\nok  \tsandbox/x\t0.001s\n", false},
+		{"go multipaquete, otros verdes", "ok  \tsandbox/cola\t0.004s\n?   \tsandbox/numeros\t[no test files]\nok  \tsandbox/texto\t0.003s\n", false},
+		{"go verde normal", "ok  \tsandbox/cola\t0.004s\n", false},
+		{"go rojo", "--- FAIL: TestX\nFAIL\tsandbox/cola\t0.01s\n", false},
+		{"pytest sin recolectar", "collected 0 items\n\nno tests ran in 0.01s\n", true},
+		{"pytest verde", "collected 3 items\n\n3 passed in 0.10s\n", false},
+		{"jest sin pruebas", "No tests found, exiting with code 0\n", true},
+		{"salida vacía", "", false},
+	}
+	for _, c := range casos {
+		if got := SinPruebas(c.salida); got != c.quiero {
+			t.Errorf("%s: SinPruebas = %v, quiero %v", c.nombre, got, c.quiero)
+		}
+	}
+}

@@ -403,6 +403,20 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			return Outcome{Verde: false, Intentos: intento, UltimoError: detener.Motivo, Pregunta: detener.Motivo}, nil
 		}
 
+		// salir con 0 sin haber ejecutado una sola prueba no es verde:
+		// no hay oráculo que juzgue la tarea (§6.4). Pasa cuando el
+		// implementador escribió su propia suite y la reversión de
+		// alcance la quitó (A.3), o cuando el examinador ciego degradó
+		// y nunca hubo suite. Reintentar no lo arregla —el agente no
+		// puede tocar las pruebas—, así que se detiene con el motivo.
+		if code != nil && *code == 0 && SinPruebas(salida) {
+			motivo := fmt.Sprintf("listo_cuando pasó sin ejecutar ninguna prueba · %s no tiene suite que lo juzgue · sella una con devclean task seal %s o apunta listo_cuando a pruebas que existan", o.Task.ID, o.Task.ID)
+			if err := s.Append(a); err != nil {
+				return Outcome{}, err
+			}
+			return Outcome{Verde: false, Intentos: intento, UltimoError: motivo, Pregunta: motivo}, nil
+		}
+
 		// tests verdes no implican contrato cumplido: el revisor juzga
 		// el diff contra la tarea y puede vetar. Si pide cambios, el
 		// intento queda rojo y su veredicto va al prompt siguiente.

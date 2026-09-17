@@ -51,3 +51,30 @@ func contar(re *regexp.Regexp, salida string) (int, bool) {
 	}
 	return n, true
 }
+
+// vacuoRE reconoce la salida con que un runner avisa que no había nada
+// que correr; corrioRE, la evidencia de que alguna prueba sí corrió.
+var (
+	vacuoRE  = regexp.MustCompile(`(?i)\[no test files\]|no tests to run|no tests ran|no tests found|collected 0 items`)
+	corrioRE = regexp.MustCompile(`(?m)^(ok\s|--- PASS|--- FAIL|PASS|FAIL|OK\b)|\d+\s+(passed|passing|failed|failing)`)
+)
+
+// SinPruebas reporta si un comando que salió con 0 lo hizo sin ejecutar
+// ninguna prueba. `go test ./pkg/...` sobre un paquete sin archivos de
+// prueba devuelve 0, así que un verde así no prueba nada: el agente
+// escribió sus pruebas y la reversión de alcance (A.3) las quitó, o el
+// examinador ciego degradó y nunca hubo suite. Quien decide verde por
+// código de salida tiene que descartar ese caso (§6.4).
+//
+// Solo cuenta como vacío si el runner avisó Y no hay rastro de ninguna
+// prueba ejecutada: una corrida multi-paquete donde otros paquetes sí
+// corrieron pruebas es verde legítimo.
+func SinPruebas(salida string) bool {
+	if !vacuoRE.MatchString(salida) {
+		return false
+	}
+	if p, _ := ParseTestCounts(salida); p != nil && *p > 0 {
+		return false
+	}
+	return !corrioRE.MatchString(salida)
+}
