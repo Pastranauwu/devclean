@@ -139,3 +139,22 @@ func TestSoportado(t *testing.T) {
 		}
 	}
 }
+
+func TestPaqueteDeExpone(t *testing.T) {
+	casos := []struct{ in, quiero string }{
+		{"numeros.Media(xs []float64) (float64, error)", "numeros"},
+		{"  slug.Slugify(s string) string", "slug"},
+		{"Slugify(s string) string", ""},
+		{"src/export/ToCSV", ""},
+		{"", ""},
+	}
+	for _, c := range casos {
+		if got := paqueteDeExpone([]string{c.in}); got != c.quiero {
+			t.Errorf("paqueteDeExpone(%q) = %q, quiero %q", c.in, got, c.quiero)
+		}
+	}
+	// la primera firma calificada manda
+	if got := paqueteDeExpone([]string{"Suma(a int) int", "stats.Media(xs []int) float64"}); got != "stats" {
+		t.Errorf("con firma sin calificar primero = %q, quiero stats", got)
+	}
+}

@@ -88,15 +88,32 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		real := paqueteReal(dir)
 		switch real {
 		case "":
-			// todavía no hay código ahí: el nombre que elijamos puede
-			// chocar con el que escriba el implementador
-			return false, nil
+			// todavía no hay código ahí (tarea de paquete nuevo, el caso
+			// más común al arrancar). Renunciar al examen dejaba a esas
+			// tareas sin suite: el implementador escribe sus propias
+			// pruebas, la reversión de alcance se las quita (A.3) y
+			// `go test ./pkg/...` pasa sin ejecutar nada. El nombre sale
+			// del contrato —`expone: ["numeros.Media(...)"]` ya lo
+			// declara—, así que el implementador que sigue el contrato
+			// coincide con la suite.
+			if n := paqueteDeExpone(o.Task.Expone); n != "" {
+				pkg = n
+			}
 		case "main":
 			// Go no deja importar un paquete main: no hay examen de caja
 			// negra posible sobre un binario desde otro paquete
 			return false, nil
+		default:
+			// el paquete que ya vive en el directorio manda sobre
+			// cualquier inferencia
+			pkg = real
 		}
-		pkg = real
+		// sin nombre no hay suite posible: `package _test` en el mismo
+		// directorio rompe la compilación del cuarto y el implementador
+		// no puede arreglarlo (A.3)
+		if pkg == "" {
+			return false, nil
+		}
 
 		// El examinador corre ANTES que el implementador, así que en un
 		// repo recién nacido todavía no hay go.mod. Sin ruta de import la
@@ -240,6 +257,12 @@ func buildGoFile(pkg, importPath string, extra, funcs []string) string {
 	body := strings.Join(funcs, "\n")
 
 	var b strings.Builder
+	// el encabezado le dice al implementador cómo tiene que llamarse su
+	// paquete: la suite es externa (pkg_test) y, si él elige otro nombre,
+	// Go responde "found packages X and pkg (…_test.go)" — un error que
+	// no puede arreglar, porque esta ruta le está vedada (A.3).
+	fmt.Fprintf(&b, "// devclean · suite del examinador ciego: criterio de aceptación, no editable (A.3).\n")
+	fmt.Fprintf(&b, "// El paquete de este directorio tiene que llamarse %q.\n\n", pkg)
 	fmt.Fprintf(&b, "package %s_test\n\nimport (\n\t\"testing\"\n", pkg)
 	if importPath != "" {
 		fmt.Fprintf(&b, "\t%q\n", importPath)
@@ -336,6 +359,42 @@ func inferDirPkg(tocarSolo []string, roomPath string) (dir, pkg string) {
 		pkg = "main"
 	}
 	return absDir, pkg
+}
+
+// paqueteDeExpone saca el nombre de paquete del prefijo de las firmas
+// prometidas ("numeros.Media(xs []float64) (float64, error)" → numeros).
+// Devuelve "" si ninguna firma viene calificada.
+func paqueteDeExpone(expone []string) string {
+	for _, f := range expone {
+		f = strings.TrimSpace(f)
+		i := strings.Index(f, ".")
+		if i <= 0 {
+			continue
+		}
+		n := f[:i]
+		if !esIdentificador(n) {
+			continue
+		}
+		return n
+	}
+	return ""
+}
+
+// esIdentificador filtra prefijos que no son un nombre de paquete Go
+// (rutas, firmas sin calificar, ruido del planificador).
+func esIdentificador(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '_':
+		case r >= '0' && r <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // paqueteReal lee el nombre de paquete declarado en los .go que ya viven
