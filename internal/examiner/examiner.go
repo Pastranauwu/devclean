@@ -148,7 +148,10 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 
 	visibleRelPath, hiddenRelPath := RutasSuite(o.Task.TocarSolo, lenguaje)
 
-	visibleContent := armarSuite(lenguaje, pkg, importPath, imports, visible)
+	visibleContent, okVisible := suiteCompleta(lenguaje, roomPath, pkg, importPath, imports, visible)
+	if !okVisible {
+		return false, nil
+	}
 	// un examinador que emite pruebas que no compilan bloquea al
 	// implementador: no puede tocar el archivo (A.3) y su impl correcta
 	// igual da "build failed". Si la suite ni siquiera parsea, se
@@ -171,8 +174,8 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		return false, nil
 	}
 
-	hiddenContent := armarSuite(lenguaje, pkg, importPath, imports, hidden)
-	if validarSintaxis(lenguaje, hiddenContent) != nil {
+	hiddenContent, okHidden := suiteCompleta(lenguaje, roomPath, pkg, importPath, imports, hidden)
+	if !okHidden || validarSintaxis(lenguaje, hiddenContent) != nil {
 		return false, nil // solo visible; sin oculta que sellar
 	}
 	s := sealed.SuiteOculta{
@@ -268,7 +271,7 @@ func buildGoFile(pkg, importPath string, extra, funcs []string) string {
 		fmt.Fprintf(&b, "\t%q\n", importPath)
 	}
 	for _, imp := range dedup(extra) {
-		if !stdlibImport(imp) || imp == "testing" {
+		if !importPermitido(imp, importPath) || imp == "testing" {
 			continue
 		}
 		if !strings.Contains(body, selector(imp)+".") {
@@ -298,6 +301,26 @@ func stdlibImport(path string) bool {
 		first = path[:i]
 	}
 	return !strings.Contains(first, ".")
+}
+
+// importPermitido acepta la stdlib y los paquetes del mismo módulo que el
+// paquete bajo prueba. Filtrar por stdlibImport a secas tiraba el import
+// hermano cuando la ruta del módulo lleva punto ("github.com/x/y"), y la
+// suite quedaba con `ast.Number` sin importar ast: no compila y el
+// implementador no puede tocarla (A.3).
+func importPermitido(imp, importPath string) bool {
+	if stdlibImport(imp) {
+		return true
+	}
+	a, b := primerSegmento(imp), primerSegmento(importPath)
+	return a != "" && a == b
+}
+
+func primerSegmento(p string) string {
+	if i := strings.IndexByte(p, '/'); i >= 0 {
+		return p[:i]
+	}
+	return p
 }
 
 // selector devuelve el identificador con que se referencia un import:
