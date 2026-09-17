@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Pastranauwu/devclean/internal/task"
 )
 
 // stdlibComunes son los paquetes que una suite de pruebas referencia sin
@@ -200,4 +202,36 @@ func suiteCompleta(lenguaje, roomPath, pkg, importPath string, imports, funcs []
 		return "", false
 	}
 	return contenido, true
+}
+
+// Examinable reporta si devclean puede escribirle un examen ciego a esa
+// tarea. Importa fuera de este paquete porque la adenda A.3 —el
+// implementador nunca toca las pruebas— solo tiene sentido donde hay un
+// examen que proteger: en una tarea que no se puede examinar, vedarle
+// además las rutas de prueba la deja imposible (nadie escribe la suite, y
+// `go test ./pkg/...` sin pruebas pasa en vacío). Se decide por tarea y no
+// por lenguaje: en un repo Go, `cmd/algo` es `package main` y no se puede
+// examinar aunque el resto del repo sí.
+//
+// Es un pronóstico, no una promesa: el examen puede degradar después por
+// razones que solo se ven con la respuesta del modelo en la mano.
+func Examinable(root string, t task.Task, lenguaje string) bool {
+	if len(t.Expone) == 0 || lenguajeExamen(lenguaje) == "" {
+		return false
+	}
+	if lenguajeExamen(lenguaje) != "go" {
+		return true
+	}
+	dir, pkg := inferDirPkg(t.TocarSolo, root)
+	switch real := paqueteReal(dir); real {
+	case "":
+		if n := paqueteDeExpone(t.Expone); n != "" {
+			pkg = n
+		}
+	case "main":
+		return false
+	default:
+		pkg = real
+	}
+	return pkg != "" && pkg != "main" && resolveImportPath(root, dir) != ""
 }

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Pastranauwu/devclean/internal/task"
 )
 
 func cuartoConAst(t *testing.T) string {
@@ -114,5 +116,56 @@ func TestSuiteCompletaConservaElImportDelModulo(t *testing.T) {
 	}
 	if !strings.Contains(contenido, `"github.com/x/calc/internal/ast"`) {
 		t.Errorf("falta el import hermano en:\n%s", contenido)
+	}
+}
+
+// `cmd/algo` es package main: Go no deja importarlo, así que no hay
+// examen ciego posible y la veda de rutas de prueba (A.3) no aplica — con
+// ella la tarea era imposible de terminar.
+func TestExaminableMainNoSeExamina(t *testing.T) {
+	root := cuartoConAst(t)
+	escribirArchivo(t, root, "cmd/calc/main.go", "package main\n\nfunc main() {}\n")
+
+	mainTask := task.Task{
+		ID: "T-005", TocarSolo: []string{"cmd/calc/**"},
+		Expone: []string{"main.run(in io.Reader, out io.Writer) error"},
+	}
+	if Examinable(root, mainTask, "go") {
+		t.Error("un package main no se puede examinar")
+	}
+
+	// el mismo main cuando el directorio todavía no existe: el nombre sale
+	// de expone y cae en la misma pared
+	nuevo := task.Task{
+		ID: "T-006", TocarSolo: []string{"cmd/otro/**"},
+		Expone: []string{"main.run() error"},
+	}
+	if Examinable(root, nuevo, "go") {
+		t.Error("un main inferido desde expone tampoco se examina")
+	}
+}
+
+func TestExaminableTareaNormal(t *testing.T) {
+	root := cuartoConAst(t)
+	normal := task.Task{
+		ID: "T-004", TocarSolo: []string{"internal/eval/**"},
+		Expone: []string{"eval.NewEnv() *eval.Env"},
+	}
+	if !Examinable(root, normal, "go") {
+		t.Error("una tarea de paquete importable con expone sí se examina")
+	}
+	// sin frontera pública declarada no hay caja negra que probar
+	sinExpone := normal
+	sinExpone.Expone = nil
+	if Examinable(root, sinExpone, "go") {
+		t.Error("sin expone no hay examen")
+	}
+	// paquete nuevo: el nombre sale de expone
+	greenfield := task.Task{
+		ID: "T-007", TocarSolo: []string{"internal/nuevo/**"},
+		Expone: []string{"nuevo.Hacer() error"},
+	}
+	if !Examinable(root, greenfield, "go") {
+		t.Error("un paquete que todavía no existe sí se examina")
 	}
 }

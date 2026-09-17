@@ -856,7 +856,7 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		Task:            t,
 		Model:           modeloTarea,
 		Base:            base,
-		PatronesPrueba:  patronesPrueba(cfg, root),
+		PatronesPrueba:  patronesPruebaTarea(cfg, root, t),
 		AgentTimeout:    agentTimeout,
 		PruebaTimeout:   pruebaTimeout,
 		Env:             []string{fmt.Sprintf("PORT=%d", r.Puerto)},
@@ -1040,6 +1040,20 @@ func fasesVivas(root string, ids []string) map[string]tui.FaseRun {
 // existe para que quien implementa no pueda tocar el examen que lo
 // juzga, y sin examinador no hay examen que proteger — solo un archivo
 // de prueba que nadie puede escribir y una tarea imposible.
+// patronesPruebaTarea es lo mismo por tarea. La veda tiene que decidirse
+// aquí y no por lenguaje: en un repo Go, una tarea sobre `cmd/algo`
+// (`package main`) no se puede examinar —Go no deja importar un main— y
+// vedarle las rutas de prueba la dejaba imposible: el implementador
+// escribía sus pruebas, la reversión se las quitaba (A.3) y `go test
+// ./cmd/algo/...` pasaba sin ejecutar nada, que el bucle ahora corta.
+// Donde sí hay examen, la veda sigue intacta.
+func patronesPruebaTarea(cfg config.Config, root string, t task.Task) []string {
+	if !examiner.Examinable(root, t, config.DetectLanguage(root)) {
+		return []string{}
+	}
+	return patronesPrueba(cfg, root)
+}
+
 func patronesPrueba(cfg config.Config, root string) []string {
 	if !examiner.Soportado(config.DetectLanguage(root)) {
 		// vacío NO nil: nil significaría "no configurado, usa los del

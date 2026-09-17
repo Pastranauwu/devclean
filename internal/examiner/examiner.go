@@ -110,8 +110,11 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		}
 		// sin nombre no hay suite posible: `package _test` en el mismo
 		// directorio rompe la compilación del cuarto y el implementador
-		// no puede arreglarlo (A.3)
-		if pkg == "" {
+		// no puede arreglarlo (A.3). Y un `main` inferido cae en la misma
+		// pared que el real: `cmd/algo` con `expone: ["main.run(...)"]`
+		// daba una suite `package main_test` que importa el binario, y Go
+		// responde "imported as main and not used".
+		if pkg == "" || pkg == "main" {
 			return false, nil
 		}
 
