@@ -34,6 +34,11 @@ func contarSinContrato(ts []task.Task) int {
 // hace sigue siendo el humano, y el modelo pone el cómo se verifica, qué
 // toca y de qué depende. Lo que el humano sí escribió no se pisa.
 func completarSpec(root string, s *spec.Spec) error {
+	// En el modo Requirements as Code no hay tareas humanas que completar:
+	// el planificador produce el IR entero a partir de intención y reglas.
+	if len(s.Tasks) == 0 && len(s.Requirements) > 0 {
+		return planearRequirements(root, s)
+	}
 	n := contarSinContrato(s.Tasks)
 	if n == 0 {
 		return nil
@@ -88,6 +93,57 @@ func completarSpec(root string, s *spec.Spec) error {
 		}
 	}
 	out.Line("· el planificador completó %d de %d tareas · revísalas con devclean board", n, total)
+	return nil
+}
+
+func planearRequirements(root string, s *spec.Spec) error {
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+	ex, err := elegirEjecutor(cfg.Cli)
+	if err != nil {
+		return err
+	}
+	pctx, zonas, patrones, err := contextoPlan(root, cfg)
+	if err != nil {
+		return err
+	}
+	var pedido strings.Builder
+	fmt.Fprintf(&pedido, "Feature: %s\nRequerimientos obligatorios:\n", s.Feature)
+	for i, r := range s.Requirements {
+		fmt.Fprintf(&pedido, "R%d. %s\n", i+1, r)
+	}
+	if len(s.Reglas) > 0 {
+		pedido.WriteString("Reglas obligatorias:\n")
+		for _, r := range s.Reglas {
+			fmt.Fprintf(&pedido, "- %s\n", r)
+		}
+	}
+	if len(s.Acceptance) > 0 {
+		pedido.WriteString("Aceptación global (cada criterio debe quedar cubierto por listo_cuando o por una tarea final de integración):\n")
+		for _, a := range s.Acceptance {
+			fmt.Fprintf(&pedido, "- %s", a.Criterion)
+			if a.Command != "" {
+				fmt.Fprintf(&pedido, " · comando: %s", a.Command)
+			}
+			pedido.WriteByte('\n')
+		}
+	}
+	bs, err := plan.Generar(context.Background(), generadorPlan{ex: ex, modelo: config.ModeloRol(cfg, "planificador"), root: root}, pctx, pedido.String())
+	if err != nil {
+		return err
+	}
+	sanearAlcance(bs, zonas, patrones, pctx.Ocupados)
+	ids, err := idsCorrelativos(config.TasksDir(root), len(bs))
+	if err != nil {
+		return err
+	}
+	traducirDependencias(bs, ids)
+	for i, b := range bs {
+		s.Tasks = append(s.Tasks, task.Task{Version: task.Version, ID: ids[i], Titulo: b.Titulo, Porque: b.Porque, ListoCuando: b.ListoCuando, TocarSolo: b.TocarSolo, NoTocar: b.NoTocar, DependeDe: b.DependeDe, Expone: b.Expone, Usa: b.Usa, Riesgos: b.Riesgos, Peso: b.Peso, Agente: b.Agente, Notas: b.Como, LimiteIntentos: task.DefaultLimiteIntentos, LimiteLineas: plan.AcotarLimiteLineas(b.LimiteLineas, task.DefaultLimiteLineas)})
+	}
+	out.Line("· Requirements Analyzer + Planner generaron %d contratos internos", len(s.Tasks))
 	return nil
 }
 

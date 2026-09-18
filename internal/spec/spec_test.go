@@ -298,6 +298,57 @@ func TestParseSpecAgentesInvalidos(t *testing.T) {
 	}
 }
 
+func TestParseRequirementsComoCodigoYAMLAnidado(t *testing.T) {
+	s, err := Parse([]byte(`feature: recuperar contraseña
+requirements:
+  functional:
+    - solicitar por email
+    - cambiar contraseña con token
+  security:
+    - token de un solo uso
+rules:
+  - no modificar sesiones
+acceptance:
+  integration:
+    - criterion: token expirado se rechaza
+      command: go test ./internal/auth/... -run TestExpired
+    - usuario inexistente no revela la cuenta
+constraints:
+  no_tocar:
+    - internal/session/**
+ship: true
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Requirements) != 3 || len(s.Acceptance) != 2 {
+		t.Fatalf("requirements=%v acceptance=%v", s.Requirements, s.Acceptance)
+	}
+	if s.Acceptance[0].Command == "" || len(s.Constraints.NoTocar) != 1 || !s.Ship {
+		t.Fatalf("spec incompleto: %+v", s)
+	}
+}
+
+func TestValidatePlanDetectaErroresEstructurales(t *testing.T) {
+	ts := []task.Task{
+		{ID: "T-001", Titulo: "a", ListoCuando: "true", TocarSolo: []string{"internal/auth/**"}, DependeDe: []string{"T-002"}, Usa: []string{"auth.Missing()"}},
+		{ID: "T-002", Titulo: "b", ListoCuando: "true", TocarSolo: []string{"internal/auth/token.go"}, DependeDe: []string{"T-001"}},
+	}
+	issues := ValidatePlan(Spec{}, ts)
+	var codes []string
+	for _, i := range issues {
+		if i.Level == "error" {
+			codes = append(codes, i.Code)
+		}
+	}
+	joined := strings.Join(codes, ",")
+	for _, want := range []string{"orphan_interface", "cycle", "write_overlap"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("falta %s en %v", want, issues)
+		}
+	}
+}
+
 func TestMarshalRoundtripAgentesYShip(t *testing.T) {
 	raw := `version: 1
 feature: "Roundtrip"

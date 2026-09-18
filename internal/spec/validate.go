@@ -1,0 +1,143 @@
+package spec
+
+import (
+	"fmt"
+	"path"
+	"strings"
+
+	"github.com/Pastranauwu/devclean/internal/task"
+)
+
+type Issue struct {
+	Level   string `json:"level"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// ValidatePlan revisa el IR antes de gastar tokens. Los errores son
+// invariantes mecánicas; la cobertura semántica se reporta como advertencia
+// porque no debe fingirse una prueba determinista basada solo en palabras.
+func ValidatePlan(s Spec, tasks []task.Task) []Issue {
+	var out []Issue
+	byID := map[string]task.Task{}
+	exposed := map[string]string{}
+	for _, t := range tasks {
+		byID[t.ID] = t
+		for _, x := range t.Expone {
+			if prev := exposed[x]; prev != "" && prev != t.ID {
+				out = append(out, Issue{"error", "duplicate_interface", fmt.Sprintf("%s y %s exponen %q", prev, t.ID, x)})
+			}
+			exposed[x] = t.ID
+		}
+	}
+	for _, t := range tasks {
+		for _, d := range t.DependeDe {
+			if _, ok := byID[d]; !ok {
+				out = append(out, Issue{"error", "missing_dependency", fmt.Sprintf("%s depende de %s, que no existe", t.ID, d)})
+			}
+		}
+		for _, u := range t.Usa {
+			if exposed[u] == "" {
+				name := task.NombreDeFirma(u)
+				var similar string
+				for signature := range exposed {
+					if task.NombreDeFirma(signature) == name {
+						similar = signature
+						break
+					}
+				}
+				if similar != "" {
+					out = append(out, Issue{"error", "incompatible_interface", fmt.Sprintf("%s usa %q pero el plan expone %q", t.ID, u, similar)})
+				} else {
+					out = append(out, Issue{"error", "orphan_interface", fmt.Sprintf("%s usa %q y ninguna tarea lo expone", t.ID, u)})
+				}
+			}
+		}
+	}
+	state := map[string]int{}
+	var visit func(string)
+	visit = func(id string) {
+		if state[id] == 1 {
+			out = append(out, Issue{"error", "cycle", "dependencia circular que incluye " + id})
+			return
+		}
+		if state[id] == 2 {
+			return
+		}
+		state[id] = 1
+		for _, d := range byID[id].DependeDe {
+			if _, ok := byID[d]; ok {
+				visit(d)
+			}
+		}
+		state[id] = 2
+	}
+	for id := range byID {
+		visit(id)
+	}
+	for i := 0; i < len(tasks); i++ {
+		for j := i + 1; j < len(tasks); j++ {
+			for _, a := range tasks[i].TocarSolo {
+				for _, b := range tasks[j].TocarSolo {
+					if globsOverlap(a, b) {
+						out = append(out, Issue{"error", "write_overlap", fmt.Sprintf("%s y %s pueden escribir la misma zona (%s / %s)", tasks[i].ID, tasks[j].ID, a, b)})
+					}
+				}
+			}
+		}
+	}
+	for _, r := range s.Requirements {
+		if !covered(r, tasks) {
+			out = append(out, Issue{"warning", "requirement_coverage", "ninguna tarea declara cobertura reconocible para: " + r})
+		}
+	}
+	for _, a := range s.Acceptance {
+		if a.Command == "" && !covered(a.Criterion, tasks) {
+			out = append(out, Issue{"warning", "acceptance_coverage", "criterio sin comando ni cobertura reconocible: " + a.Criterion})
+		}
+	}
+	if len(tasks) > 1 && len(s.Acceptance) == 0 {
+		out = append(out, Issue{"warning", "integration_test", "el feature tiene varias tareas y no declara aceptación global"})
+	}
+	return dedupeIssues(out)
+}
+
+func globsOverlap(a, b string) bool {
+	a = strings.TrimSuffix(a, "/**")
+	b = strings.TrimSuffix(b, "/**")
+	if a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/") {
+		return true
+	}
+	ma, _ := path.Match(a, b)
+	mb, _ := path.Match(b, a)
+	return ma || mb
+}
+func covered(q string, ts []task.Task) bool {
+	words := strings.Fields(strings.ToLower(q))
+	for _, t := range ts {
+		hay := strings.ToLower(t.Titulo + " " + t.Porque + " " + t.Notas + " " + t.ListoCuando)
+		hits := 0
+		for _, w := range words {
+			w = strings.Trim(w, ".,:;¿?¡!")
+			if len(w) > 4 && strings.Contains(hay, w) {
+				hits++
+			}
+		}
+		if hits >= 1 {
+			return true
+		}
+	}
+	return false
+}
+func dedupeIssues(xs []Issue) []Issue {
+	seen := map[string]bool{}
+	out := xs[:0]
+	for _, x := range xs {
+		k := x.Code + x.Message
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, x)
+		}
+	}
+	return out
+}

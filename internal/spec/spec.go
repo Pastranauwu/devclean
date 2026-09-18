@@ -41,10 +41,24 @@ type Spec struct {
 	Agentes int `json:"agentes,omitempty"`
 	// Ship pide entregar todo en un PR al terminar la corrida (el --ship de
 	// up). Es la manera de que "levantar el spec" sea también "entregarlo".
-	Ship    bool        `json:"ship,omitempty"`
-	Limites Limites     `json:"limites,omitempty"`
-	Reglas  []string    `json:"reglas,omitempty"`
-	Tasks   []task.Task `json:"tasks"`
+	Ship    bool     `json:"ship,omitempty"`
+	Limites Limites  `json:"limites,omitempty"`
+	Reglas  []string `json:"reglas,omitempty"`
+	// Requirements y Acceptance son la interfaz humana. Tasks es el IR:
+	// puede venir escrito por un usuario avanzado o ser generado.
+	Requirements []string     `json:"requirements,omitempty"`
+	Acceptance   []Acceptance `json:"acceptance,omitempty"`
+	Constraints  Constraints  `json:"constraints,omitempty"`
+	Tasks        []task.Task  `json:"tasks"`
+}
+
+type Acceptance struct {
+	Criterion string `json:"criterion" yaml:"criterion"`
+	Command   string `json:"command,omitempty" yaml:"command,omitempty"`
+}
+
+type Constraints struct {
+	NoTocar []string `json:"no_tocar,omitempty" yaml:"no_tocar,omitempty"`
 }
 
 // Find busca el archivo de especificación en la raíz del repo.
@@ -68,7 +82,7 @@ func Load(path string) (Spec, error) {
 }
 
 // Parse convierte un documento YAML en un Spec.
-func Parse(data []byte) (Spec, error) {
+func parseLegacy(data []byte) (Spec, error) {
 	lines := strings.Split(string(data), "\n")
 	s := Spec{Version: 1}
 
@@ -547,6 +561,17 @@ func Apply(tasksDir string, s Spec, dryRun bool) ([]task.Task, error) {
 			tasksWithIDs[i].Notas = notasConReglas(s.Reglas, tasksWithIDs[i].Notas)
 		}
 	}
+	if issues := ValidatePlan(s, tasksWithIDs); len(issues) > 0 {
+		var fatal []string
+		for _, issue := range issues {
+			if issue.Level == "error" {
+				fatal = append(fatal, issue.Message)
+			}
+		}
+		if len(fatal) > 0 {
+			return nil, fmt.Errorf("plan inválido: %s", strings.Join(fatal, " · "))
+		}
+	}
 
 	// Validar todas las tareas antes de escribir nada
 	for _, t := range tasksWithIDs {
@@ -605,6 +630,22 @@ func Marshal(s Spec) []byte {
 		b.WriteString("reglas:\n")
 		for _, r := range s.Reglas {
 			fmt.Fprintf(&b, "  - %s\n", kv.Quote(r))
+		}
+	}
+	if len(s.Requirements) > 0 {
+		b.WriteString("requirements:\n")
+		for _, r := range s.Requirements {
+			fmt.Fprintf(&b, "  - %s\n", kv.Quote(r))
+		}
+	}
+	if len(s.Acceptance) > 0 {
+		b.WriteString("acceptance:\n")
+		for _, a := range s.Acceptance {
+			if a.Command == "" {
+				fmt.Fprintf(&b, "  - %s\n", kv.Quote(a.Criterion))
+				continue
+			}
+			fmt.Fprintf(&b, "  - criterion: %s\n    command: %s\n", kv.Quote(a.Criterion), kv.Quote(a.Command))
 		}
 	}
 	b.WriteString("\ntasks:\n")

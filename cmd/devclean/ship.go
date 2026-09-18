@@ -17,6 +17,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/revisor"
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/ship"
+	"github.com/Pastranauwu/devclean/internal/spec"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/tui"
@@ -131,6 +132,9 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 				out.Line("✗ %s  · %s", p.Nombre, p.Detalle)
 			}
 		},
+	}
+	if feature, err := spec.LoadFeatureState(root); err == nil {
+		opciones.Acceptance = feature.AcceptanceCommands()
 	}
 	if cfg.TimeoutPruebas > 0 {
 		opciones.Timeout = time.Duration(cfg.TimeoutPruebas) * time.Second

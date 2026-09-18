@@ -34,6 +34,9 @@ type OpcionesEntrega struct {
 	Commits map[string]string
 	Titulo  string // título del PR; vacío usa el de la primera tarea
 	Timeout time.Duration
+	// Acceptance son comandos del spec humano y corren sobre el conjunto
+	// integrado, después de la suite general y antes de crear el PR.
+	Acceptance []string
 	// Revisor, si no es nil, lee el diff completo antes de integrar y
 	// puede vetar. Es el único paso que juzga intención en vez de
 	// mecánica. Falla cerrado: lo que no se pudo revisar no se integra.
@@ -206,6 +209,13 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 		return e
 	} else {
 		apuntar(Paso{"integradas", true, pruebas})
+	}
+	for _, command := range o.Acceptance {
+		if salida, ok := correrPruebas(ctx, path, command, o.Timeout); !ok {
+			apuntar(Paso{"aceptación", false, command + " · " + salida})
+			return e
+		}
+		apuntar(Paso{"aceptación", true, command})
 	}
 
 	// 5. un solo PR

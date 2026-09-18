@@ -64,7 +64,7 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 		return spec.Spec{}, fmt.Errorf("error al leer %s: %w", filePath, err)
 	}
 
-	if n := contarSinContrato(s.Tasks); n > 0 {
+	if n := contarSinContrato(s.Tasks); n > 0 || (len(s.Tasks) == 0 && len(s.Requirements) > 0) {
 		if dryRun {
 			// en seco no se gastan tokens: se marca lo que completará la IA
 			out.Line("· %d tareas sin contrato completo · el planificador las completa al aplicar", n)
@@ -83,6 +83,11 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 	if err != nil {
 		return spec.Spec{}, err
 	}
+	for _, issue := range spec.ValidatePlan(s, applied) {
+		if issue.Level == "warning" {
+			out.Line("· plan: %s", issue.Message)
+		}
+	}
 
 	if dryRun {
 		out.Line("✓ especificación válida (%d tareas en %s, modo --dry-run):", len(applied), filepath.Base(filePath))
@@ -94,6 +99,9 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 			out.Line("  %s  %s%s  · listo cuando: %s", t.ID, t.Titulo, ag, t.ListoCuando)
 		}
 		return s, nil
+	}
+	if err := spec.SaveFeatureState(root, s); err != nil {
+		return spec.Spec{}, fmt.Errorf("no se pudo guardar la aceptación del feature: %w", err)
 	}
 
 	if err := out.Data(applied); err != nil {
