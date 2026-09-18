@@ -18,7 +18,7 @@ import (
 // tres— sigue frenando la compuerta.
 const ToleranciaPresupuesto = 1.5
 
-// verificarPresupuesto aplica §6.5.5: las líneas añadidas no pueden
+// verificarPresupuesto acota el gasto en diff: las líneas añadidas no pueden
 // pasar de limite_lineas más la tolerancia; los archivos tocados se
 // reportan.
 func verificarPresupuesto(mas, menos, masPrueba, archivos int, t task.Task) (string, bool) {

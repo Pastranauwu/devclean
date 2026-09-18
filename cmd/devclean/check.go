@@ -56,7 +56,7 @@ func runCheck(id string) error {
 		return err
 	}
 
-	// el chequeo de cruce solo mira tareas activas (§6.3)
+	// el chequeo de cruce solo mira tareas activas
 	var activas []task.Task
 	for _, o := range todas {
 		if o.ID == id {

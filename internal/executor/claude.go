@@ -33,7 +33,7 @@ func (Claude) Models(context.Context) ([]string, error) {
 
 func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	// bypassPermissions: el agente no puede preguntar nada (modo -p) y
-	// el contenedor real es el cuarto + la reversión de devclean (§11)
+	// el contenedor real es el cuarto + la reversión de devclean
 	args := []string{"-p", req.Prompt, "--output-format", "json", "--permission-mode", "bypassPermissions"}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)

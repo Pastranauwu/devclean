@@ -147,7 +147,7 @@ func byID(rows []boardRow) func(i, j int) bool {
 }
 
 // hijosBoardRow arma recursivamente el árbol de un padre a partir de los
-// nodos planos de arbol.json (§8.3). Una subtarea con latido vivo — que
+// nodos planos de arbol.json. Una subtarea con latido vivo — que
 // corre ahora mismo dentro de la recursión — se marca en curso y muestra
 // en Detalle lo que está haciendo (intento, fase, modelo, tiempo).
 func hijosBoardRow(root string, nodos []recurse.NodoArbol, padre string) []boardRow {

@@ -11,10 +11,10 @@ import (
 )
 
 // revertFueraDeAlcance revierte los archivos que el agente tocó fuera de
-// tocar_solo y los archivos de prueba (adenda A.3), y devuelve la lista
+// tocar_solo y los archivos de prueba, y devuelve la lista
 // de lo revertido para anotarlo en attempts.jsonl. La reversión es el
 // enforcement real de los límites: la verificación la hace el código, no
-// la confianza en el modelo (§6.4, §11).
+// la confianza en el modelo.
 //
 // antes es el commit con que arrancó el intento, y es contra él que se
 // mide y se restaura. Mirar solo `git status` dejaba la reversión ciega

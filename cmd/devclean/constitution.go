@@ -21,7 +21,7 @@ func newConstitutionCmd() *cobra.Command {
 	var forzar bool
 	cmd := &cobra.Command{
 		Use:   "constitution",
-		Short: "genera la constitución del proyecto (§6.11)",
+		Short: "genera la constitución del proyecto",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runConstitution(modelo, ejecutorFlag, forzar)

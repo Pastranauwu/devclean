@@ -7,7 +7,7 @@ import (
 )
 
 // verificarExpone comprueba que la tarea entregó las firmas que su
-// contrato prometía (§6.10). Una tarea puede pasar sus propias pruebas y
+// contrato prometía. Una tarea puede pasar sus propias pruebas y
 // aun así no exponer lo que su hermana consume: la hermana corre en otro
 // cuarto y no se entera hasta que las dos ramas se juntan, cuando ya es
 // tarde.

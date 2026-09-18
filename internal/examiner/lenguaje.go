@@ -19,7 +19,7 @@ const timeoutSintaxis = 15 * time.Second
 // Soportado reporta si devclean sabe generar y validar una suite ciega
 // para ese stack.
 //
-// Importa fuera de este paquete porque la adenda A.3 (el implementador
+// Importa fuera de este paquete porque la veda de pruebas (el implementador
 // nunca toca las pruebas) solo tiene sentido si hay un examinador que las
 // escriba. Donde no lo hay — node, rust — prohibirle además al
 // implementador escribirlas deja la tarea sin nadie que la haga: el
@@ -30,7 +30,7 @@ func Soportado(lenguaje string) bool { return lenguajeExamen(lenguaje) != "" }
 // lenguajeExamen normaliza el lenguaje detectado al que el examinador
 // sabe examinar. Devuelve "" cuando no hay examinador para ese stack: sin
 // validador de sintaxis la suite generada es basura que rompe la
-// compilación del cuarto, y el implementador no puede tocarla (A.3).
+// compilación del cuarto, y el implementador no puede tocarla.
 func lenguajeExamen(l string) string {
 	switch strings.ToLower(strings.TrimSpace(l)) {
 	case "", "go":
@@ -109,7 +109,7 @@ func buildPyFile(imports, funcs []string) string {
 // validarSintaxis reporta si la suite al menos parsea. No verifica tipos
 // ni que la implementación exista (que no exista todavía es TDD legítimo),
 // solo que el examinador no devolvió basura. Un lenguaje sin validador
-// devuelve nil: degradar es mejor que frenar (§6.8).
+// devuelve nil: degradar es mejor que frenar.
 func validarSintaxis(lenguaje, contenido string) error {
 	switch lenguaje {
 	case "python":

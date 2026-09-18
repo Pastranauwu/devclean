@@ -15,7 +15,7 @@ type esperarModel struct {
 }
 
 // Esperar muestra un spinner con `titulo` mientras `trabajo` corre en
-// segundo plano. No es una barra de progreso inventada (§16.2): no se
+// segundo plano. No es una barra de progreso inventada: no se
 // sabe cuánto falta, así que solo gira. Devuelve el error de `trabajo`.
 func Esperar(titulo string, trabajo func() error) error {
 	ch := make(chan error, 1)

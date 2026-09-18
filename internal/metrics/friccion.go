@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Friccion son los minutos entre abrir el PR y aprobarlo (§9). Es la
+// Friccion son los minutos entre abrir el PR y aprobarlo. Es la
 // única de las cinco métricas cuya fuente no vive en el repo: el ciclo de
 // revisión pasa en GitHub, así que hay que preguntárselo a gh.
 //
@@ -61,7 +61,7 @@ type vistaPR struct {
 }
 
 // minutosHastaAprobar mide de la apertura del PR a la PRIMERA aprobación.
-// La primera y no la última: lo que mide §9 es cuánto tarda el trabajo en
+// La primera y no la última: lo que se mide es cuánto tarda el trabajo en
 // quedar desbloqueado, y una segunda aprobación ya no desbloquea nada.
 //
 // Devuelve ok=false cuando no hay nada que medir todavía: json ilegible,

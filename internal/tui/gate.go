@@ -1,4 +1,4 @@
-// Package tui es el modo interactivo de devclean (§16): la compuerta
+// Package tui es el modo interactivo de devclean: la compuerta
 // animada de la esclusa de salida, el tablero y la corrida en vivo. Cuando
 // la salida es una terminal y no hay --plain ni --json, los comandos usan
 // esta vista; si no, el texto plano de internal/ui.
@@ -16,7 +16,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/ship"
 )
 
-// NombresPasos es el orden de la compuerta (§16.3), tal como los emite
+// NombresPasos es el orden de la compuerta, tal como los emite
 // internal/ship. Tiene que coincidir con los Paso{} de ship.go: la lista
 // se quedó en ocho mientras el código creció a once, y como el mapeo era
 // por índice, el paso "interfaces" se pintaba bajo la etiqueta "bisec" y

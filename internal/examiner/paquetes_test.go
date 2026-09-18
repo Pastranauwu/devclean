@@ -31,7 +31,7 @@ func escribirArchivo(t *testing.T, root, rel, contenido string) {
 
 // El examinador es un modelo: escribe `ast.Number{}` y se olvida del
 // import. Esa suite no compila nunca y el implementador no puede
-// arreglarla (A.3), así que quemaba todos sus intentos contra
+// arreglarla —las pruebas le están vedadas—, así que quemaba todos sus intentos contra
 // "undefined: ast".
 func TestImportsFaltantesResuelveElModulo(t *testing.T) {
 	root := cuartoConAst(t)
@@ -120,7 +120,7 @@ func TestSuiteCompletaConservaElImportDelModulo(t *testing.T) {
 }
 
 // `cmd/algo` es package main: Go no deja importarlo, así que no hay
-// examen ciego posible y la veda de rutas de prueba (A.3) no aplica — con
+// examen ciego posible y la veda de rutas de prueba no aplica — con
 // ella la tarea era imposible de terminar.
 func TestExaminableMainNoSeExamina(t *testing.T) {
 	root := cuartoConAst(t)

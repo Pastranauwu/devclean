@@ -1,7 +1,7 @@
-// Package loop implements the work loop of §6.4 and its instrumentation
-// (adenda A.2): cada intento escribe una línea en
+// Package loop implements the work loop and its instrumentation:
+// cada intento escribe una línea en
 // .devclean/runs/<id>/attempts.jsonl. Ese archivo es la única fuente de
-// las métricas y del parte de datos (§6.7); nada se recalcula leyendo el
+// las métricas y del parte de datos; nada se recalcula leyendo el
 // repo después.
 package loop
 
@@ -17,7 +17,7 @@ import (
 
 // Attempt is one line of attempts.jsonl. Los campos que el bucle no
 // puede derivar con certeza van en nil, que en JSON es null: un número
-// que no se pudo medir nunca se inventa (adenda A.2).
+// que no se pudo medir nunca se inventa.
 type Attempt struct {
 	Intento                  int       `json:"intento"`
 	Inicio                   time.Time `json:"inicio"`

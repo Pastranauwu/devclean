@@ -160,7 +160,7 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 	results := make([]runResult, 0, len(pendientes))
 
 	// esclusa de entrada por tarea: la que no pasa, se rechaza antes de
-	// gastar un solo token (§6.3)
+	// gastar un solo token
 	var aprobadas []task.Task
 	for _, t := range pendientes {
 		res := gate.Run(context.Background(), root, cfgEsclusa, t, existentes, timeout)
@@ -171,7 +171,7 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 		results = append(results, runResult{ID: t.ID, Titulo: t.Titulo, Estado: "rechazada", Motivo: motivoRechazo(res)})
 	}
 
-	// §6.10: una tarea no puede consumir una firma que nadie promete.
+	// la costura entre tareas: nadie puede consumir una firma que nadie promete.
 	// gate.Run no puede verlo: solo recibe las tareas en_curso, y quien
 	// expone suele estar pendiente en la misma corrida.
 	aprobadas, results = rechazarUsaHuerfano(aprobadas, tareas, results)
@@ -246,7 +246,7 @@ func correrConTUI(ctx context.Context, root string, cfg config.Config, ex execut
 	return results, err
 }
 
-// ejecutarOlas corre las tareas por oleadas según depende_de (Fase 2):
+// ejecutarOlas corre las tareas por oleadas según depende_de:
 // una ola solo arranca cuando sus dependencias ya están verdes. El
 // trabajo verde de cada ola se integra en una rama temporal y la
 // siguiente ola arranca desde ahí, así la cadena comparte estado.
@@ -343,7 +343,7 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 }
 
 // rechazarUsaHuerfano saca las tareas que consumen una firma que ningún
-// contrato del proyecto expone (§6.10). Es un plan incoherente: el
+// contrato del proyecto expone. Es un plan incoherente: el
 // agente iba a inventar esa interfaz, y el desajuste recién aparecería
 // al juntar las dos ramas.
 func rechazarUsaHuerfano(aprobadas, todas []task.Task, results []runResult) ([]task.Task, []runResult) {
@@ -453,8 +453,9 @@ func depsFaltantes(deps []string, verde map[string]bool) []string {
 	return faltantes
 }
 
-// asignar reparte las tareas aprobadas para correr juntas: aplica A.4 al
-// conjunto (tocar_solo vacío solo vale en solitario) y descarta las que
+// asignar reparte las tareas aprobadas para correr juntas: aplica el
+// chequeo de cruce al conjunto (tocar_solo vacío solo vale en
+// solitario) y descarta las que
 // se cruzan, en orden de ID.
 func asignar(aprobadas []task.Task) ([]task.Task, []runResult) {
 	sort.Slice(aprobadas, func(i, j int) bool { return aprobadas[i].ID < aprobadas[j].ID })
@@ -486,7 +487,7 @@ func asignar(aprobadas []task.Task) ([]task.Task, []runResult) {
 	return aceptadas, rechazos
 }
 
-// modeloParaTarea resuelve el modelo de una tarea (Fase 3): el flag
+// modeloParaTarea resuelve el modelo de una tarea: el flag
 // --modelo gana; si no, el peso de la tarea (o el de la estrategia
 // global) busca en `modelos`; y si no hay, cae al modelo del ejecutor.
 func modeloParaTarea(cfg config.Config, flagModelo string, t task.Task) string {
@@ -557,7 +558,7 @@ func (a agenteExecutor) Run(ctx context.Context, req loop.Request) (loop.Result,
 // correr lanza las tareas con `agentes` trabajadores en paralelo. onEvent,
 // si no es nil, recibe cada transición para el tablero en vivo.
 func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion, base string, asignadas []task.Task, agentes int, presupuesto *budget.Contador, ventanasReg *ventanas.Registro, onEvent func(tui.EventoRun)) []runResult {
-	// §6.9: solapamiento activo entre tareas de la misma oleada
+	// solapamiento activo entre tareas de la misma oleada
 	alertasOverlap := checkOverlapOla(root, asignadas)
 	for _, a := range alertasOverlap {
 		out.Line("⚠ SOLAPAMIENTO  %s", a)
@@ -598,7 +599,7 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 	close(jobs)
 	wg.Wait()
 
-	// §6.9 nivel 3. Va DESPUÉS de la oleada y no antes como los otros
+	// nivel funcional del solapamiento. Va DESPUÉS de la oleada y no antes como los otros
 	// dos: lo que mide es "verdes por separado, rompen juntas", y eso
 	// exige que las dos estén verdes. Antes de correr, las ramas están
 	// vacías y no hay nada que fusionar.
@@ -625,7 +626,7 @@ func checkOverlapOla(root string, tareas []task.Task) []string {
 	return alertas
 }
 
-// checkFuncionalOla corre el nivel funcional de §6.9 sobre los pares de
+// checkFuncionalOla corre el nivel funcional del solapamiento sobre los pares de
 // la oleada que terminaron verdes: fusiona sus dos ramas en seco y corre
 // las suites de las dos sobre el resultado.
 //
@@ -682,7 +683,7 @@ func checkFuncionalOla(ctx context.Context, root string, cfg config.Config, tare
 
 // resolverAgenteTarea determina el ejecutor, modelo, skills (etiquetas) y
 // skill_packages (paquetes reales a inyectar) para una tarea concreta
-// (Fase 2 / Zero-Config).
+// (zero-config).
 func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagModelo string, t task.Task) (executor.Executor, string, []string, []string) {
 	nombreAgente := t.Agente
 	if nombreAgente == "" {
@@ -1044,7 +1045,7 @@ func fasesVivas(root string, ids []string) map[string]tui.FaseRun {
 // aquí y no por lenguaje: en un repo Go, una tarea sobre `cmd/algo`
 // (`package main`) no se puede examinar —Go no deja importar un main— y
 // vedarle las rutas de prueba la dejaba imposible: el implementador
-// escribía sus pruebas, la reversión se las quitaba (A.3) y `go test
+// escribía sus pruebas, la reversión de alcance se las quitaba y `go test
 // ./cmd/algo/...` pasaba sin ejecutar nada, que el bucle ahora corta.
 // Donde sí hay examen, la veda sigue intacta.
 func patronesPruebaTarea(cfg config.Config, root string, t task.Task) []string {

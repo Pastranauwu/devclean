@@ -19,7 +19,7 @@ import (
 func newStandupCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "standup",
-		Short: "parte de datos de las tareas en curso (§6.7)",
+		Short: "parte de datos de las tareas en curso",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runStandup()

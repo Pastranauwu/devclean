@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// escanearSecretos busca credenciales en las líneas añadidas (§6.5.4).
+// escanearSecretos busca credenciales en las líneas añadidas.
 // Patrones de alta señal: claves de proveedores, claves privadas y
 // asignaciones literales de contraseñas. Las keys nunca entran al PR.
 func escanearSecretos(diff string) []Hallazgo {

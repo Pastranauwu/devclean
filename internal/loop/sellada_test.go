@@ -67,7 +67,7 @@ func TestRunNoExaminaConSuiteSelladaAMano(t *testing.T) {
 		t.Errorf("contenido de la visible = %q", data)
 	}
 
-	// y queda commiteada, o revertFueraDeAlcance (A.3) la borraría en el
+	// y queda commiteada, o revertFueraDeAlcance la borraría en el
 	// primer intento
 	if salida, err := gitRun(o.Room.Path, "log", "--oneline", "--", "src/test_devclean_visible.py"); err != nil || salida == "" {
 		t.Errorf("la suite visible manual no quedó commiteada: %q %v", salida, err)

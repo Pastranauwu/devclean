@@ -1,7 +1,7 @@
-// Package metrics computes the five metrics of §9 from the artifacts:
+// Package metrics computes the five project metrics from the artifacts:
 // attempts.jsonl, the task states and the delivery records that ship
 // leaves behind. Un agente nunca reporta su avance: todo se mide del
-// artefacto (§6.7).
+// artefacto del parte de datos.
 package metrics
 
 import (
@@ -27,7 +27,7 @@ type Entrega struct {
 	Conflicto   bool      `json:"conflicto"`
 	PR          string    `json:"pr,omitempty"`
 	Aprobado    bool      `json:"aprobado"`
-	Brecha      *float64  `json:"brecha,omitempty"` // visible_pct - hidden_pct (§6.8)
+	Brecha      *float64  `json:"brecha,omitempty"` // visible_pct - hidden_pct del examen ciego
 }
 
 func entregaPath(root, id string) string {

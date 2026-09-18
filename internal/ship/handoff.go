@@ -7,7 +7,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
-// generarHandoff arma el cuerpo del PR (§6.5.7): qué cambió, qué no se
+// generarHandoff arma el cuerpo del PR: qué cambió, qué no se
 // hizo, riesgos y cómo verificar. Determinista: todo sale del contrato y
 // del diff, nada de auto-reportes.
 func generarHandoff(t task.Task, archivos []string, mas, menos int) string {

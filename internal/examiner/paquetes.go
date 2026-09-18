@@ -26,7 +26,7 @@ var stdlibComunes = map[string]bool{
 // `paquete.Símbolo` y no declara. El examinador es un modelo: escribe una
 // suite que llama a `ast.Number{}` y se olvida de importar el paquete
 // ast, y esa suite no compila nunca. El implementador tampoco puede
-// arreglarla, porque las rutas de prueba le están vedadas (A.3): quemaba
+// arreglarla, porque las rutas de prueba le están vedadas: quemaba
 // todos sus intentos —y la escalera de modelos— contra "undefined: ast".
 //
 // Los nombres se resuelven primero contra el propio módulo (los paquetes
@@ -182,7 +182,7 @@ func paqueteEnModulo(roomPath, mod, nombre string) string {
 // suiteCompleta arma la suite y le agrega los imports que el examinador
 // se olvidó de declarar. Devuelve false cuando la suite referencia algo
 // que no se puede resolver: es mejor dejar al implementador sin examen
-// que con uno que no compila y que él no puede arreglar (A.3).
+// que con uno que no compila y que él no puede arreglar.
 func suiteCompleta(lenguaje, roomPath, pkg, importPath string, imports, funcs []string) (string, bool) {
 	contenido := armarSuite(lenguaje, pkg, importPath, imports, funcs)
 	if lenguaje != "go" {
@@ -205,7 +205,7 @@ func suiteCompleta(lenguaje, roomPath, pkg, importPath string, imports, funcs []
 }
 
 // Examinable reporta si devclean puede escribirle un examen ciego a esa
-// tarea. Importa fuera de este paquete porque la adenda A.3 —el
+// tarea. Importa fuera de este paquete porque la veda de pruebas —el
 // implementador nunca toca las pruebas— solo tiene sentido donde hay un
 // examen que proteger: en una tarea que no se puede examinar, vedarle
 // además las rutas de prueba la deja imposible (nadie escribe la suite, y

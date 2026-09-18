@@ -25,7 +25,7 @@ func tareaValida() task.Task {
 }
 
 // chequeo busca un chequeo por nombre: el orden de la lista cambia
-// cada vez que la adenda agrega uno.
+// cada vez que se agrega uno.
 func chequeo(t *testing.T, res Result, nombre string) Check {
 	t.Helper()
 	for _, c := range res.Chequeos {
@@ -239,7 +239,7 @@ func TestGateRechazaRutasDePrueba(t *testing.T) {
 
 func TestGateAceptaAlcanceQueContienePruebas(t *testing.T) {
 	// src/export/** contiene archivos _test.go pero no los declara:
-	// rechazarlo rechazaría todo contrato razonable (adenda A.3)
+	// rechazarlo rechazaría todo contrato razonable
 	tarea := tareaValida()
 	tarea.TocarSolo = []string{"src/export/**", "internal/kv/kv.go"}
 	res := Run(context.Background(), t.TempDir(), config.Config{}, tarea, nil, DefaultTimeout)

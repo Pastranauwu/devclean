@@ -1,4 +1,4 @@
-// Package standup implements the data standup report of §6.7.
+// Package standup implements the deterministic data standup report.
 // All events are derived from attempts.jsonl; no model is used for the
 // deterministic detectors. Inputs come from the caller to keep this
 // package pure.
@@ -128,7 +128,7 @@ func Analizar(
 	return eventos
 }
 
-// Formatear renders the standup report in the canonical §6.7 format.
+// Formatear renders the standup report in its canonical format.
 func Formatear(eventos []Evento, ahora time.Time, nActivas int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "PARTE %s · %d tareas en curso\n", ahora.Format("15:04"), nActivas)

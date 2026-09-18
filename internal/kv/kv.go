@@ -1,9 +1,9 @@
 // Package kv implements the small yaml subset devclean uses in both
-// .devclean/config.yml (§8.1) and the task contract frontmatter (§6.1):
+// .devclean/config.yml and the task contract frontmatter:
 // flat `clave: valor` scalars and inline lists `clave: ["a", "b"]`.
 //
 // It lives apart so config and task share one parser. Two copies that
-// drift is a bug waiting to happen (adenda C.1).
+// drift is a bug waiting to happen.
 package kv
 
 import (

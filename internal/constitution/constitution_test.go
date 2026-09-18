@@ -44,7 +44,7 @@ func TestSaveYLoadDanLaVuelta(t *testing.T) {
 	}
 }
 
-// El prompt lleva las secciones exactas porque el resto de §6.11 asume
+// El prompt lleva las secciones exactas porque el resto del flujo asume
 // esa forma; si se reescriben los encabezados, esto avisa.
 func TestPromptLlevaLasSeccionesYElContexto(t *testing.T) {
 	p := Prompt("go", "go test ./...", "cmd/devclean/main.go")

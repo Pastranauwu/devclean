@@ -125,7 +125,7 @@ func (agenteQueFalla) Run(context.Context, loop.Request) (loop.Result, error) {
 }
 
 func TestSoportado(t *testing.T) {
-	// donde hay examinador ciego, la regla A.3 tiene sentido
+	// donde hay examinador ciego, la veda de pruebas tiene sentido
 	for _, l := range []string{"go", "", "python", "pytest"} {
 		if !Soportado(l) {
 			t.Errorf("Soportado(%q) = false, quiero true", l)

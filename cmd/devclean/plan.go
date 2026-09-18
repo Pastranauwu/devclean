@@ -439,7 +439,7 @@ func confirmar(in io.Reader) bool {
 }
 
 // pedirRequisitos reúne el stack y los requisitos extra del humano
-// cuando el repo está vacío (Fase 2): sin esto, el planificador no
+// cuando el repo está vacío: sin esto, el planificador no
 // tiene de dónde agarrarse y alucina un stack.
 func pedirRequisitos(in io.Reader, tuiMode bool) (stack, requisitos string) {
 	leer := bufio.NewReader(in)

@@ -1,4 +1,4 @@
-// Package room manages the isolated workrooms of §6.2: one git
+// Package room manages the isolated workrooms: one git
 // worktree per active task under .devclean/rooms/<id>/, on branch
 // devclean/<id>, with its own dependencies and port. Rooms are
 // destroyed when the task ends.
@@ -62,7 +62,7 @@ func VerificarBase(ctx context.Context, root, base string) error {
 
 // IntegrationBranch es la rama temporal donde se encadenan las oleadas:
 // el trabajo verde de una oleada se mergea aquí y la siguiente oleada
-// crea sus cuartos desde esta rama (Fase 2).
+// crea sus cuartos desde esta rama.
 const IntegrationBranch = "devclean/_integra"
 
 // ResetIntegration borra la rama y el worktree de integración previos y
@@ -199,7 +199,7 @@ func Destroy(ctx context.Context, root, id string) error {
 	return nil
 }
 
-// freePort returns a port that was free a moment ago. §6.2: ports are
+// freePort returns a port that was free a moment ago. Ports are
 // assigned, never fixed.
 func freePort() (int, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")

@@ -13,7 +13,7 @@ import (
 
 // Snapshot es una fotografía de las métricas en un momento dado. Cada
 // corrida de `report` apunta una línea en .devclean/historial.jsonl para
-// poder dibujar la flecha de tendencia (§16.4): valor actual frente a la
+// poder dibujar la flecha de tendencia: valor actual frente a la
 // corrida anterior. Nada se recalcula leyendo el repo.
 type Snapshot struct {
 	Fecha    time.Time `json:"fecha"`

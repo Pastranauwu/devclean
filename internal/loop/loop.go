@@ -61,7 +61,7 @@ const MotivoPresupuesto = "presupuesto de tokens agotado · sube presupuesto_tok
 const MotivoVentanas = "ventana de presupuesto agotada · revisa devclean usage · sube el tope en el bloque presupuesto: de config.yml"
 
 // Examinador genera la suite de pruebas ciega antes de que el
-// implementador empiece (§6.8). La interfaz vive en loop para evitar
+// implementador empiece. La interfaz vive en loop para evitar
 // un ciclo de importación con el paquete examiner.
 type Examinador interface {
 	Run(ctx context.Context, roomPath string) (bool, error)
@@ -112,16 +112,16 @@ type Options struct {
 	Env            []string      // variables propias del cuarto (PORT, ...)
 
 	// Interfaces son las firmas congeladas de las tareas hermanas que
-	// esta consume (§6.10), ya resueltas por el que llama. Sin esto el
+	// esta consume, ya resueltas por el que llama. Sin esto el
 	// agente inventa la firma: las tareas de una misma oleada corren en
 	// cuartos separados y no pueden leerse entre sí.
 	Interfaces []string
 
-	// Constitucion es el contenido de .devclean/constitution.md (§6.11),
+	// Constitucion es el contenido de .devclean/constitution.md,
 	// ya cargado por quien llama. Si está vacío, no se inyecta nada.
 	Constitucion string
 
-	// Skills son las habilidades del rol asignado (§8.1 / Fase 1), solo
+	// Skills son las habilidades del rol asignado, solo
 	// nombres — etiquetas descriptivas en el prompt.
 	Skills []string
 
@@ -138,7 +138,7 @@ type Options struct {
 
 	// Examinador, si no es nil, se invoca una vez antes del bucle del
 	// implementador para escribir la suite visible y sellar la oculta
-	// (§6.8). Si falla, el bucle continúa sin pruebas ciegas.
+	// Si falla, el bucle continúa sin pruebas ciegas.
 	Examinador Examinador
 
 	// Revisor, si no es nil, juzga cada intento verde en tests contra
@@ -172,7 +172,7 @@ type Outcome struct {
 	Pregunta    string `json:"pregunta,omitempty"`
 }
 
-// Run dirige el bucle de §6.4 e instrumenta cada intento (adenda A.2).
+// Run dirige el bucle de intentos e instrumenta cada uno en attempts.jsonl.
 // Devuelve el Outcome; solo error si el mecanismo falla (no si la tarea
 // se agotó: detenerse es un resultado válido, no un fallo).
 func Run(ctx context.Context, o Options) (Outcome, error) {
@@ -404,9 +404,9 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		}
 
 		// salir con 0 sin haber ejecutado una sola prueba no es verde:
-		// no hay oráculo que juzgue la tarea (§6.4). Pasa cuando el
+		// no hay oráculo que juzgue la tarea. Pasa cuando el
 		// implementador escribió su propia suite y la reversión de
-		// alcance la quitó (A.3), o cuando el examinador ciego degradó
+		// alcance la quitó, o cuando el examinador ciego degradó
 		// y nunca hubo suite. Reintentar no lo arregla —el agente no
 		// puede tocar las pruebas—, así que se detiene con el motivo.
 		if code != nil && *code == 0 && SinPruebas(salida) {
@@ -486,7 +486,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 // selló con `devclean task seal`. Aterriza en la misma ruta que usaría el
 // examinador automático, así que de acá para abajo nadie distingue el
 // origen. Degrada igual que el examinador: si algo falla, el implementador
-// corre sin suite visible, pero nunca se lo frena (§6.8).
+// corre sin suite visible, pero nunca se lo frena.
 func suiteManualEnCuarto(root, id, roomPath string) {
 	s, err := sealed.Read(root, id)
 	if err != nil || s.Visible == "" || s.ArchivoVisible == "" {
@@ -499,7 +499,7 @@ func suiteManualEnCuarto(root, id, roomPath string) {
 	if err := os.WriteFile(abs, []byte(s.Visible), 0o644); err != nil {
 		return
 	}
-	// commitear o revertFueraDeAlcance (A.3) la borra en el primer
+	// commitear o revertFueraDeAlcance la borra en el primer
 	// intento: git status lista lo que cambió, no lo ya commiteado.
 	_, _ = gitRun(roomPath, "add", s.ArchivoVisible)
 	_, _ = gitRun(roomPath, "-c", "user.name=devclean", "-c", "user.email=devclean@local",
@@ -508,7 +508,7 @@ func suiteManualEnCuarto(root, id, roomPath string) {
 
 // commitWip guarda el punto de restauración interno: un commit `wip:` en
 // la rama del cuarto. Sin cambios que guardar, no hace nada. Los wip son
-// basura intencional que ship aplana; nunca llegan al PR (§6.4).
+// basura intencional que ship aplana; nunca llegan al PR.
 func commitWip(roomPath, id string, intento int) error {
 	if _, err := gitRun(roomPath, "diff", "--cached", "--quiet"); err == nil {
 		return nil // nada que guardar
@@ -572,7 +572,7 @@ func promptPara(t task.Task, interfaces []string, constitucion string, skills []
 	if len(t.TocarSolo) > 0 {
 		fmt.Fprintf(&b, "Solo puedes tocar: %s\n", strings.Join(t.TocarSolo, ", "))
 	}
-	// §6.10: lo que esta tarea debe exponer y lo que otras ya le
+	// la costura: lo que esta tarea debe exponer y lo que otras ya le
 	// garantizan. Son contrato, no sugerencia: la esclusa de salida
 	// verifica que `expone` aparezca en el diff.
 	if len(t.Expone) > 0 {

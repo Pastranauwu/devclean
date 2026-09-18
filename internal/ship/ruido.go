@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// escanearRuido busca la basura de §6.5.3: prints de debug, código
+// escanearRuido busca la basura que no debe llegar al PR: prints de debug, código
 // comentado y archivos temporales. Conservador a propósito: un falso
 // positivo frena un PR válido.
 func escanearRuido(diff string, archivos []string) []Hallazgo {

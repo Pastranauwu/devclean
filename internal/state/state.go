@@ -1,6 +1,6 @@
 // Package state tracks the runtime state of each task in
 // .devclean/state/<id>.json. State files are machine-managed, so they
-// are JSON; the contract stays in yaml for humans (§6.1).
+// are JSON; the contract stays in yaml for humans.
 package state
 
 import (

@@ -1,4 +1,4 @@
-// Package sealed manages the hidden test suite storage for §6.8.
+// Package sealed manages the hidden test suite storage of the blind examiner.
 // The sealed dir lives in the main repo (.devclean/sealed/<id>/), NOT
 // in the worktree — the worktree is the implementer's domain.
 package sealed

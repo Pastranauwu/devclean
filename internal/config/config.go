@@ -1,5 +1,5 @@
 // Package config handles .devclean/config.yml, the project settings of
-// devclean (§8.1), and the layout of the .devclean directory.
+// devclean, and the layout of the .devclean directory.
 //
 // The file uses a small yaml subset: flat `clave: valor` scalars and
 // inline lists `clave: ["a", "b"]`. Values with commas inside quotes are
@@ -29,7 +29,7 @@ type Config struct {
 	Pruebas string `json:"pruebas"`
 	// Cli fija el CLI de agente por defecto (opencode | claude). Se llama
 	// "cli" y no "ejecutor" a propósito: ese nombre ya lo usa el rol
-	// `ejecutor` dentro de `proveedores` (§8.1), y kv.Pairs no distingue
+	// `ejecutor` dentro de `proveedores`, y kv.Pairs no distingue
 	// indentación — dos claves iguales a distinta profundidad se pisan.
 	Cli             string   `json:"cli,omitempty"`
 	ZonasProhibidas []string `json:"zonas_prohibidas"`
@@ -68,13 +68,13 @@ type Config struct {
 	Agentes             map[string]Agente         `json:"agentes,omitempty"`
 	Estrategia          string                    `json:"estrategia,omitempty"` // ligera | equilibrada | pesada
 	Modelos             map[string]string         `json:"modelos,omitempty"`    // peso -> modelo (liviana/media/pesada)
-	// ReglasImport declara la dirección permitida entre módulos (§6.10):
+	// ReglasImport declara la dirección permitida entre módulos:
 	// cada string es una cadena como "api → dominio → datos". Se verifica
 	// en la esclusa de salida que ningún import del diff viole el orden.
 	ReglasImport []string `json:"reglas_import,omitempty"`
 }
 
-// Proveedor es un rol del motor de agentes (§8.1): qué modelo usa y de
+// Proveedor es un rol del motor de agentes: qué modelo usa y de
 // qué variable de entorno sale su key. Los roles son planificador,
 // ejecutor y revisor.
 type Proveedor struct {
@@ -82,7 +82,7 @@ type Proveedor struct {
 	KeyEnv string `json:"key_env"`
 }
 
-// Agente es un agente del motor (§8.1 / Fase 1): qué proveedor usa, qué
+// Agente es un agente del motor: qué proveedor usa, qué
 // modelo, variable de entorno para su API key y habilidades asociadas.
 type Agente struct {
 	Provider string   `json:"provider"`
@@ -96,7 +96,7 @@ type Agente struct {
 	SkillPackages []string `json:"skill_packages,omitempty"`
 }
 
-// DefaultForbiddenZones implements §6.3: lockfiles, migrations, CI and
+// DefaultForbiddenZones lists the global forbidden zones: lockfiles, migrations, CI and
 // changelog never belong to a task.
 func DefaultForbiddenZones() []string {
 	return []string{
@@ -126,7 +126,7 @@ var lockfilePorManifiesto = map[string][]string{
 // LockfilesDerivados devuelve los archivos de bloqueo que la herramienta
 // regenera a partir de los manifiestos presentes en un alcance.
 //
-// Los lockfiles son zona prohibida (§6.3) para que nadie los edite a mano
+// Los lockfiles son zona prohibida para que nadie los edite a mano
 // y finja una resolución de dependencias. Pero cuando la tarea sí puede
 // tocar el manifiesto, prohibir el lockfile deja el proyecto sin compilar:
 // añadir una dependencia a go.mod y revertir go.sum daba
@@ -146,9 +146,9 @@ func LockfilesDerivados(tocarSolo []string) []string {
 	return out
 }
 
-// DefaultTestPatterns are the test paths no contract may claim (adenda
-// A.3): en v0.2 las escribe un examinador ciego, así que el
-// implementador nunca puede editarlas.
+// DefaultTestPatterns are the test paths no contract may claim: las
+// escribe un examinador ciego, así que el implementador nunca puede
+// editarlas.
 func DefaultTestPatterns() []string {
 	return []string{
 		"*_test.go",
@@ -349,7 +349,7 @@ func ModeloRol(c Config, rol string) string {
 }
 
 // PesoPorDefecto devuelve el peso que usa una tarea sin peso explícito,
-// a partir de la estrategia global (Fase 3). Por defecto, media.
+// a partir de la estrategia global. Por defecto, media.
 func (c Config) PesoPorDefecto() string {
 	switch c.Estrategia {
 	case "ligera":
@@ -539,7 +539,7 @@ func parsePresupuestoVentanas(data []byte) (map[string]map[string]int, error) {
 	return out, nil
 }
 
-// parseModelos lee el bloque anidado `modelos:` (Fase 3), con un peso
+// parseModelos lee el bloque anidado `modelos:`, con un peso
 // por línea: `liviana: glm-4`.
 func parseModelos(data []byte) (map[string]string, error) {
 	children, err := kv.Nested(strings.Split(string(data), "\n"), "modelos", 1)
@@ -556,7 +556,7 @@ func parseModelos(data []byte) (map[string]string, error) {
 	return out, nil
 }
 
-// parseProveedores lee el bloque anidado `proveedores:` (§8.1), con un
+// parseProveedores lee el bloque anidado `proveedores:`, con un
 // rol por línea: `planificador: { modelo: X, key_env: Y }`.
 func parseProveedores(data []byte) (map[string]Proveedor, error) {
 	children, err := kv.Nested(strings.Split(string(data), "\n"), "proveedores", 1)
@@ -577,7 +577,7 @@ func parseProveedores(data []byte) (map[string]Proveedor, error) {
 	return out, nil
 }
 
-// parseAgentes lee el bloque anidado `agentes:` (Fase 1), con un agente
+// parseAgentes lee el bloque anidado `agentes:`, con un agente
 // por línea: `architect: { provider: claude, model: claude-sonnet, skills: ["diseno"] }`.
 func parseAgentes(data []byte) (map[string]Agente, error) {
 	children, err := kv.Nested(strings.Split(string(data), "\n"), "agentes", 1)

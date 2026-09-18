@@ -12,12 +12,12 @@ import (
 
 // simbolosExportados recoge los símbolos exportados de nivel superior en
 // los archivos Go cambiados desde base, vía go/ast. Devuelve nil (null en
-// JSON) cuando el diff no trae archivos Go: la adenda A.2 manda null si
+// JSON) cuando el diff no trae archivos Go: attempts.jsonl lleva null si
 // el lenguaje no se soporta.
 //
 // Aproximación honesta: reporta los exportados de los archivos del diff,
 // no solo los añadidos línea a línea. Es señal suficiente para el cruce
-// semántico de §6.9 y no inventa nada.
+// semántico del solapamiento y no inventa nada.
 func simbolosExportados(roomPath, base string) (*[]string, error) {
 	files, err := filesSince(roomPath, base)
 	if err != nil {

@@ -1,4 +1,4 @@
-// Package gate implements the entry gate of §6.3: the four checks a
+// Package gate implements the entry gate: the checks a
 // task must pass before devclean spends a single token on it.
 //
 //  0. el contrato es válido (version, id, límites)
@@ -44,7 +44,7 @@ type Result struct {
 	Aviso    string  `json:"aviso,omitempty"`
 }
 
-// Cruce runs only the scope check between tasks (§6.3.3 y A.4):
+// Cruce runs only the scope check between tasks:
 // rejects when tocar_solo overlaps another's, or is empty while another
 // task runs. cmd/run uses it at assignment time, where the tasks already
 // passed the full gate, so no test command runs again.
@@ -65,13 +65,13 @@ func (r Result) PrimerMotivo() string {
 // Run executes the five checks in order. Check 2 runs listo_cuando for
 // real, with timeout, in the repository root. otras carries only the
 // tasks already en_curso, which is what decides whether tocar_solo may
-// stay empty (adenda A.4).
+// stay empty.
 func Run(ctx context.Context, root string, cfg config.Config, t task.Task, otras []task.Task, timeout time.Duration) Result {
 	res := Result{ID: t.ID}
 	res.Aviso = t.Aviso
 
 	// el contrato se valida primero: sin version ni id no hay tarea
-	// que evaluar (adenda A.1). Los demás chequeos corren igual, para
+	// que evaluar. Los demás chequeos corren igual, para
 	// que un solo paso liste todo lo que hay que arreglar.
 	res.Chequeos = append(res.Chequeos, checkContrato(t))
 
@@ -168,9 +168,9 @@ func checkFallaHoy(ctx context.Context, root, listoCuando string, timeout time.D
 }
 
 // checkSinCruce: tocar_solo must not overlap with any other active
-// task's. The caller passes only tasks in state en_curso (§6.3).
+// task's. The caller passes only tasks in state en_curso.
 func checkSinCruce(t task.Task, otras []task.Task) Check {
-	// A.4: sin alcance declarado no hay cruce que detectar, así que
+	// sin alcance declarado no hay cruce que detectar, así que
 	// vacío solo vale mientras esta sea la única tarea en curso
 	if len(t.TocarSolo) == 0 {
 		for _, o := range otras {
@@ -196,12 +196,12 @@ func checkSinCruce(t task.Task, otras []task.Task) Check {
 }
 
 // AlcanceProhibido reporta si una ruta de tocar_solo cae en una zona
-// prohibida global (§6.3: lockfiles, migraciones, CI, changelog) o en
-// una ruta de prueba (adenda A.3: las escribe el examinador ciego), y
+// prohibida global (lockfiles, migraciones, CI, changelog) o en
+// una ruta de prueba (las escribe el examinador ciego), y
 // devuelve cuál. `plan` la usa para recortar el alcance antes de
 // escribir el contrato: el planificador es un modelo y a veces las
 // incluye, y un rechazo en la esclusa no tiene arreglo salvo editar a
-// mano, que es justo lo que devclean evita (§6.1).
+// mano, que es justo lo que devclean evita.
 func AlcanceProhibido(p string, zonas, patronesPrueba []string) (string, bool) {
 	for _, z := range zonas {
 		if globsOverlap(p, z) {
@@ -224,7 +224,7 @@ func AlcanceProhibido(p string, zonas, patronesPrueba []string) (string, bool) {
 }
 
 // checkZonasProhibidas: tocar_solo must not reach the global forbidden
-// zones (§6.3: lockfiles, migrations, CI, changelog).
+// zones: lockfiles, migrations, CI, changelog.
 func checkZonasProhibidas(t task.Task, zonas []string) Check {
 	for _, z := range zonas {
 		for _, p := range t.TocarSolo {
@@ -236,8 +236,8 @@ func checkZonasProhibidas(t task.Task, zonas []string) Check {
 	return Check{"zonas prohibidas", true, ""}
 }
 
-// checkRutasDePrueba: tocar_solo must never reach the test files
-// (adenda A.3). En v0.2 las escribe un examinador ciego; si el
+// checkRutasDePrueba: tocar_solo must never reach the test files.
+// Las escribe un examinador ciego; si el
 // implementador puede editarlas, el examen no vale nada.
 func checkRutasDePrueba(t task.Task, patrones []string) Check {
 	// ver AlcanceProhibido: vacío significa "ninguna vedada", no "usa los

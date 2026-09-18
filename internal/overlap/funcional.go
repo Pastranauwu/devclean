@@ -22,7 +22,7 @@ type Suite struct {
 	ListoCuando string
 }
 
-// ResultadoFuncional es el tercer nivel de §6.9: qué pasó al correr las
+// ResultadoFuncional es el tercer nivel del solapamiento: qué pasó al correr las
 // suites de las dos tareas sobre su fusión.
 //
 // Corrio y Rompen son preguntas distintas. Un par sin correr no es un par
@@ -54,7 +54,7 @@ func (r ResultadoFuncional) Alerta() string {
 }
 
 // CheckFuncional monta la fusión de las dos ramas en un worktree suelto y
-// corre ahí las suites de las dos tareas (§6.9, nivel 3).
+// corre ahí las suites de las dos tareas (nivel funcional).
 //
 // Es el nivel que atrapa el fallo que los otros dos no ven: dos ramas
 // verdes por separado que rompen juntas. Sin conflicto de texto y sin

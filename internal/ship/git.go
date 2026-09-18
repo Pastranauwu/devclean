@@ -17,7 +17,7 @@ func gitRun(dir string, args ...string) (string, error) {
 	return string(out), err
 }
 
-// rebase trae la base y rebasea la rama del cuarto sobre ella (§6.5.1).
+// rebase trae la base y rebasea la rama del cuarto sobre ella.
 // Devuelve la ref destino y, si hubo conflicto, los archivos implicados.
 func rebase(ctx context.Context, root, roomPath, base, rama string) (target string, conflictos []string, err error) {
 	// sin remoto no hay qué traer: el fetch falla y se ignora
@@ -49,7 +49,7 @@ func unmerged(dir string) []string {
 }
 
 // aplanar colapsa los commits wip de la rama en uno solo con mensaje
-// Conventional Commits y trailer Agent: (§6.5.2). Devuelve cuántos wip
+// Conventional Commits y trailer `Agent:`. Devuelve cuántos wip
 // había y el hash del commit resultante.
 func aplanar(ctx context.Context, roomPath, target, titulo, tipo, modelo string) (int, string, error) {
 	out, err := gitRun(roomPath, "rev-list", "--count", target+"..HEAD")

@@ -6,7 +6,7 @@ import (
 )
 
 // verificarDependencias comprueba que el diff no viole las reglas de
-// importación declaradas en config (§6.10). Para cada regla
+// importación declaradas en config. Para cada regla
 // "A → B → C", un archivo que pertenezca a una capa inferior no puede
 // importar una capa superior.
 //

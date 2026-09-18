@@ -6,7 +6,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
-// Metricas es el reporte de §9. Los punteros nulos (null) marcan lo que
+// Metricas es el reporte de las cinco métricas. Los punteros nulos (null) marcan lo que
 // no tiene datos todavía, en vez de un número inventado.
 type Metricas struct {
 	IntentosHastaVerde float64  `json:"intentos_hasta_verde"`

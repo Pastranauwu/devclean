@@ -11,9 +11,9 @@ import (
 	"github.com/Pastranauwu/devclean/internal/room"
 )
 
-// abrirPR sube la rama, abre el PR con gh y libera el cuarto (§6.5.8).
+// abrirPR sube la rama, abre el PR con gh y libera el cuarto.
 // Devuelve la URL del PR. gh es la vía de v0.1; el fallback por API REST
-// llega después (§15).
+// llega después.
 func abrirPR(ctx context.Context, root string, r room.Room, base, titulo, cuerpo string) (string, error) {
 	gh, err := exec.LookPath("gh")
 	if err != nil {

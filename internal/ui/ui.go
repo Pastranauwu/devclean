@@ -1,5 +1,5 @@
 // Package ui implements the two output modes of devclean:
-// plain text (one line per event) and structured JSON (§16.5).
+// plain text (one line per event) and structured JSON.
 package ui
 
 import (
@@ -10,7 +10,7 @@ import (
 
 // Printer writes command output in plain or JSON mode.
 // Plain is the default and the only visual style of the task core:
-// lowercase lines, no trailing period, no colors (§16.6).
+// lowercase lines, no trailing period, no colors.
 type Printer struct {
 	w    io.Writer
 	json bool

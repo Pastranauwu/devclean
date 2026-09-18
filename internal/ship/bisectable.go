@@ -10,7 +10,7 @@ import (
 )
 
 // verificarBisectable corre el comando de pruebas del proyecto sobre el
-// commit aplanado (§6.5.6): cada commit debe compilar y pasar pruebas.
+// commit aplanado: cada commit debe compilar y pasar pruebas.
 // Con un solo commit, es correr la suite una vez y exigir verde.
 func verificarBisectable(ctx context.Context, roomPath, pruebas string, timeout time.Duration) (string, bool) {
 	if strings.TrimSpace(pruebas) == "" {

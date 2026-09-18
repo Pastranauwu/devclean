@@ -1,4 +1,4 @@
-// Package task implements the task contract of §6.1: one markdown file
+// Package task implements the task contract: one markdown file
 // per task under .devclean/tasks/, with a frontmatter block in the same
 // yaml subset as config.yml and a free notes body.
 package task
@@ -13,14 +13,14 @@ import (
 	"github.com/Pastranauwu/devclean/internal/kv"
 )
 
-// Defaults for the optional contract fields (§6.1).
+// Defaults for the optional contract fields.
 const (
 	DefaultLimiteIntentos  = 3
 	DefaultLimiteLineas    = 200
 	DefaultLimiteSubtareas = 5
 )
 
-// Version is the contract version this binary understands (adenda A.1).
+// Version is the contract version this binary understands.
 // A file declaring a higher one is read tolerantly and reported.
 const Version = 1
 
@@ -41,7 +41,7 @@ type Task struct {
 
 	// Expone son las firmas públicas que esta tarea produce y que otras
 	// consumen: "wol.Send(mac, addr string) error", "POST /wake".
-	// Usa son las que consume de sus hermanas (§6.10). Congelarlas en
+	// Usa son las que consume de sus hermanas. Congelarlas en
 	// ambos contratos es lo que deja que dos tareas de la misma oleada,
 	// que corren ciegas en cuartos separados, se encuentren.
 	Expone []string `json:"expone,omitempty"`
@@ -51,7 +51,7 @@ type Task struct {
 	LimiteLineas   int    `json:"limite_lineas"`
 	Riesgos        string `json:"riesgos"`
 	Peso           string `json:"peso,omitempty"`   // liviana | media | pesada ("" = estrategia global)
-	Agente         string `json:"agente,omitempty"` // agente asignado (Fase 2)
+	Agente         string `json:"agente,omitempty"` // agente asignado
 
 	// Recursivo marca una tarea como demasiado grande para un solo
 	// intento de agente: en vez de escribir código directo, el bucle la
@@ -105,7 +105,7 @@ func DependenciasPorPosicion(deps, ids []string) []string {
 // literal rechazaría implementaciones correctas. Lo que sí atrapa es el
 // fallo real: que la tarea no haya implementado la pieza, o la haya
 // bautizado distinto de lo que su hermana espera. La verificación por
-// AST completo es v0.2 (§6.8).
+// AST completo sigue pendiente.
 func NombreDeFirma(firma string) string {
 	s := strings.TrimSpace(firma)
 	if i := strings.Index(s, "("); i >= 0 {

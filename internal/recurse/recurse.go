@@ -1,4 +1,4 @@
-// Package recurse implementa la ejecución recursiva de tareas (§8.3): una
+// Package recurse implementa la ejecución recursiva de tareas: una
 // tarea marcada `recursivo: true` no la resuelve un solo intento de
 // agente — se reparte en subtareas reales, cada una con su propio
 // contrato y su propio `listo_cuando`, que corren en cuartos anidados

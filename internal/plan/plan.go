@@ -1,7 +1,7 @@
-// Package plan implementa al planificador (§5, §8.2): convierte una
+// Package plan implementa al planificador: convierte una
 // petición en lenguaje natural en contratos de tarea. El contrato lo
 // redacta un modelo; devclean solo parsea, muestra y aprueba. Nunca lo
-// escribe a mano el usuario (§6.1).
+// escribe a mano el usuario.
 package plan
 
 import (
@@ -95,21 +95,21 @@ type Generador interface {
 
 // Contexto es lo que devclean sabe del repositorio al momento de
 // planear. Se lo pasa al modelo para que no adivine el stack ni
-// invente comandos que no existen en el proyecto (§8.2).
+// invente comandos que no existen en el proyecto.
 type Contexto struct {
 	Lenguaje     string   // go, node, python, rust, "" si no se detecta
 	EsVacio      bool     // repo sin código fuente todavía
 	Pruebas      string   // comando de pruebas detectado ("" si no hay)
 	Stack        string   // stack elegido por el humano ("" si lo decide el modelo)
 	Requisitos   string   // requisitos extra que dijo el humano, en texto libre
-	Constitucion string   // contenido de .devclean/constitution.md (§6.11), "" si no existe
+	Constitucion string   // contenido de .devclean/constitution.md, "" si no existe
 	Vedadas      []string // globs que tocar_solo nunca puede incluir (zonas prohibidas + rutas de prueba)
 	// Ocupados son los alcances que ya tienen dueño: tocar_solo de las
 	// tareas activas, por id. Sin esto el planificador propone tareas
 	// que se cruzan con las que ya corren, la esclusa de entrada las
-	// rechaza (§6.9) y los tokens del plan se gastaron para nada.
+	// rechaza por solapamiento y los tokens del plan se gastaron para nada.
 	Ocupados map[string][]string
-	Agentes  map[string]config.Agente // agentes disponibles en config.yml (§8.1 / Fase 2)
+	Agentes  map[string]config.Agente // agentes disponibles en config.yml
 	// PruebasPropias marca que este stack no tiene examinador ciego, así
 	// que las pruebas las escribe la propia tarea y su archivo tiene que
 	// entrar en tocar_solo. Sin decirlo, el planificador apunta el

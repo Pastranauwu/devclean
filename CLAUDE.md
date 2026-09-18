@@ -2,6 +2,7 @@
 
 > **Documento maestro de contexto para Claude y agentes de IA.**
 > Resume el propósito del proyecto, la arquitectura, el estado actual de implementación (qué está hecho y qué funciona), las decisiones de diseño tomadas, y qué detalles faltan por pulir.
+> Para cómo llegó hasta aquí —la intención original, la cronología y lo que se descartó— está `docs/HISTORIA.md`, el único documento histórico del repo.
 
 ---
 
@@ -283,9 +284,9 @@ El proyecto alcanzó **v1.1.0** (18 de septiembre de 2026), el estado objetivo d
 Aunque el núcleo es sólido y funcional, existen áreas identificadas que requieren pulido y evolución:
 
 ### 7.1. Mejoras Técnicas y de Precisión
-1. **Mutation Score para el Examinador Ciego (§6.8):** Falta integrar análisis de mutación (ej. `go-mutesting`) para verificar que las suites generadas realmente detecten fallos y no sean triviales.
-2. **Validación de Firmas por AST (§6.10):** En el paso `interfaces` de la esclusa de salida, la comparación se hace por nombre de función/símbolo (`task.NombreDeFirma`). Falta implementar análisis sintáctico por AST para validar signaturas completas respetando tipos.
-3. **Detección de Duplicación de Código entre Ramas (§6.10):** Comparación estructural de funciones nuevas entre ramas activas de una misma oleada para alertar si dos agentes están reimplementando la misma utilidad.
+1. **Mutation Score para el Examinador Ciego:** Falta integrar análisis de mutación (ej. `go-mutesting`) para verificar que las suites generadas realmente detecten fallos y no sean triviales.
+2. **Validación de Firmas por AST:** En el paso `interfaces` de la esclusa de salida, la comparación se hace por nombre de función/símbolo (`task.NombreDeFirma`). Falta implementar análisis sintáctico por AST para validar signaturas completas respetando tipos.
+3. **Detección de Duplicación de Código entre Ramas:** Comparación estructural de funciones nuevas entre ramas activas de una misma oleada para alertar si dos agentes están reimplementando la misma utilidad.
 4. **`spec.Marshal` no escribe `constraints`:** exportar un spec (`plan --export-spec`) pierde el `no_tocar` global, así que el round-trip no es fiel. El `Apply` sí los propaga; lo que no es fiel es el YAML exportado.
 
 ### 7.2. Motores de Agentes y Modelos
@@ -319,4 +320,4 @@ Aunque el núcleo es sólido y funcional, existen áreas identificadas que requi
 - **El nivel funcional de overlap corre DESPUÉS de la oleada:** Si se corre antes, las ramas de las tareas están vacías y no detecta nada. Requiere `Resultado.Arbol` proveniente de `mergeTree`.
 - **`standup.Analizar` requiere latidos EN CRUDO (`LeerLatidosCrudos`):** La diferencia temporal entre latido fresco y rancio separa una tarea atascada (`ATASCO`) de una que murió por kill (`MUERTA`).
 - **El ledger de ventanas es global del usuario (`~/.devclean/ventanas.jsonl`):** No se resetea borrando la carpeta `.devclean/` del proyecto.
-- **Convenciones de Mensajes de Error (§16.6):** Frases en minúscula, sin punto final, sin disculpas, indicando qué ocurrió y qué hacer para solucionarlo (ej. `tarea rechazada · listo_cuando no ejecutable · edita T-001 y reintenta`).
+- **Convenciones de Mensajes de Error:** Frases en minúscula, sin punto final, sin disculpas, indicando qué ocurrió y qué hacer para solucionarlo (ej. `tarea rechazada · listo_cuando no ejecutable · edita T-001 y reintenta`).

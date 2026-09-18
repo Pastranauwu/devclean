@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// paleta del cuarto limpio industrial (§16.2)
+// paleta del cuarto limpio industrial
 var (
 	presion = lipgloss.Color("#4FB3A2")
 	alerta  = lipgloss.Color("#D96C4A")
@@ -89,7 +89,7 @@ func Logo(width int) string {
 	return b.String()
 }
 
-// Caja envuelve contenido en una tarjeta con borde recto (§16.2), para
+// Caja envuelve contenido en una tarjeta con borde recto, para
 // comandos fuera de internal/tui que quieren la misma tarjeta.
 func Caja(s string) string { return caja(s) }
 
@@ -101,7 +101,7 @@ func Presion(s string) string { return estiloPresion.Render(s) }
 func Alerta(s string) string  { return estiloAlerta.Render(s) }
 func Espera(s string) string  { return estiloEspera.Render(s) }
 
-// caja envuelve contenido en una tarjeta con borde recto (§16.2).
+// caja envuelve contenido en una tarjeta con borde recto.
 func caja(s string) string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).

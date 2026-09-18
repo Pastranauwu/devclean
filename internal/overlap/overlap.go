@@ -1,4 +1,4 @@
-// Package overlap implements the active overlap detection of §6.9 en sus
+// Package overlap implements the active overlap detection en sus
 // tres niveles: textual (git merge-tree), semántico (símbolos exportados
 // en común, de attempts.jsonl) y funcional (fusionar en seco y correr las
 // suites de las dos tareas sobre el resultado, en funcional.go).
@@ -38,7 +38,7 @@ type Resultado struct {
 
 // Sospechoso reporta si este par amerita el nivel funcional, que es el
 // único que cuesta caro porque ejecuta código. Un par limpio en texto y
-// en símbolos no se merece dos suites: §6.9 pide que el tercer nivel se
+// en símbolos no se merece dos suites: el tercer nivel se
 // dispare solo cuando alguno de los dos primeros marcó algo.
 func (r Resultado) Sospechoso() bool { return r.Textual || r.Semantico }
 

@@ -1,5 +1,5 @@
 // Package executor wraps agent CLIs as subprocesses behind the
-// Executor interface (§8.3, opción A). devclean does not implement its
+// Executor interface. devclean does not implement its
 // own tool loop: it inherits editing, context and tools from the CLI.
 package executor
 
@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Executor is the adapter contract of §8.3.
+// Executor is the adapter contract for agent CLIs.
 type Executor interface {
 	Name() string
 	Available() error // verifica binario y versión
@@ -33,7 +33,7 @@ type Request struct {
 	AllowedGlobs []string // tocar_solo
 	Model        string
 	Timeout      time.Duration
-	// Env carries the room's own variables (PORT, ...) — §6.2.
+	// Env carries the room's own variables (PORT, ...).
 	Env []string
 }
 

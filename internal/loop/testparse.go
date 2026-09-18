@@ -16,7 +16,7 @@ var (
 
 // ParseTestCounts parses test pass/fail counts from test runner output.
 // Returns (nil, nil) when the format is not recognized — callers must
-// not invent numbers (adenda A.2).
+// not invent numbers.
 func ParseTestCounts(salida string) (pasaron, fallaron *int) {
 	// pytest y jest: "5 passed, 4 failed" / "Tests: 5 passed, 4 failed"
 	if m := passedFailedRE.FindStringSubmatch(salida); m != nil {
@@ -62,9 +62,9 @@ var (
 // SinPruebas reporta si un comando que salió con 0 lo hizo sin ejecutar
 // ninguna prueba. `go test ./pkg/...` sobre un paquete sin archivos de
 // prueba devuelve 0, así que un verde así no prueba nada: el agente
-// escribió sus pruebas y la reversión de alcance (A.3) las quitó, o el
+// escribió sus pruebas y la reversión de alcance las quitó, o el
 // examinador ciego degradó y nunca hubo suite. Quien decide verde por
-// código de salida tiene que descartar ese caso (§6.4).
+// código de salida tiene que descartar ese caso.
 //
 // Solo cuenta como vacío si el runner avisó Y no hay rastro de ninguna
 // prueba ejecutada: una corrida multi-paquete donde otros paquetes sí

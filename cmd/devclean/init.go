@@ -53,7 +53,7 @@ func newInitCmd() *cobra.Command {
 }
 
 // confirmarPruebas shows the detected test command and takes a
-// correction (adenda C.5): una detección silenciosa equivocada cuesta
+// correction: una detección silenciosa equivocada cuesta
 // horas. Enter en blanco acepta lo detectado.
 func confirmarPruebas(in io.Reader, detectado string) string {
 	if detectado == "" {

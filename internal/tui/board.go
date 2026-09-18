@@ -16,7 +16,7 @@ import (
 )
 
 // Fila es una tarea del tablero, con sus subtareas si viene de una tarea
-// recursiva (§8.3) — Hijos queda vacío en el caso normal.
+// recursiva — Hijos queda vacío en el caso normal.
 type Fila struct {
 	ID     string
 	Titulo string
@@ -138,7 +138,7 @@ func lineasPresupuesto(root string) []string {
 }
 
 // filaConHijos arma la línea de una fila y, debajo, su árbol de
-// subtareas indentado (§8.3) — recursivo, así que una subtarea que a su
+// subtareas indentado — recursivo, así que una subtarea que a su
 // vez recursó también se ve anidada.
 func filaConHijos(f Fila, profundidad int, sel string) []lineaSticker {
 	marca, color := "  ", rgbTinta

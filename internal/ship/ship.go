@@ -1,6 +1,6 @@
-// Package ship implements the exit gate of §6.5: the nine deterministic
+// Package ship implements the exit gate: the deterministic
 // steps a task must pass before devclean opens a PR. Every check is pure
-// code; no model is involved in verification (§6.5, reglas del equipo).
+// code; no model is involved in verification.
 //
 // Los pasos corren en orden y la compuerta se detiene en el primero que
 // falla: sin PR, con la razón exacta.
@@ -38,7 +38,7 @@ type Resultado struct {
 	LineasMenos int      `json:"lineas_menos,omitempty"`
 	Ruido       int      `json:"ruido,omitempty"`
 	Conflicto   bool     `json:"conflicto,omitempty"`
-	Brecha      *float64 `json:"brecha,omitempty"` // visible_pct - hidden_pct (§6.8)
+	Brecha      *float64 `json:"brecha,omitempty"` // visible_pct - hidden_pct del examen ciego
 }
 
 // Opciones carries the exit gate's dependencies.
@@ -125,7 +125,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 		apuntar(Paso{"presupuesto", true, detalle})
 	}
 
-	// 6. interfaces — entregó lo que sus hermanas consumen (§6.10)
+	// 6. interfaces — entregó lo que sus hermanas consumen
 	faltan, sinForma := verificarExpone(o.Task.Expone, diff)
 	if len(faltan) > 0 {
 		apuntar(Paso{"interfaces", false, "no expone lo prometido: " + strings.Join(faltan, "; ")})
@@ -137,7 +137,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	}
 	apuntar(Paso{"interfaces", true, detalleIfaces})
 
-	// 6.5 dependencias — verifica el grafo de imports del diff (§6.10)
+	// 6.5 dependencias — verifica el grafo de imports del diff
 	if detalle, ok := verificarDependencias(diff, o.Config.ReglasImport); !ok {
 		apuntar(Paso{"dependencias", false, detalle})
 		return res
@@ -153,7 +153,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 		apuntar(Paso{"bisectable", true, detalle})
 	}
 
-	// 8. suite_oculta — hidden test gate (§6.8); skipped if no sealed suite
+	// 8. suite_oculta — hidden test gate; skipped if no sealed suite
 	pruebas := o.Config.Pruebas
 	if pruebas == "" {
 		pruebas = o.Task.ListoCuando

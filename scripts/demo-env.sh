@@ -93,7 +93,7 @@ EOF
 # T-003 recursiva: llega como .pendiente, el tape la activa (mv) después
 # de que T-001/T-002 ya corrieron — si entrara pendiente desde el arranque,
 # la esclusa de entrada la rechaza por cruce de tocar_solo con T-001/T-002
-# en la misma oleada (§6.9), que es un chequeo real y correcto, no un bug.
+# en la misma oleada, que es un chequeo real y correcto, no un bug.
 cat > .devclean/tasks/T-003.md.pendiente <<'EOF'
 ---
 version: 1

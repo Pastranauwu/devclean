@@ -1,4 +1,4 @@
-// Package examiner implements the blind test examiner of §6.8.
+// Package examiner implements the blind test examiner.
 // The examiner sees only the task contract and the public boundary
 // (expone signatures, endpoints, CLI). It never sees function bodies.
 package examiner
@@ -59,7 +59,7 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	// examen de caja negra: sin interfaz pública declarada no hay
 	// frontera que probar. Tareas de andamiaje (init, wiring) no exponen
 	// nada; examinarlas solo produce un test file de relleno que después
-	// dispara falsos solapamientos entre ramas (§6.8, §6.9).
+	// dispara falsos solapamientos entre ramas.
 	if len(o.Task.Expone) == 0 {
 		return false, nil
 	}
@@ -84,14 +84,14 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		// rompía en el caso más común de Go: `cmd/algo` declara `package
 		// main`, no `package algo`, y la suite terminaba con dos paquetes
 		// en el mismo directorio — un error que el implementador no puede
-		// arreglar, porque las rutas de prueba le están vedadas (A.3).
+		// arreglar, porque las rutas de prueba le están vedadas.
 		real := paqueteReal(dir)
 		switch real {
 		case "":
 			// todavía no hay código ahí (tarea de paquete nuevo, el caso
 			// más común al arrancar). Renunciar al examen dejaba a esas
 			// tareas sin suite: el implementador escribe sus propias
-			// pruebas, la reversión de alcance se las quita (A.3) y
+			// pruebas, la reversión de alcance se las quita y
 			// `go test ./pkg/...` pasa sin ejecutar nada. El nombre sale
 			// del contrato —`expone: ["numeros.Media(...)"]` ya lo
 			// declara—, así que el implementador que sigue el contrato
@@ -110,7 +110,7 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		}
 		// sin nombre no hay suite posible: `package _test` en el mismo
 		// directorio rompe la compilación del cuarto y el implementador
-		// no puede arreglarlo (A.3). Y un `main` inferido cae en la misma
+		// no puede arreglarlo. Y un `main` inferido cae en la misma
 		// pared que el real: `cmd/algo` con `expone: ["main.run(...)"]`
 		// daba una suite `package main_test` que importa el binario, y Go
 		// responde "imported as main and not used".
@@ -156,9 +156,9 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		return false, nil
 	}
 	// un examinador que emite pruebas que no compilan bloquea al
-	// implementador: no puede tocar el archivo (A.3) y su impl correcta
+	// implementador: no puede tocar el archivo y su impl correcta
 	// igual da "build failed". Si la suite ni siquiera parsea, se
-	// descarta y el implementador corre sin suite ciega (§6.8).
+	// descarta y el implementador corre sin suite ciega.
 	if validarSintaxis(lenguaje, visibleContent) != nil {
 		return false, nil
 	}
@@ -169,7 +169,7 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	if err := os.WriteFile(visiblePath, []byte(visibleContent), 0o644); err != nil {
 		return false, nil
 	}
-	// commit visible tests so the loop's revertFueraDeAlcance (A.3) does not
+	// commit visible tests so the loop's revertFueraDeAlcance does not
 	// undo them — git status won't list committed files as "changed".
 	commitVisible(roomPath, visiblePath)
 
@@ -196,7 +196,7 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 // el proyecto no puede correr.
 func buildPrompt(t task.Task, pkg, lenguaje string) string {
 	var b strings.Builder
-	b.WriteString("Eres el examinador ciego de devclean (§6.8). Escribes pruebas SIN ver la implementación.\n\n")
+	b.WriteString("Eres el examinador ciego de devclean. Escribes pruebas SIN ver la implementación.\n\n")
 	fmt.Fprintf(&b, "Tarea: %s — %s\n", t.ID, t.Titulo)
 	if t.Porque != "" {
 		fmt.Fprintf(&b, "Por qué: %s\n", t.Porque)
@@ -266,8 +266,8 @@ func buildGoFile(pkg, importPath string, extra, funcs []string) string {
 	// el encabezado le dice al implementador cómo tiene que llamarse su
 	// paquete: la suite es externa (pkg_test) y, si él elige otro nombre,
 	// Go responde "found packages X and pkg (…_test.go)" — un error que
-	// no puede arreglar, porque esta ruta le está vedada (A.3).
-	fmt.Fprintf(&b, "// devclean · suite del examinador ciego: criterio de aceptación, no editable (A.3).\n")
+	// no puede arreglar, porque esta ruta le está vedada.
+	fmt.Fprintf(&b, "// devclean · suite del examinador ciego: criterio de aceptación, no editable.\n")
 	fmt.Fprintf(&b, "// El paquete de este directorio tiene que llamarse %q.\n\n", pkg)
 	fmt.Fprintf(&b, "package %s_test\n\nimport (\n\t\"testing\"\n", pkg)
 	if importPath != "" {
@@ -310,7 +310,7 @@ func stdlibImport(path string) bool {
 // paquete bajo prueba. Filtrar por stdlibImport a secas tiraba el import
 // hermano cuando la ruta del módulo lleva punto ("github.com/x/y"), y la
 // suite quedaba con `ast.Number` sin importar ast: no compila y el
-// implementador no puede tocarla (A.3).
+// implementador no puede tocarla.
 func importPermitido(imp, importPath string) bool {
 	if stdlibImport(imp) {
 		return true
@@ -432,7 +432,7 @@ func esIdentificador(s string) bool {
 // salía como `package algo_test` en el mismo directorio y `go build`
 // respondía "found packages algo (…_test.go) and main (main.go)" — un
 // error que el implementador no puede arreglar, porque las rutas de
-// prueba le están vedadas (A.3). La tarea quedaba roja para siempre.
+// prueba le están vedadas. La tarea quedaba roja para siempre.
 func paqueteReal(dir string) string {
 	entradas, err := os.ReadDir(dir)
 	if err != nil {
@@ -456,8 +456,8 @@ func paqueteReal(dir string) string {
 func toRelPath(p string) string { return filepath.ToSlash(p) }
 
 // commitVisible commits the visible test file to the worktree so the
-// implementer loop won't revert it (A.3 applies to changes, not to
-// already-committed files).
+// implementer loop won't revert it (the revert applies to changes, not
+// to already-committed files).
 func commitVisible(roomPath, absPath string) {
 	rel, err := filepath.Rel(roomPath, absPath)
 	if err != nil {

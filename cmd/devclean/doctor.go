@@ -32,7 +32,7 @@ func newDoctorCmd() *cobra.Command {
 	}
 }
 
-// runDoctor verifica el entorno (§7): git, repo, configuración, keys y
+// runDoctor verifica el entorno: git, repo, configuración, keys y
 // al menos un ejecutor instalado. Reporta todo y falla solo si algo
 // crítico falta.
 func runDoctor() error {

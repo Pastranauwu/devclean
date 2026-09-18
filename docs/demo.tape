@@ -69,7 +69,7 @@ Sleep 1s
 # ---------- recursion: T-003 se reparte sola en subtareas ----------
 # el mv es plomeria de la demo (ver scripts/demo-env.sh): T-003 llega
 # como .pendiente porque entrando desde el arranque la esclusa la rechaza
-# por cruce de tocar_solo con T-001/T-002 en la misma oleada (§6.9), que
+# por cruce de tocar_solo con T-001/T-002 en la misma oleada, que
 # es un chequeo real y correcto. Va oculto: no es parte de lo que se
 # muestra.
 Hide

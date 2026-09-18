@@ -1,4 +1,4 @@
-// Package constitution manages .devclean/constitution.md (§6.11):
+// Package constitution manages .devclean/constitution.md:
 // project-wide conventions injected into every agent context so that
 // parallel agents make compatible design decisions.
 package constitution
