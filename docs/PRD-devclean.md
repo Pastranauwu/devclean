@@ -5,12 +5,14 @@
 **Tipo:** herramienta CLI, código abierto, local-first
 
 > **Este documento es la especificación original, no el registro de avance.**
-> Para saber qué existe hoy, lee `docs/ESTADO.md` y el `README.md`.
+> Para saber qué existe hoy, lee el `README.md` y `CLAUDE.md`. El producto
+> final entra por `devclean.spec.yml` (Requirements as Code); los contratos de
+> tarea que describe este PRD quedaron como representación interna.
 >
-> Las referencias a `docs/PRD-adenda.md` (`adenda A.1`, `A.3`, `A.4`, `A.5`,
-> `§6.7`–`§6.11`) apuntan a un archivo que se borró en `704f8b5`. Se recupera
-> con `git show 704f8b5^:docs/PRD-adenda.md`; lo vigente está resumido en
-> `docs/ESTADO.md`.
+> Sigue aquí porque el código cita sus secciones (`§6.3`, `§6.8`, `§16.6`…) en
+> comentarios. Las referencias a `docs/PRD-adenda.md` (`adenda A.1`, `A.3`,
+> `A.4`, `A.5`, `§6.7`–`§6.11`) apuntan a un archivo borrado en `704f8b5`: se
+> recupera con `git show 704f8b5^:docs/PRD-adenda.md`.
 
 ---
 
@@ -202,7 +204,7 @@ Evidencia que lo justifica, va también en el README:
 
 **Comando:** `devclean standup`, disparado por evento, nunca por reloj. Eventos: un agente toca un símbolo compartido, termina, agota intentos, o supera el presupuesto de diff.
 
-Contenido, todo derivado de `attempts.jsonl` (§6.4, formato en `docs/attempts-jsonl.md`):
+Contenido, todo derivado de `attempts.jsonl` (§6.4, formato en `internal/loop.Attempt`):
 
 ```
 PARTE 14:32 · 3 tareas en curso
@@ -456,7 +458,7 @@ Referencia negativa: OpenClaw llegó a 42.000 instancias expuestas en internet y
 
 ### v0.2
 
-Estado al 10 sep 2026. `docs/ESTADO.md` manda sobre esta lista.
+Estado al 10 sep 2026. El `README.md` y `CLAUDE.md` mandan sobre esta lista.
 
 - [x] Cola de integración automática — `ship --integrar` / `up --integrar`
 - [x] Examinador ciego y suite oculta (§6.8) — solo go y python

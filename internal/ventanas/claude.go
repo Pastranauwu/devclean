@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -159,7 +158,3 @@ func KeyClaude(keyEnv string) string {
 	}
 	return os.Getenv("ANTHROPIC_API_KEY")
 }
-
-// Error si la sonda falla de verdad (no degrada). Se usa para mostrar el
-// motivo cuando el usuario pide --sonda.
-var ErrSonda = errors.New("la sonda de Claude falló")

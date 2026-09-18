@@ -54,8 +54,8 @@ func TestStoreAppendYRead(t *testing.T) {
 }
 
 func TestAttemptJSONClaves(t *testing.T) {
-	// el contrato del formato vive en docs/attempts-jsonl.md: las claves
-	// en JSON son las de ese documento, no el nombre del campo en Go.
+	// las claves en JSON son parte del formato de attempts.jsonl, no el
+	// nombre del campo en Go: las etiquetas de Attempt son el contrato.
 	data, err := json.Marshal(Attempt{Intento: 2})
 	if err != nil {
 		t.Fatal(err)
