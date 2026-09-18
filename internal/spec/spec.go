@@ -296,6 +296,10 @@ func Marshal(s Spec) []byte {
 			fmt.Fprintf(&b, "  - criterion: %s\n    command: %s\n", kv.Quote(a.Criterion), kv.Quote(a.Command))
 		}
 	}
+	if len(s.Constraints.NoTocar) > 0 {
+		b.WriteString("constraints:\n")
+		fmt.Fprintf(&b, "  no_tocar: %s\n", kv.MarshalList(s.Constraints.NoTocar))
+	}
 	b.WriteString("\ntasks:\n")
 	for _, t := range s.Tasks {
 		fmt.Fprintf(&b, "  - id: %s\n", t.ID)

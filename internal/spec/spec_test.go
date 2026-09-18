@@ -530,3 +530,24 @@ func contiene(xs []string, x string) bool {
 	}
 	return false
 }
+
+// El spec exportado tiene que traer la frontera global: sin constraints, un
+// plan --export-spec entrega un spec que miente sobre lo que nadie puede tocar.
+func TestMarshalEscribeConstraints(t *testing.T) {
+	s := Spec{
+		Version:     1,
+		Feature:     "recuperación de contraseña",
+		Constraints: Constraints{NoTocar: []string{"internal/session/**", "migrations/**"}},
+		Tasks: []task.Task{
+			{Version: task.Version, ID: "T-001", Titulo: "solicitud", ListoCuando: "true", TocarSolo: []string{"internal/recuperacion/**"}},
+		},
+	}
+	out := Marshal(s)
+	vuelta, err := Parse(out)
+	if err != nil {
+		t.Fatalf("Parse del spec exportado: %v\n%s", err, out)
+	}
+	if !reflect.DeepEqual(vuelta.Constraints.NoTocar, s.Constraints.NoTocar) {
+		t.Errorf("constraints tras la vuelta = %v, quiero %v\n%s", vuelta.Constraints.NoTocar, s.Constraints.NoTocar, out)
+	}
+}
