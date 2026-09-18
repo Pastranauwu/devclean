@@ -9,6 +9,7 @@ import (
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/gate"
+	"github.com/Pastranauwu/devclean/internal/spec"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/ui"
@@ -290,5 +291,38 @@ func TestPatronesPruebaSegunElStack(t *testing.T) {
 	// sin patrones en config, un stack con examinador cae en los del proyecto
 	if got := patronesPrueba(config.Config{}, goRepo); len(got) == 0 {
 		t.Error("go sin config debe usar los patrones por defecto")
+	}
+}
+
+// La tarea de integración solo escribe pruebas: no expone nada, así que no
+// hay examen ciego que proteger y la veda de rutas de prueba no le aplica.
+// Con la veda del proyecto —como estaba— la esclusa la rechazaba por
+// "tocar_solo incluye rutas de prueba" sin llegar a correr.
+func TestVedaNoAplicaALaTareaDeIntegracion(t *testing.T) {
+	goRepo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(goRepo, "go.mod"), []byte("module x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{PatronesPrueba: []string{"*_test.go", "test/**"}}
+
+	integracion := task.Task{
+		Version: task.Version, ID: "T-004", Titulo: "prueba de integración",
+		ListoCuando: "go test ./test/integracion/...",
+		TocarSolo:   []string{spec.RutaIntegracion + "/**"},
+		Usa:         []string{"lexer.Tokenize(s string) []Token"},
+	}
+	if got := patronesPruebaTarea(cfg, goRepo, integracion); len(got) != 0 {
+		t.Errorf("veda = %v · nadie más escribiría esa suite", got)
+	}
+
+	// y donde sí hay examen que proteger, la veda sigue intacta
+	normal := task.Task{
+		Version: task.Version, ID: "T-001", Titulo: "lexer",
+		ListoCuando: "go test ./internal/lexer/...",
+		TocarSolo:   []string{"internal/lexer/**"},
+		Expone:      []string{"lexer.Tokenize(s string) []Token"},
+	}
+	if got := patronesPruebaTarea(cfg, goRepo, normal); len(got) != 2 {
+		t.Errorf("veda = %v · una tarea examinable no toca sus pruebas", got)
 	}
 }

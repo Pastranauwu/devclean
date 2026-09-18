@@ -248,6 +248,14 @@ acceptance:
 Si necesitas garantizar feature acceptance de forma determinista, declara un
 comando ejecutable. El texto explica la intención; el comando actúa como oráculo.
 
+**Si no declaras ninguno, devclean lo deriva.** Cuando el plan tiene varias
+tareas encadenadas y el spec no trae `command`, devclean agrega una última tarea
+que prueba la costura: depende de todas, consume todo lo que el plan promete, no
+implementa nada y escribe pruebas en `test/integracion/`. Su comando queda
+también como aceptación del feature, así que corre dos veces: en su propio cuarto
+y sobre el conjunto integrado. En la salida aparece como
+`· T-00N prueba la costura entre tareas`.
+
 ### Task verde no implica feature correcto
 
 Cada contrato conserva su propio `listo_cuando`, pero una tarea puede pasar
@@ -269,6 +277,14 @@ PR
 Primero cada tarea pasa su esclusa individual. Luego devclean integra un commit
 por tarea, corre el comando `pruebas` del proyecto sobre el conjunto y finalmente
 ejecuta cada `acceptance.command`. El PR solo se crea si todo queda verde.
+
+El hueco que esto tapa: cada `listo_cuando` prueba lo que su propio contrato
+pide, así que una tarea puede soportar un caso que su consumidora nunca le pidió
+y nadie lo ejercita. Cinco tareas verdes construyendo una calculadora dejaban
+`-2^2` devolviendo `unknown binary operator: ^`, porque el operador estaba en el
+contrato del lexer y del parser y no en el del evaluador. El nivel funcional del
+solapamiento tampoco lo ve: corre esos mismos comandos. Solo lo atrapa una prueba
+que entre por la frontera final, y por eso ahora siempre existe una.
 
 ## Análisis estático del task graph
 
@@ -538,6 +554,10 @@ devclean eleva el nivel de evidencia; no demuestra que el software sea correcto.
 - **El análisis estático es estructural.** Detecta ciclos, referencias rotas,
   firmas inconsistentes y algunos solapamientos; no demuestra compatibilidad
   semántica ni cobertura real del comportamiento.
+- **La prueba de costura la escribe un modelo.** Garantiza que exista un examen
+  end-to-end y que corra sobre el conjunto integrado, no que sea exhaustivo. Se
+  deriva solo en Go, Node y Python, y solo cuando el spec no declara ya un
+  `acceptance.command`: si lo declaras, la costura es tuya.
 - **`listo_cuando` debe fallar antes del cambio.** Una suite general que ya está
   verde no prueba que una tarea nueva exista.
 - **Los hidden tests solo se generan automáticamente para Go y Python**, y

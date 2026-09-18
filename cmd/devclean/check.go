@@ -75,7 +75,9 @@ func runCheck(id string) error {
 	if cfg.TimeoutEsclusa > 0 {
 		timeout = time.Duration(cfg.TimeoutEsclusa) * time.Second
 	}
-	res := gate.Run(context.Background(), root, cfg, t, activas, timeout)
+	cfgEsclusa := cfg
+	cfgEsclusa.PatronesPrueba = patronesPruebaTarea(cfg, root, t)
+	res := gate.Run(context.Background(), root, cfgEsclusa, t, activas, timeout)
 	if err := out.Data(res); err != nil {
 		return err
 	}

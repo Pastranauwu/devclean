@@ -144,6 +144,23 @@ func planearRequirements(root string, s *spec.Spec) error {
 		s.Tasks = append(s.Tasks, task.Task{Version: task.Version, ID: ids[i], Titulo: b.Titulo, Porque: b.Porque, ListoCuando: b.ListoCuando, TocarSolo: b.TocarSolo, NoTocar: b.NoTocar, DependeDe: b.DependeDe, Expone: b.Expone, Usa: b.Usa, Riesgos: b.Riesgos, Peso: b.Peso, Agente: b.Agente, Notas: b.Como, LimiteIntentos: task.DefaultLimiteIntentos, LimiteLineas: plan.AcotarLimiteLineas(b.LimiteLineas, task.DefaultLimiteLineas)})
 	}
 	out.Line("· Requirements Analyzer + Planner generaron %d contratos internos", len(s.Tasks))
+
+	// el plan no cierra la costura entre tareas: cada una prueba lo que su
+	// contrato pide y ninguna prueba la cadena completa. La tarea derivada
+	// entra por la frontera final, y su comando vuelve a correr sobre el
+	// conjunto integrado como aceptación del feature.
+	if integracion, aceptacion, ok := spec.TareaDeIntegracion(*s, s.Tasks, config.DetectLanguage(root)); ok {
+		ids, err := idsCorrelativos(config.TasksDir(root), len(s.Tasks)+1)
+		if err != nil {
+			return err
+		}
+		integracion.ID = ids[len(ids)-1]
+		integracion.LimiteIntentos = task.DefaultLimiteIntentos
+		integracion.LimiteLineas = task.DefaultLimiteLineas
+		s.Tasks = append(s.Tasks, integracion)
+		s.Acceptance = append(s.Acceptance, aceptacion)
+		out.Line("· %s prueba la costura entre tareas · %s", integracion.ID, integracion.ListoCuando)
+	}
 	return nil
 }
 

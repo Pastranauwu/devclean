@@ -228,3 +228,15 @@ func TestCompletarExigeUnoPorTarea(t *testing.T) {
 		}
 	}
 }
+
+// El prompt tiene que prohibir prometer de más: lo que una tarea soporta y
+// su consumidora nunca pide no lo prueba nadie, aunque las dos queden
+// verdes. Es la costura que dejaba `-2^2` roto con cinco tareas en verde.
+func TestPromptProhibePrometerDeMas(t *testing.T) {
+	p := Prompt("una calculadora", Contexto{Lenguaje: "go", Pruebas: "go test ./..."})
+	for _, quiero := range []string{"no prometas de más", "nunca pide no lo prueba nadie", "tiene que cubrirlo"} {
+		if !strings.Contains(p, quiero) {
+			t.Errorf("el prompt no dice %q", quiero)
+		}
+	}
+}

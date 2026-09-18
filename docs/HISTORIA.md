@@ -222,10 +222,29 @@ contratos que el planificador generó.
 
 ---
 
+### La costura, cerrada (18 sep, `v1.2.0`)
+
+El último agujero conocido del diseño: una tarea verde no implica un feature
+correcto, y nadie probaba la cadena completa. Ahora, cuando el plan tiene varias
+tareas encadenadas y el humano no declaró un comando de aceptación, devclean
+deriva una tarea final que solo escribe pruebas: depende de todas, consume todo
+lo que el plan promete, y su comando queda además como aceptación del feature,
+así que se ejercita en su propio cuarto y otra vez sobre el conjunto integrado.
+
+Para que pudiera existir hubo que corregir una asimetría vieja: la veda de rutas
+de prueba se decidía por tarea en el bucle pero por proyecto en la esclusa de
+entrada, así que la tarea de integración era rechazada antes de correr. Ahora las
+dos usan la misma regla.
+
+Con ella, `spec.Marshal` aprendió a escribir `constraints`, que era el último
+lugar donde un spec exportado mentía sobre su frontera.
+
+---
+
 ## 5. Lo que sigue abierto
 
-Vive en la sección 7 de `CLAUDE.md`, que es lo que se mantiene al día. En resumen: mutation
-score para verificar que las suites generadas no sean triviales; validación de
-firmas por AST en vez de por nombre; modo API directa sin depender de los CLI;
-más forjas; y la costura semántica que el plan todavía no deriva de lo que sus
-consumidoras prometen.
+Vive en la sección 7 de `CLAUDE.md`, que es lo que se mantiene al día. En
+resumen: mutation score para verificar que las suites generadas —y la prueba de
+costura derivada— no sean triviales; validación de firmas por AST en vez de por
+nombre; modo API directa sin depender de los CLI; más forjas; y la costura sin
+probar en los stacks que no tienen un comando de integración conocido.

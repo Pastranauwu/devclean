@@ -154,15 +154,20 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 	if cfg.TimeoutEsclusa > 0 {
 		timeout = time.Duration(cfg.TimeoutEsclusa) * time.Second
 	}
-	cfgEsclusa := cfg
-	cfgEsclusa.PatronesPrueba = patronesPrueba(cfg, root)
-
 	results := make([]runResult, 0, len(pendientes))
 
 	// esclusa de entrada por tarea: la que no pasa, se rechaza antes de
 	// gastar un solo token
 	var aprobadas []task.Task
 	for _, t := range pendientes {
+		// la veda de rutas de prueba se decide por tarea y no por
+		// proyecto, igual que en el bucle: donde no hay examen ciego que
+		// proteger, vedarle las pruebas deja la tarea imposible de
+		// terminar. Con la veda del proyecto, una tarea de integración
+		// —que no expone nada y solo escribe pruebas— era rechazada sin
+		// llegar a correr.
+		cfgEsclusa := cfg
+		cfgEsclusa.PatronesPrueba = patronesPruebaTarea(cfg, root, t)
 		res := gate.Run(context.Background(), root, cfgEsclusa, t, existentes, timeout)
 		if res.Aprobada {
 			aprobadas = append(aprobadas, t)
