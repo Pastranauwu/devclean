@@ -81,383 +81,6 @@ func Load(path string) (Spec, error) {
 	return Parse(data)
 }
 
-// Parse convierte un documento YAML en un Spec.
-func parseLegacy(data []byte) (Spec, error) {
-	lines := strings.Split(string(data), "\n")
-	s := Spec{Version: 1}
-
-	// 1. Parsear escalares y listas de primer nivel
-	inBlock := ""
-	var blockLines []string
-
-	for i, raw := range lines {
-		trimmed := strings.TrimSpace(kv.StripComment(raw))
-		if trimmed == "" {
-			continue
-		}
-		indent := len(raw) - len(strings.TrimLeft(raw, " \t"))
-
-		if inBlock != "" {
-			if indent > 0 {
-				blockLines = append(blockLines, raw)
-				continue
-			}
-			// Fin del bloque actual
-			if err := processBlock(&s, inBlock, blockLines, i); err != nil {
-				return s, err
-			}
-			inBlock = ""
-			blockLines = nil
-		}
-
-		key, val, ok := strings.Cut(trimmed, ":")
-		if !ok {
-			return s, fmt.Errorf("línea %d: sintaxis inválida (falta dos puntos): %s", i+1, trimmed)
-		}
-		k := strings.TrimSpace(key)
-		v := strings.TrimSpace(val)
-
-		switch k {
-		case "version":
-			n, err := kv.ParseInt(v)
-			if err != nil {
-				return s, fmt.Errorf("línea %d: %w", i+1, err)
-			}
-			s.Version = n
-		case "feature", "titulo":
-			s.Feature = kv.Unquote(v)
-		case "agente":
-			s.Agente = kv.Unquote(v)
-		case "agentes":
-			n, err := kv.ParseInt(v)
-			if err != nil {
-				return s, fmt.Errorf("línea %d: %w", i+1, err)
-			}
-			if n < 1 {
-				return s, fmt.Errorf("línea %d: agentes inválido: %d · mínimo 1", i+1, n)
-			}
-			s.Agentes = n
-		case "ship":
-			switch kv.Unquote(v) {
-			case "true":
-				s.Ship = true
-			case "false":
-				s.Ship = false
-			default:
-				return s, fmt.Errorf("línea %d: ship inválido: %s · usa true o false", i+1, v)
-			}
-		case "limite_intentos":
-			n, err := kv.ParseInt(v)
-			if err != nil {
-				return s, fmt.Errorf("línea %d: %w", i+1, err)
-			}
-			s.Limites.Intentos = n
-		case "limite_lineas":
-			n, err := kv.ParseInt(v)
-			if err != nil {
-				return s, fmt.Errorf("línea %d: %w", i+1, err)
-			}
-			s.Limites.Lineas = n
-		case "limites":
-			if v != "" {
-				m, err := kv.ParseInlineMap(v)
-				if err != nil {
-					return s, fmt.Errorf("línea %d: %w", i+1, err)
-				}
-				if val, ok := m["intentos"]; ok {
-					if n, err := kv.ParseInt(val); err == nil {
-						s.Limites.Intentos = n
-					}
-				}
-				if val, ok := m["lineas"]; ok {
-					if n, err := kv.ParseInt(val); err == nil {
-						s.Limites.Lineas = n
-					}
-				}
-			} else {
-				inBlock = "limites"
-			}
-		case "reglas":
-			if v != "" {
-				r, err := kv.ParseList(v)
-				if err != nil {
-					return s, fmt.Errorf("línea %d: %w", i+1, err)
-				}
-				s.Reglas = r
-			} else {
-				inBlock = "reglas"
-			}
-		case "tasks", "tareas":
-			inBlock = "tasks"
-		default:
-			return s, fmt.Errorf("línea %d: campo desconocido en especificación: %s", i+1, k)
-		}
-	}
-
-	if inBlock != "" {
-		if err := processBlock(&s, inBlock, blockLines, len(lines)); err != nil {
-			return s, err
-		}
-	}
-
-	// 2. Aplicar defaults y límites por defecto a las tareas
-	defIntentos := task.DefaultLimiteIntentos
-	if s.Limites.Intentos > 0 {
-		defIntentos = s.Limites.Intentos
-	}
-	defLineas := task.DefaultLimiteLineas
-	if s.Limites.Lineas > 0 {
-		defLineas = s.Limites.Lineas
-	}
-
-	for i := range s.Tasks {
-		if s.Tasks[i].Version == 0 {
-			s.Tasks[i].Version = task.Version
-		}
-		if s.Tasks[i].Agente == "" && s.Agente != "" {
-			s.Tasks[i].Agente = s.Agente
-		}
-		if s.Tasks[i].LimiteIntentos == 0 {
-			s.Tasks[i].LimiteIntentos = defIntentos
-		}
-		if s.Tasks[i].LimiteLineas == 0 {
-			s.Tasks[i].LimiteLineas = defLineas
-		}
-	}
-
-	return s, nil
-}
-
-func processBlock(s *Spec, blockName string, lines []string, offset int) error {
-	switch blockName {
-	case "limites":
-		pairs, err := kv.Pairs(lines, offset-len(lines))
-		if err != nil {
-			return err
-		}
-		for _, p := range pairs {
-			switch p.Key {
-			case "intentos", "limite_intentos":
-				n, err := kv.ParseInt(p.Value)
-				if err != nil {
-					return fmt.Errorf("línea %d: %w", p.Line, err)
-				}
-				s.Limites.Intentos = n
-			case "lineas", "limite_lineas":
-				n, err := kv.ParseInt(p.Value)
-				if err != nil {
-					return fmt.Errorf("línea %d: %w", p.Line, err)
-				}
-				s.Limites.Lineas = n
-			default:
-				return fmt.Errorf("línea %d: campo desconocido en limites: %s", p.Line, p.Key)
-			}
-		}
-	case "reglas":
-		for i, raw := range lines {
-			trimmed := strings.TrimSpace(kv.StripComment(raw))
-			if trimmed == "" {
-				continue
-			}
-			if !strings.HasPrefix(trimmed, "-") {
-				return fmt.Errorf("línea %d: regla debe iniciar con '-'", i+offset-len(lines)+1)
-			}
-			regla := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
-			s.Reglas = append(s.Reglas, kv.Unquote(regla))
-		}
-	case "tasks":
-		tasks, err := parseTaskList(lines, offset-len(lines))
-		if err != nil {
-			return err
-		}
-		s.Tasks = append(s.Tasks, tasks...)
-	}
-	return nil
-}
-
-// parseTaskList procesa una lista de tareas en YAML, soportando items con '-' o mapas inline.
-func parseTaskList(lines []string, startLine int) ([]task.Task, error) {
-	var chunks [][]string
-	var current []string
-
-	for _, raw := range lines {
-		trimmed := strings.TrimSpace(kv.StripComment(raw))
-		if trimmed == "" {
-			continue
-		}
-		// Nuevo item de lista comienza con '- ' o '-'
-		if strings.HasPrefix(trimmed, "-") {
-			if len(current) > 0 {
-				chunks = append(chunks, current)
-			}
-			current = []string{raw}
-		} else if len(current) > 0 {
-			current = append(current, raw)
-		} else {
-			return nil, fmt.Errorf("línea %d: elemento de lista de tareas debe comenzar con '-'", startLine)
-		}
-	}
-	if len(current) > 0 {
-		chunks = append(chunks, current)
-	}
-
-	var tasks []task.Task
-	for chunkIdx, chunk := range chunks {
-		t, err := parseTaskChunk(chunk, startLine+chunkIdx)
-		if err != nil {
-			return nil, err
-		}
-		tasks = append(tasks, t)
-	}
-	return tasks, nil
-}
-
-func parseTaskChunk(chunk []string, lineNum int) (task.Task, error) {
-	var t task.Task
-	t.Version = task.Version
-
-	firstLine := strings.TrimSpace(kv.StripComment(chunk[0]))
-	contentFirst := strings.TrimSpace(strings.TrimPrefix(firstLine, "-"))
-
-	// Caso 1: mapa inline: - { id: T-001, titulo: "..." }
-	if strings.HasPrefix(contentFirst, "{") && strings.HasSuffix(contentFirst, "}") {
-		m, err := kv.ParseInlineMap(contentFirst)
-		if err != nil {
-			return t, fmt.Errorf("línea %d: %w", lineNum, err)
-		}
-		return buildTaskFromMap(m, lineNum)
-	}
-
-	// Caso 2: la forma rápida, "- enviar magic packet por udp". La tarea es
-	// solo su titulo; lo demás lo completa el planificador al aplicar.
-	if len(chunk) == 1 && contentFirst != "" && !empiezaConCampo(contentFirst) {
-		t.Titulo = kv.Unquote(contentFirst)
-		return t, nil
-	}
-
-	// Caso 3: bloque de pares clave-valor
-	var kvLines []string
-	if contentFirst != "" {
-		kvLines = append(kvLines, contentFirst)
-	}
-	for _, l := range chunk[1:] {
-		trimmed := strings.TrimSpace(kv.StripComment(l))
-		if trimmed != "" {
-			kvLines = append(kvLines, trimmed)
-		}
-	}
-
-	pairs, err := kv.Pairs(kvLines, lineNum)
-	if err != nil {
-		return t, err
-	}
-
-	for _, p := range pairs {
-		var err error
-		switch p.Key {
-		case "id":
-			t.ID = kv.Unquote(p.Value)
-		case "titulo":
-			t.Titulo = kv.Unquote(p.Value)
-		case "porque":
-			t.Porque = kv.Unquote(p.Value)
-		case "listo_cuando":
-			t.ListoCuando = kv.Unquote(p.Value)
-		case "tocar_solo":
-			t.TocarSolo, err = kv.ParseList(p.Value)
-		case "no_tocar":
-			t.NoTocar, err = kv.ParseList(p.Value)
-		case "depende_de":
-			t.DependeDe, err = kv.ParseList(p.Value)
-		case "expone":
-			t.Expone, err = kv.ParseList(p.Value)
-		case "usa":
-			t.Usa, err = kv.ParseList(p.Value)
-		case "limite_intentos":
-			t.LimiteIntentos, err = kv.ParseInt(p.Value)
-		case "limite_lineas":
-			t.LimiteLineas, err = kv.ParseInt(p.Value)
-		case "riesgos":
-			t.Riesgos = kv.Unquote(p.Value)
-		case "peso":
-			t.Peso = kv.Unquote(p.Value)
-		case "agente":
-			t.Agente = kv.Unquote(p.Value)
-		case "notas":
-			t.Notas = kv.Unquote(p.Value)
-		default:
-			return t, fmt.Errorf("línea %d: campo desconocido en tarea: %s", p.Line, p.Key)
-		}
-		if err != nil {
-			return t, fmt.Errorf("línea %d: %s: %w", p.Line, p.Key, err)
-		}
-	}
-
-	return t, nil
-}
-
-// camposTarea son las claves que acepta una tarea del spec.
-var camposTarea = map[string]bool{
-	"id": true, "titulo": true, "porque": true, "listo_cuando": true,
-	"tocar_solo": true, "no_tocar": true, "depende_de": true, "expone": true,
-	"usa": true, "limite_intentos": true, "limite_lineas": true, "riesgos": true,
-	"peso": true, "agente": true, "notas": true,
-}
-
-// empiezaConCampo distingue "titulo: x" de un titulo suelto que lleva dos
-// puntos, como "fix: login con tildes".
-func empiezaConCampo(linea string) bool {
-	clave, _, ok := strings.Cut(linea, ":")
-	return ok && camposTarea[strings.TrimSpace(clave)]
-}
-
-func buildTaskFromMap(m map[string]string, lineNum int) (task.Task, error) {
-	var t task.Task
-	t.Version = task.Version
-
-	var err error
-	for k, v := range m {
-		switch k {
-		case "id":
-			t.ID = v
-		case "titulo":
-			t.Titulo = v
-		case "porque":
-			t.Porque = v
-		case "listo_cuando":
-			t.ListoCuando = v
-		case "tocar_solo":
-			t.TocarSolo, err = kv.ParseList(v)
-		case "no_tocar":
-			t.NoTocar, err = kv.ParseList(v)
-		case "depende_de":
-			t.DependeDe, err = kv.ParseList(v)
-		case "expone":
-			t.Expone, err = kv.ParseList(v)
-		case "usa":
-			t.Usa, err = kv.ParseList(v)
-		case "limite_intentos":
-			t.LimiteIntentos, err = kv.ParseInt(v)
-		case "limite_lineas":
-			t.LimiteLineas, err = kv.ParseInt(v)
-		case "riesgos":
-			t.Riesgos = v
-		case "peso":
-			t.Peso = v
-		case "agente":
-			t.Agente = v
-		case "notas":
-			t.Notas = v
-		default:
-			return t, fmt.Errorf("línea %d: campo desconocido en tarea: %s", lineNum, k)
-		}
-		if err != nil {
-			return t, fmt.Errorf("línea %d: %s: %w", lineNum, k, err)
-		}
-	}
-	return t, nil
-}
-
 // AssignCorrelativeIDs asigna IDs correlativos (T-001, T-002, ...) a las tareas que no tengan ID asignado.
 func AssignCorrelativeIDs(tasksDir string, tasks []task.Task) ([]task.Task, error) {
 	out := make([]task.Task, len(tasks))
@@ -523,6 +146,23 @@ func notasConReglas(reglas []string, notas string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// appendUnique devuelve dst con los xs que no estaban, sin escribir sobre el
+// arreglo de dst: el spec original no se contamina al aplicarlo.
+func appendUnique(dst []string, xs ...string) []string {
+	out := append([]string(nil), dst...)
+	seen := map[string]bool{}
+	for _, x := range out {
+		seen[x] = true
+	}
+	for _, x := range xs {
+		if !seen[x] {
+			out = append(out, x)
+			seen[x] = true
+		}
+	}
+	return out
+}
+
 // Apply valida y guarda las tareas de la especificación en tasksDir (.devclean/tasks/).
 func Apply(tasksDir string, s Spec, dryRun bool) ([]task.Task, error) {
 	tasksWithIDs, err := AssignCorrelativeIDs(tasksDir, s.Tasks)
@@ -552,6 +192,14 @@ func Apply(tasksDir string, s Spec, dryRun bool) ([]task.Task, error) {
 		}
 		if tasksWithIDs[i].LimiteLineas == 0 {
 			tasksWithIDs[i].LimiteLineas = defLineas
+		}
+		// las restricciones del humano tienen que sobrevivir el viaje
+		// spec -> IR. Se aplican aquí y no en Parse porque el
+		// planificador agrega sus contratos DESPUÉS de parsear: en el
+		// camino de requirements sin tasks, Parse no tiene nada que
+		// restringir todavía.
+		if len(s.Constraints.NoTocar) > 0 {
+			tasksWithIDs[i].NoTocar = appendUnique(tasksWithIDs[i].NoTocar, s.Constraints.NoTocar...)
 		}
 		// las reglas de la especificación van al prompt de cada tarea:
 		// se anteponen a sus notas, que es el canal que el bucle ya

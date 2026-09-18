@@ -94,17 +94,16 @@ sistema**:
 - `requirements`: lista simple o categorías YAML anidadas;
 - `rules` —también acepta `reglas`—: reglas comunes del feature;
 - `acceptance`: criterios textuales y comandos de aceptación global;
-- `constraints.no_tocar`: rutas globalmente prohibidas para tasks declaradas en
-  el propio spec;
+- `constraints.no_tocar`: rutas globalmente prohibidas para todos los contratos
+  del feature;
 - `ship`: entrega al terminar;
 - opciones avanzadas como `agentes`, `agente` y `limites`.
 
 El parser admite YAML anidado para requirements y acceptance. Las restricciones
-globales implementadas actualmente se limitan a `constraints.no_tocar`. Al
-decodificar `tasks` del spec, sus globs se añaden al `no_tocar` de cada contrato.
-En el camino automático de requirements sin tasks, la implementación actual aún
-no vuelve a aplicar esos globs después de generar el IR; revisa los contratos
-antes de ejecutar si esa frontera es crítica.
+globales implementadas actualmente se limitan a `constraints.no_tocar`, y sus
+globs se añaden al `no_tocar` de cada contrato al aplicar el spec: da igual si
+la task venía escrita en el YAML o si la generó el planificador desde
+requirements.
 
 ### Internal Task Contracts — `.devclean/tasks/*.md`
 
@@ -536,9 +535,6 @@ devclean eleva el nivel de evidencia; no demuestra que el software sea correcto.
   demostrar el feature; si depende del entorno, puede fallar código correcto.
 - **Los contratos son generados por modelos.** Pueden dividir mal el trabajo,
   inventar rutas, elegir pruebas débiles o congelar interfaces equivocadas.
-- **`constraints.no_tocar` aún no cubre todo el camino automático.** Se propaga
-  a tasks presentes en el YAML, pero no se reaplica hoy a contratos generados
-  desde un spec que solo contiene requirements.
 - **El análisis estático es estructural.** Detecta ciclos, referencias rotas,
   firmas inconsistentes y algunos solapamientos; no demuestra compatibilidad
   semántica ni cobertura real del comportamiento.

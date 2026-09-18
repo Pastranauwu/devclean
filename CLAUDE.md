@@ -91,7 +91,7 @@ devclean/
 │   │   ├── yaml.go           #   parser yaml.v3 del spec (requirements/acceptance/constraints)
 │   │   ├── validate.go       #   ValidatePlan: análisis estático del task graph
 │   │   ├── state.go          #   .devclean/feature.json: intención humana separada del IR
-│   │   └── spec.go           #   Apply (IR -> .devclean/tasks) y Marshal
+│   │   └── spec.go           #   Apply (IR -> .devclean/tasks, constraints) y Marshal
 │   ├── examiner/             # Examinador ciego de pruebas (Go y Python)
 │   ├── sealed/               # Almacenamiento y verificación de suite oculta sellada (hash)
 │   ├── revisor/              # Modelo que juzga intención en diffs contra el contrato
@@ -173,6 +173,8 @@ Con `requirements` y sin `tasks`, `completarSpec` delega en `planearRequirements
 **Dos formas de `acceptance` con garantías distintas:**
 - **Textual:** entra en el prompt del planificador y debe quedar cubierta por el plan. Por sí sola **no** es compuerta determinista; sin cobertura reconocible sale como advertencia.
 - **Con `command`/`comando`:** se guarda en `.devclean/feature.json` (`spec.SaveFeatureState`) y corre sobre la rama donde ya se integraron todas las tareas. Salida distinta de cero frena la entrega.
+
+`constraints.no_tocar` se aplica en `Apply`, no en `Parse`: los globs se suman al `no_tocar` de **todo** contrato que se vaya a escribir, venga del YAML o lo haya generado el planificador. La restricción del humano sobrevive el viaje spec → IR.
 
 Campos `architecture` y `delivery` están **reservados**: el parser los acepta y los ignora sin error.
 
@@ -284,9 +286,7 @@ Aunque el núcleo es sólido y funcional, existen áreas identificadas que requi
 1. **Mutation Score para el Examinador Ciego (§6.8):** Falta integrar análisis de mutación (ej. `go-mutesting`) para verificar que las suites generadas realmente detecten fallos y no sean triviales.
 2. **Validación de Firmas por AST (§6.10):** En el paso `interfaces` de la esclusa de salida, la comparación se hace por nombre de función/símbolo (`task.NombreDeFirma`). Falta implementar análisis sintáctico por AST para validar signaturas completas respetando tipos.
 3. **Detección de Duplicación de Código entre Ramas (§6.10):** Comparación estructural de funciones nuevas entre ramas activas de una misma oleada para alertar si dos agentes están reimplementando la misma utilidad.
-4. **`constraints.no_tocar` no se reaplica en el camino automático:** `spec.Parse` añade esos globs al `no_tocar` de cada tarea que venía escrita en el spec, pero `planearRequirements` agrega sus contratos **después** de parsear, así que el IR generado no los recibe. Con `requirements` y sin `tasks`, esa frontera global hoy no se garantiza: hay que revisar los contratos antes de ejecutar.
-5. **`spec.Marshal` no escribe `constraints`:** exportar un spec (`plan --export-spec`) pierde el `no_tocar` global, así que el round-trip no es fiel.
-6. **`parseLegacy` quedó muerto:** ~200 líneas en `internal/spec/spec.go` (`parseLegacy`, `processBlock`, `parseTaskList`, `parseTaskChunk`, `buildTaskFromMap`) sin ningún llamador desde que `Parse` pasó a `yaml.go`. `go vet` no lo señala. Borrar o justificar.
+4. **`spec.Marshal` no escribe `constraints`:** exportar un spec (`plan --export-spec`) pierde el `no_tocar` global, así que el round-trip no es fiel. El `Apply` sí los propaga; lo que no es fiel es el YAML exportado.
 
 ### 7.2. Motores de Agentes y Modelos
 1. **Modo API Directa:** Actualmente la ejecución depende obligatoriamente de los binarios instalados de `claude` (Claude Code) u `opencode`. Falta agregar un adaptador que permita llamadas directas a APIs (Anthropic, OpenAI, DeepSeek) sin requerir los CLIs externos.
@@ -315,7 +315,7 @@ Aunque el núcleo es sólido y funcional, existen áreas identificadas que requi
 - **Hay dos parsers y cada uno tiene su territorio:** el spec humano se parsea con `yaml.v3` en `internal/spec/yaml.go` (`spec.Parse`); el frontmatter de contratos (`internal/task`) y `config` siguen en `internal/kv`. No migres uno al otro sin consensuarlo, y no agregues una tercera librería de parseo. En `kv` sigue viva la trampa de las claves repetidas a distinta profundidad: se pisan.
 - **`spec.ValidatePlan` distingue error de advertencia y solo el error aborta:** `Apply` junta los `Level=="error"` y falla con `plan inválido: ...`; las advertencias (`requirement_coverage`, `acceptance_coverage`, `integration_test`) únicamente se imprimen. Búscalos por `Code`, nunca por índice. La cobertura se estima por palabras de más de 4 letras: no la trates como prueba semántica.
 - **La aceptación del feature vive en `.devclean/feature.json`, no en los contratos:** `apply` la guarda (`SaveFeatureState`) y `ship --todas` la lee (`LoadFeatureState`). Si ese archivo no existe, el paso `aceptación` simplemente no corre y la entrega sigue: borrar `.devclean/` borra la compuerta global. Solo las aceptaciones **con `command`** llegan ahí como compuerta (`AcceptanceCommands`).
-- **`planearRequirements` agrega tareas después de `Parse`, así que `constraints.no_tocar` no las alcanza:** los globs globales solo se inyectan a las `tasks` que venían escritas en el spec. Si toques esa ruta, aplica los globs al IR generado o el spec miente sobre su frontera.
+- **`constraints.no_tocar` se aplica en `Apply`, nunca en `Parse`:** `planearRequirements` agrega sus contratos **después** de parsear, así que aplicarlos al leer el YAML dejaba sin frontera justo al camino principal (requirements sin tasks). `Apply` es el único punto por donde pasan los dos orígenes de tareas. Si mueves esa lógica de vuelta al parser, el spec vuelve a mentir sobre su frontera; hay prueba que lo caza (`TestApplyPropagaConstraintsAlIRGenerado`).
 - **El nivel funcional de overlap corre DESPUÉS de la oleada:** Si se corre antes, las ramas de las tareas están vacías y no detecta nada. Requiere `Resultado.Arbol` proveniente de `mergeTree`.
 - **`standup.Analizar` requiere latidos EN CRUDO (`LeerLatidosCrudos`):** La diferencia temporal entre latido fresco y rancio separa una tarea atascada (`ATASCO`) de una que murió por kill (`MUERTA`).
 - **El ledger de ventanas es global del usuario (`~/.devclean/ventanas.jsonl`):** No se resetea borrando la carpeta `.devclean/` del proyecto.

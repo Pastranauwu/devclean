@@ -440,3 +440,93 @@ tasks:
 		t.Errorf("T2 limites = %d, %d; quiero 2, 100", s.Tasks[1].LimiteIntentos, s.Tasks[1].LimiteLineas)
 	}
 }
+
+// El humano declara constraints y ninguna task: el planificador produce el IR
+// completo DESPUÉS de parsear, así que la restricción no puede aplicarse al
+// leer el YAML sin perderse. Aquí se imita ese camino: Parse deja cero tareas y
+// los contratos se agregan como los agrega planearRequirements.
+func TestApplyPropagaConstraintsAlIRGenerado(t *testing.T) {
+	raw := `version: 1
+feature: recuperación de contraseña
+requirements:
+  - solicitar recuperación por email
+  - cambiar la contraseña usando el token
+constraints:
+  no_tocar:
+    - internal/session/**
+    - migrations/**
+`
+	s, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(s.Tasks) != 0 {
+		t.Fatalf("un spec de requirements no trae tasks: %d", len(s.Tasks))
+	}
+	if len(s.Constraints.NoTocar) != 2 {
+		t.Fatalf("Constraints = %+v", s.Constraints)
+	}
+
+	s.Tasks = append(s.Tasks,
+		task.Task{Version: task.Version, Titulo: "solicitud de recuperación", ListoCuando: "true", TocarSolo: []string{"internal/recuperacion/**"}},
+		task.Task{Version: task.Version, Titulo: "cambio con token", ListoCuando: "true", TocarSolo: []string{"internal/token/**"}, NoTocar: []string{"docs/**"}},
+	)
+
+	applied, err := Apply(filepath.Join(t.TempDir(), "tasks"), s, true)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if len(applied) != 2 {
+		t.Fatalf("len(applied) = %d", len(applied))
+	}
+	for _, got := range applied {
+		for _, glob := range s.Constraints.NoTocar {
+			if !contiene(got.NoTocar, glob) {
+				t.Errorf("%s (%s) no recibió %q · no_tocar = %v", got.ID, got.Titulo, glob, got.NoTocar)
+			}
+		}
+	}
+	// lo que la tarea ya traía no se pierde ni se duplica
+	if !contiene(applied[1].NoTocar, "docs/**") || len(applied[1].NoTocar) != 3 {
+		t.Errorf("no_tocar propio + globales = %v", applied[1].NoTocar)
+	}
+	// y el spec original no queda contaminado
+	if len(s.Tasks[0].NoTocar) != 0 {
+		t.Errorf("Apply mutó el no_tocar del spec original: %v", s.Tasks[0].NoTocar)
+	}
+}
+
+// Las tasks escritas a mano en el YAML siguen recibiéndolas, aunque la
+// aplicación ya no ocurra en Parse.
+func TestApplyPropagaConstraintsATasksDelYAML(t *testing.T) {
+	raw := `version: 1
+feature: exportación
+constraints:
+  no_tocar: ["internal/session/**"]
+tasks:
+  - id: T-001
+    titulo: generador csv
+    listo_cuando: "true"
+    tocar_solo: ["internal/export/**"]
+`
+	s, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	applied, err := Apply(filepath.Join(t.TempDir(), "tasks"), s, true)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if !contiene(applied[0].NoTocar, "internal/session/**") {
+		t.Errorf("no_tocar = %v", applied[0].NoTocar)
+	}
+}
+
+func contiene(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}

@@ -86,9 +86,6 @@ func Parse(data []byte) (Spec, error) {
 				t.LimiteLineas = s.Limites.Lineas
 			}
 		}
-		if len(s.Constraints.NoTocar) > 0 {
-			t.NoTocar = appendUnique(t.NoTocar, s.Constraints.NoTocar...)
-		}
 	}
 	return s, nil
 }
@@ -197,18 +194,4 @@ func decodeTasks(n *yaml.Node) ([]task.Task, error) {
 		out = append(out, task.Task{Version: task.Version, ID: raw.ID, Titulo: raw.Titulo, Porque: raw.Porque, ListoCuando: raw.Listo, TocarSolo: raw.Tocar, NoTocar: raw.NoTocar, DependeDe: raw.Depende, Expone: raw.Expone, Usa: raw.Usa, Riesgos: raw.Riesgos, Peso: raw.Peso, Agente: raw.Agente, LimiteIntentos: raw.Intentos, LimiteLineas: raw.Lineas, Notas: raw.Notas})
 	}
 	return out, nil
-}
-
-func appendUnique(dst []string, xs ...string) []string {
-	seen := map[string]bool{}
-	for _, x := range dst {
-		seen[x] = true
-	}
-	for _, x := range xs {
-		if !seen[x] {
-			dst = append(dst, x)
-			seen[x] = true
-		}
-	}
-	return dst
 }
