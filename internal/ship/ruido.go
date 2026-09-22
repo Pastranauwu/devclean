@@ -51,7 +51,10 @@ var patronesDebug = []struct {
 	{"print de debug", regexp.MustCompile(`fmt\.Print(?:ln|f)?\(`), true},
 	{"print de debug", regexp.MustCompile(`\bprintln\(`), true},
 	{"print de debug", regexp.MustCompile(`\bprint\(`), true},
-	{"print de debug", regexp.MustCompile(`console\.(?:log|warn|info|error)\(`), true},
+	// console.error y console.warn quedan afuera por la misma razón que
+	// log.Print: reportan errores de verdad (el catch que avisa por qué
+	// falló el arranque), no son rastro de depuración.
+	{"print de debug", regexp.MustCompile(`console\.(?:log|info)\(`), true},
 	{"print de debug", regexp.MustCompile(`System\.out\.print(?:ln)?\(`), true},
 	// estos no son salida de nadie: son depuradores y volcados, ruido
 	// en cualquier archivo
@@ -99,7 +102,7 @@ func esDocumentacion(archivo string) bool {
 // escáner trabaja sobre el diff.
 func esPuntoDeEntrada(archivo string) bool {
 	limpio := strings.TrimPrefix(path.Clean(archivo), "./")
-	for _, dir := range []string{"cmd/", "bin/", "cli/"} {
+	for _, dir := range []string{"cmd/", "bin/", "cli/", "scripts/"} {
 		if strings.HasPrefix(limpio, dir) || strings.Contains(limpio, "/"+dir) {
 			return true
 		}
@@ -129,8 +132,11 @@ func esCodigoComentado(linea string) bool {
 	}
 	// ";" en medio de una oración es narrativa normal ("Defaults to X;
 	// overridable in tests."); código comentado real termina la línea
-	// en el punto y coma, sin nada más después.
-	if strings.HasSuffix(sin, ";") {
+	// en el punto y coma, sin nada más después. Tampoco alcanza solo:
+	// una oración partida en dos líneas también cierra en ";" ("las
+	// suites por pieza (engine.test.js, etc.);"). Tiene que verse como
+	// código: una llamada pegada, una asignación o un return.
+	if strings.HasSuffix(sin, ";") && formaDeSentencia.MatchString(sin) {
 		return true
 	}
 	// palabra clave al inicio no alcanza: "for", "if", "type" también
@@ -146,6 +152,10 @@ func esCodigoComentado(linea string) bool {
 	}
 	return false
 }
+
+// formaDeSentencia es lo que una sentencia tiene y la prosa no: una
+// llamada con el paréntesis pegado al nombre, una asignación o un return.
+var formaDeSentencia = regexp.MustCompile(`\w\(|[^=!<>]=[^=>]|^return\b`)
 
 func esComentario(s string) bool {
 	for _, m := range []string{"//", "#", "/*", "*", "--", "<!--"} {

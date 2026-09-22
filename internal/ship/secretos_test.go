@@ -96,3 +96,26 @@ func TestRuidoSigueAvisandoEnCodigo(t *testing.T) {
 		t.Errorf("archivo temporal no detectado: %+v", h)
 	}
 }
+
+// Reportar un error o arrancar un servidor desde un script no es debug.
+func TestRuidoNoFrenaErroresNiScripts(t *testing.T) {
+	if h := escanearRuido(diffDe("src/app/app.js", "console.error(error);", "console.warn('sin audio')"), nil); len(h) != 0 {
+		t.Errorf("reporte de errores marcado como ruido: %+v", h)
+	}
+	if h := escanearRuido(diffDe("scripts/serve.js", "server.listen(PORT, () => console.log(`en http://localhost:${PORT}`))"), nil); len(h) != 0 {
+		t.Errorf("salida de un script marcada como ruido: %+v", h)
+	}
+}
+
+// Una oración partida en dos líneas cierra en ";" y no es código.
+func TestComentarioEnProsaConPuntoYComa(t *testing.T) {
+	prosa := "// No repite lo que ya cubren las suites por pieza (engine.test.js, store.test.js, etc.);"
+	if esCodigoComentado(prosa) {
+		t.Errorf("prosa marcada como código: %q", prosa)
+	}
+	for _, c := range []string{"// foo(bar);", "// const x = 1;", "// return y;", "# total += 1;"} {
+		if !esCodigoComentado(c) {
+			t.Errorf("código comentado no detectado: %q", c)
+		}
+	}
+}
