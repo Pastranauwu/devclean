@@ -12,6 +12,19 @@ func LogPath(root, id string, intento int) string {
 	return filepath.Join(RunsDir(root), id, fmt.Sprintf("intento-%d.log", intento))
 }
 
+// guardarExamen deja por escrito por qué el examinador ciego no dejó
+// suite. Sin esto la tarea moría con "no tiene suite que lo juzgue" y
+// nadie podía saber si el modelo no respondió, si la suite no compilaba o
+// si no se resolvieron sus imports.
+func guardarExamen(root, id string, err error) {
+	p := filepath.Join(RunsDir(root), id, "examinador.log")
+	if os.MkdirAll(filepath.Dir(p), 0o755) != nil {
+		return
+	}
+	ignorarLogs(root)
+	_ = os.WriteFile(p, []byte(err.Error()+"\n"), 0o644)
+}
+
 // guardarLog vuelca prompt, stdout y stderr del CLI de agente a disco.
 // Es lo único que permite responder "¿qué falló?" sin volver a correr la
 // tarea: el bucle solo se queda con un resumen, y un resumen no alcanza

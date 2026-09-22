@@ -69,7 +69,7 @@ func lanzarEnFondo(root string) error {
 	out.Line("corriendo en segundo plano · pid %d", pid)
 	out.Line("registro · %s", rel)
 	out.Line("avance · devclean board · en vivo · tail -f %s", rel)
-	out.Line("parar · kill %d · retomar después · devclean run --reintentar", pid)
+	out.Line("parar · devclean stop · retomar después · devclean run --reintentar")
 	return nil
 }
 

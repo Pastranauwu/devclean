@@ -197,7 +197,7 @@ func TestAttemptsJSONListasVacias(t *testing.T) {
 
 func TestPromptIncluyeContratoYErrorPrevio(t *testing.T) {
 	tk := tareaDePrueba()
-	p := promptPara(tk, nil, "", nil, "", "fallo de prueba")
+	p := promptPara(tk, nil, "", nil, "", "fallo de prueba", false)
 	for _, want := range []string{"Tarea T-001", "Listo cuando: test -f src/done.txt", "Solo puedes tocar", "El intento anterior falló", "fallo de prueba"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt sin %q:\n%s", want, p)
@@ -207,7 +207,7 @@ func TestPromptIncluyeContratoYErrorPrevio(t *testing.T) {
 
 func TestPromptIncluyeSkills(t *testing.T) {
 	tk := tareaDePrueba()
-	p := promptPara(tk, nil, "", []string{"go", "refactor"}, "", "")
+	p := promptPara(tk, nil, "", []string{"go", "refactor"}, "", "", false)
 	want := "Habilidades de este rol: go, refactor"
 	if !strings.Contains(p, want) {
 		t.Errorf("prompt sin %q:\n%s", want, p)
@@ -216,9 +216,25 @@ func TestPromptIncluyeSkills(t *testing.T) {
 
 func TestPromptIncluyeContenidoDeSkills(t *testing.T) {
 	tk := tareaDePrueba()
-	p := promptPara(tk, nil, "", nil, "sé breve y directo", "")
+	p := promptPara(tk, nil, "", nil, "sé breve y directo", "", false)
 	if !strings.Contains(p, "sé breve y directo") {
 		t.Errorf("prompt sin el contenido de la skill:\n%s", p)
+	}
+}
+
+// Sin examinador ciego (node, rust) la suite la escribe el propio agente:
+// el prompt tiene que decírselo, o espera a un examinador que no existe y
+// la tarea muere roja sin que nadie escriba las pruebas.
+func TestPromptPruebasPropias(t *testing.T) {
+	tk := tareaDePrueba()
+	p := promptPara(tk, nil, "", nil, "", "", true)
+	for _, want := range []string{"no tiene examinador ciego", "la escribes TÚ", "src/core/types.test.ts"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt con pruebas propias sin %q:\n%s", want, p)
+		}
+	}
+	if got := promptPara(tk, nil, "", nil, "", "", false); strings.Contains(got, "no tiene examinador ciego") {
+		t.Errorf("prompt sin pruebas propias no debe avisar:\n%s", got)
 	}
 }
 
@@ -427,8 +443,42 @@ func TestPromptLlevaElPresupuesto(t *testing.T) {
 		LimiteIntentos: 3,
 		LimiteLineas:   250,
 	}
-	p := promptPara(tk, nil, "", nil, "", "")
+	p := promptPara(tk, nil, "", nil, "", "", false)
 	if !strings.Contains(p, "250") {
 		t.Errorf("el prompt del agente debe declarar el presupuesto:\n%s", p)
+	}
+}
+
+func TestRunCortaFalloRepetidoSinCambios(t *testing.T) {
+	root := repoConCommit(t)
+	ag := &agenteFalso{nombre: "falso"}
+	tk := tareaDePrueba()
+	tk.ListoCuando = "echo contrato-incompatible; exit 1"
+	tk.LimiteIntentos = 8
+	out, err := Run(context.Background(), optsDePrueba(t, root, ag, tk))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Verde || ag.veces != 2 || !strings.Contains(out.Pregunta, "sin progreso") {
+		t.Fatalf("%+v, llamadas=%d", out, ag.veces)
+	}
+	as, err := ReadAttempts(root, tk.ID)
+	if err != nil || len(as) != 2 {
+		t.Fatalf("intentos=%d, error=%v", len(as), err)
+	}
+}
+
+func TestRunContinuaConCambiosAunqueFalloSeaIgual(t *testing.T) {
+	root := repoConCommit(t)
+	ag := &agenteFalso{nombre: "falso", hacer: func(n int, req Request) (string, int, error) {
+		escribir(t, req.RoomPath, "src/progreso.txt", strings.Repeat("avance\n", n))
+		if n == 3 {
+			escribir(t, req.RoomPath, "src/done.txt", "listo")
+		}
+		return "", 0, nil
+	}}
+	out, err := Run(context.Background(), optsDePrueba(t, root, ag, tareaDePrueba()))
+	if err != nil || !out.Verde || ag.veces != 3 {
+		t.Fatalf("%+v, error=%v, llamadas=%d", out, err, ag.veces)
 	}
 }

@@ -102,6 +102,20 @@ func TestSembrarVerdesPrevias(t *testing.T) {
 	}
 }
 
+func TestAutoAgentes(t *testing.T) {
+	casos := []struct {
+		tareas int
+		want   int
+	}{
+		{0, 1}, {1, 1}, {2, 2}, {8, 8}, {12, 8}, {100, 8},
+	}
+	for _, c := range casos {
+		if got := autoAgentes(c.tareas); got != c.want {
+			t.Errorf("autoAgentes(%d) = %d, quiero %d", c.tareas, got, c.want)
+		}
+	}
+}
+
 func TestModeloParaTarea(t *testing.T) {
 	cfg := config.Config{
 		Estrategia: "equilibrada",

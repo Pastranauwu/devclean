@@ -32,6 +32,7 @@ type Request struct {
 	Prompt       string   // contrato + resultado del intento anterior
 	AllowedGlobs []string // tocar_solo
 	Model        string
+	Effort       string // intensidad opcional; vacío conserva el valor del CLI
 	Timeout      time.Duration
 	// Env carries the room's own variables (PORT, ...).
 	Env []string

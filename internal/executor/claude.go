@@ -38,6 +38,9 @@ func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
+	if req.Effort != "" {
+		args = append(args, "--effort", req.Effort)
+	}
 	stdout, stderr, code, err := run(ctx, req, "claude", args...)
 	res := Result{Stdout: stdout, Stderr: stderr, ExitCode: code}
 	res.Text = parseClaudeText(stdout)

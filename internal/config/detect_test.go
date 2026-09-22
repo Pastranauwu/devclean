@@ -194,3 +194,15 @@ func TestDetectTestCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestSpecNoCuentaComoCodigo(t *testing.T) {
+	for _, nombre := range []string{"devclean.spec.yml", "devclean.specs.yml", "devclean.specs.yaml"} {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, nombre), []byte("feature: snake\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if !DetectEmpty(root) {
+			t.Fatalf("%s desactivó el arranque desde cero", nombre)
+		}
+	}
+}

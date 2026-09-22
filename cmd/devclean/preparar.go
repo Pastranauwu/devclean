@@ -24,6 +24,10 @@ var entornoPreparado *struct {
 }
 
 func entornoListo(entregar bool) (string, config.Config, error) {
+	return entornoListoConCLI(entregar, "")
+}
+
+func entornoListoConCLI(entregar bool, cli string) (string, config.Config, error) {
 	if entornoPreparado != nil {
 		return entornoPreparado.root, entornoPreparado.cfg, nil
 	}
@@ -37,7 +41,7 @@ func entornoListo(entregar bool) (string, config.Config, error) {
 	if !out.JSON() && isTerminal(os.Stdin) {
 		in = os.Stdin
 	}
-	root, cfg, err := prepararEntorno(cwd, in, entregar)
+	root, cfg, err := prepararEntornoConCLI(cwd, in, entregar, cli)
 	if err != nil {
 		return "", config.Config{}, err
 	}
@@ -55,6 +59,10 @@ func entornoListo(entregar bool) (string, config.Config, error) {
 // no, se pregunta en terminal (`in` no nil) o se corta con qué hacer.
 // Devuelve la raíz del repo y la configuración ya saneada.
 func prepararEntorno(cwd string, in io.Reader, entregar bool) (string, config.Config, error) {
+	return prepararEntornoConCLI(cwd, in, entregar, "")
+}
+
+func prepararEntornoConCLI(cwd string, in io.Reader, entregar bool, cliPreferido string) (string, config.Config, error) {
 	var lector *bufio.Reader
 	if in != nil {
 		lector = bufio.NewReader(in)
@@ -78,11 +86,15 @@ func prepararEntorno(cwd string, in io.Reader, entregar bool) (string, config.Co
 
 	// 2. .devclean
 	if !config.Exists(root) {
-		out.Line("· sin .devclean · configurando")
+		mostrarInicioProyecto(root)
 		// con dos CLIs instalados, la única decisión que vale preguntar
-		cli := ""
-		if lector != nil && esTUI() {
-			cli = elegirCLIAMano(clisInstalados())
+		cli := cliPreferido
+		if cli == "" && lector != nil && esTUI() {
+			var err error
+			cli, err = elegirCLIAMano(clisInstalados())
+			if err != nil {
+				return "", config.Config{}, err
+			}
 		}
 		if err := runInit(root, "", "", cli, nil, false); err != nil {
 			return "", config.Config{}, err
@@ -117,12 +129,19 @@ func prepararEntorno(cwd string, in io.Reader, entregar bool) (string, config.Co
 		}
 	}
 
-	// 5. ejecutor: el configurado, o el que sí esté instalado
+	// 5. Una selección explícita debe aplicarse también a la planificación.
+	if cliPreferido != "" && cfg.Cli != cliPreferido {
+		cfg.Cli, guardar = cliPreferido, true
+		cfg.Modelos = nil // se descubrirá el catálogo del CLI seleccionado
+	}
 	ex, err := elegirEjecutor(cfg.Cli)
-	if err != nil && cfg.Cli != "" {
+	if err != nil && cfg.Cli != "" && cliPreferido == "" {
 		if ex, err = elegirEjecutor(""); err == nil {
 			out.Line("· %s no está instalado · se usa %s", cfg.Cli, ex.Name())
 		}
+	}
+	if err != nil && cliPreferido != "" {
+		return "", config.Config{}, err
 	}
 	if err != nil {
 		ex, err = instalarEjecutor(lector)

@@ -348,6 +348,20 @@ func TestSupervisorReplanificaLaHojaRota(t *testing.T) {
 	}
 }
 
+func TestAutoSubagentes(t *testing.T) {
+	casos := []struct {
+		tareas int
+		want   int
+	}{
+		{0, 1}, {1, 1}, {3, 3}, {8, 8}, {15, 8},
+	}
+	for _, c := range casos {
+		if got := autoSubagentes(c.tareas); got != c.want {
+			t.Errorf("autoSubagentes(%d) = %d, quiero %d", c.tareas, got, c.want)
+		}
+	}
+}
+
 func TestModeloEscalado(t *testing.T) {
 	cfg := config.Config{Modelos: map[string]string{"liviana": "l", "media": "m", "pesada": "p"}}
 	if got := cfg.ModeloEscalado("liviana", "l"); got != "m" {
@@ -568,5 +582,16 @@ func TestDependenciaSibling(t *testing.T) {
 	}
 	if got := dependenciaSibling("T-100", "T-200"); got != "T-200" {
 		t.Errorf("id completo = %q, quiero T-200", got)
+	}
+}
+
+func TestSubtareaHeredaDisenoSinTopeInventado(t *testing.T) {
+	a := Agent{Task: task.Task{ID: "T-001", Notas: "Arquitectura: src/domain define tipos compartidos", LimiteLineas: 0}}
+	sub, err := a.tareaDesdeBorrador(plan.Borrador{Titulo: "dominio", ListoCuando: "false", Como: "Validar entradas", LimiteLineas: 200}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.LimiteLineas != 0 || !strings.Contains(sub.Notas, a.Task.Notas) || !strings.Contains(sub.Notas, "Validar entradas") {
+		t.Fatalf("contrato: %+v", sub)
 	}
 }

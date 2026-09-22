@@ -23,8 +23,8 @@ const ToleranciaPresupuesto = 1.5
 // reportan.
 func verificarPresupuesto(mas, menos, masPrueba, archivos int, t task.Task) (string, bool) {
 	limite := t.LimiteLineas
-	if limite < 1 {
-		limite = task.DefaultLimiteLineas
+	if limite == 0 {
+		return fmt.Sprintf("%d líneas de código · %d líneas de prueba · %d archivos · sin límite de líneas", mas-masPrueba, masPrueba, archivos), true
 	}
 	// el límite es sobre el código de la solución: las pruebas se
 	// reportan aparte porque en go y python no las escribe el agente

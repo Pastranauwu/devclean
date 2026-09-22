@@ -19,6 +19,8 @@ import (
 var DefaultSpecNames = []string{
 	"devclean.spec.yml",
 	"devclean.spec.yaml",
+	"devclean.specs.yml",
+	"devclean.specs.yaml",
 	"spec.yml",
 	"spec.yaml",
 	".devclean/spec.yml",
@@ -329,6 +331,10 @@ func Marshal(s Spec) []byte {
 		if t.Agente != "" && t.Agente != s.Agente {
 			fmt.Fprintf(&b, "    agente: %s\n", t.Agente)
 		}
+		if t.LimiteIntentos > 0 {
+			fmt.Fprintf(&b, "    limite_intentos: %d\n", t.LimiteIntentos)
+		}
+		fmt.Fprintf(&b, "    limite_lineas: %d\n", t.LimiteLineas)
 		if t.Riesgos != "" {
 			fmt.Fprintf(&b, "    riesgos: %s\n", kv.Quote(t.Riesgos))
 		}

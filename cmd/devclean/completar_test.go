@@ -25,7 +25,7 @@ func TestCompletarTareaNoPisaAlHumano(t *testing.T) {
 	if !reflect.DeepEqual(got.TocarSolo, []string{"api/**"}) || !reflect.DeepEqual(got.DependeDe, []string{"T-003"}) {
 		t.Errorf("tocar_solo %v · depende_de %v", got.TocarSolo, got.DependeDe)
 	}
-	if got.Notas != "empieza por el handler" || got.LimiteLineas != 350 || got.Agente != "backend" {
+	if got.Notas != "empieza por el handler" || got.LimiteLineas != 200 || got.Agente != "backend" {
 		t.Errorf("notas %q · limite %d · agente %q", got.Notas, got.LimiteLineas, got.Agente)
 	}
 	if conSpec := completarTarea(humano, b, ids, 200, "frontend"); conSpec.Agente != "" {

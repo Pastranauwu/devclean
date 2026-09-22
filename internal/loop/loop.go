@@ -265,14 +265,23 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	// una suite sellada a mano (devclean task seal) manda sobre el
 	// examinador automático: el usuario ya pagó esas pruebas y volver a
 	// generarlas las pisaría.
+	var fallaExamen string
 	if sealed.Exists(o.Root, o.Task.ID) {
 		suiteManualEnCuarto(o.Root, o.Task.ID, o.Room.Path)
 	} else if o.Examinador != nil {
 		avisar(1, FaseExamen)
-		_, _ = o.Examinador.Run(ctx, o.Room.Path) // graceful degradation: never blocks
+		// degrada en abierto: un examinador que falla no frena al
+		// implementador. Pero deja de degradar en SILENCIO: el motivo va
+		// a examinador.log y al diagnóstico de la tarea sin suite, que
+		// era imposible de depurar sin volver a correrla.
+		if _, err := o.Examinador.Run(ctx, o.Room.Path); err != nil {
+			fallaExamen = err.Error()
+			guardarExamen(o.Root, o.Task.ID, err)
+		}
 	}
 
 	var prevErr string
+	var falloAnterior string
 	for intento := 1; intento <= limite; intento++ {
 		inicio := time.Now().UTC()
 		avisar(intento, FaseAgente)
@@ -288,7 +297,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 
 		req := Request{
 			RoomPath:     o.Room.Path,
-			Prompt:       promptPara(o.Task, o.Interfaces, o.Constitucion, o.Skills, o.SkillsContenido, prevErr),
+			Prompt:       promptPara(o.Task, o.Interfaces, o.Constitucion, o.Skills, o.SkillsContenido, prevErr, len(o.PatronesPrueba) == 0),
 			AllowedGlobs: o.Task.TocarSolo,
 			Model:        o.Model,
 			Timeout:      o.AgentTimeout,
@@ -411,6 +420,9 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		// puede tocar las pruebas—, así que se detiene con el motivo.
 		if code != nil && *code == 0 && SinPruebas(salida) {
 			motivo := fmt.Sprintf("listo_cuando pasó sin ejecutar ninguna prueba · %s no tiene suite que lo juzgue · sella una con devclean task seal %s o apunta listo_cuando a pruebas que existan", o.Task.ID, o.Task.ID)
+			if fallaExamen != "" {
+				motivo += " · " + fallaExamen
+			}
 			if err := s.Append(a); err != nil {
 				return Outcome{}, err
 			}
@@ -467,6 +479,14 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			return Outcome{Verde: false, Intentos: intento, UltimoError: a.ErrorAgente, Pregunta: motivo}, nil
 		}
 
+		// Compara el fallo completo, no el resumen truncado. Solo corta cuando
+		// se repite sin ningún cambio conservado en este intento.
+		fallo := fmt.Sprintf("%v\n%s\n%s", valorSalida(code), salida, a.ErrorAgente)
+		if intento > 1 && intento < limite && fallo == falloAnterior && len(archivos) == 0 {
+			motivo := "sin progreso: mismo fallo sin cambios de código · revisa el contrato o escala el modelo"
+			return Outcome{Intentos: intento, UltimoError: resumenFallo(o.Task.ListoCuando, code, salida), Pregunta: motivo}, nil
+		}
+		falloAnterior = fallo
 		prevErr = resumenFallo(o.Task.ListoCuando, code, salida)
 		if agentErr != nil {
 			prevErr = strings.TrimSpace(a.ErrorAgente + " · " + prevErr)
@@ -553,7 +573,10 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration) (
 
 // promptPara arma el prompt de un intento: el contrato y, si lo hay, la
 // salida del intento anterior. El agente nunca decide si terminó.
-func promptPara(t task.Task, interfaces []string, constitucion string, skills []string, skillsContenido string, prevErr string) string {
+// pruebasPropias marca que el stack no tiene examinador ciego: la suite
+// que listo_cuando ejecuta la escribe el propio agente, y decírselo
+// evita que la deje sin crear esperando a un examinador que no existe.
+func promptPara(t task.Task, interfaces []string, constitucion string, skills []string, skillsContenido string, prevErr string, pruebasPropias bool) string {
 	var b strings.Builder
 	if constitucion != "" {
 		fmt.Fprintf(&b, "Constitución del proyecto (convenciones que todos los agentes deben seguir):\n%s\n\n", constitucion)
@@ -569,6 +592,9 @@ func promptPara(t task.Task, interfaces []string, constitucion string, skills []
 		fmt.Fprintf(&b, "Por qué: %s\n", t.Porque)
 	}
 	fmt.Fprintf(&b, "Listo cuando: %s\n", t.ListoCuando)
+	if pruebasPropias {
+		fmt.Fprintf(&b, "Este proyecto no tiene examinador ciego: la suite de pruebas que verifica tu trabajo la escribes TÚ. Si el listo_cuando apunta a un archivo de prueba (p. ej. src/core/types.test.ts), créalo además del código.\n")
+	}
 	if len(t.TocarSolo) > 0 {
 		fmt.Fprintf(&b, "Solo puedes tocar: %s\n", strings.Join(t.TocarSolo, ", "))
 	}
@@ -658,4 +684,12 @@ func ultimasLineas(s string, n, max int) string {
 		out = "…" + out[len(out)-max:]
 	}
 	return out
+}
+
+// valorSalida distingue un proceso sin código de cualquier salida numérica.
+func valorSalida(code *int) string {
+	if code == nil {
+		return "sin código"
+	}
+	return fmt.Sprint(*code)
 }

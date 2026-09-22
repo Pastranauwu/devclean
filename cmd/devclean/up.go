@@ -35,7 +35,7 @@ pregunta solo cuando no puede resolverlo solo.`,
   devclean up -f specs/auth.yml`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, _, err := entornoListo(entregar || integrar || revisar)
+			root, _, err := entornoListoConCLI(entregar || integrar || revisar, ejecutor)
 			if err != nil {
 				return err
 			}
@@ -46,6 +46,7 @@ pregunta solo cuando no puede resolverlo solo.`,
 			if fondo {
 				return lanzarEnFondo(root)
 			}
+			defer marcarCorrida(root)()
 
 			var s spec.Spec
 			if frase := strings.TrimSpace(strings.Join(args, " ")); frase != "" {
@@ -81,9 +82,6 @@ pregunta solo cuando no puede resolverlo solo.`,
 			if !cmd.Flags().Changed("agentes") && s.Agentes > 0 {
 				agentes = s.Agentes
 			}
-			if agentes < 1 {
-				agentes = 1
-			}
 			if s.Ship {
 				entregar = true
 			}
@@ -102,7 +100,7 @@ pregunta solo cuando no puede resolverlo solo.`,
 	}
 
 	cmd.Flags().StringVarP(&file, "file", "f", "", "ruta al archivo de especificación (.yml)")
-	cmd.Flags().IntVar(&agentes, "agentes", 1, "número de trabajadores en paralelo (por defecto, 1)")
+	cmd.Flags().IntVar(&agentes, "agentes", 0, "número de trabajadores en paralelo (0 = automático, hasta 8)")
 	cmd.Flags().StringVar(&modelo, "modelo", "", "fuerza un modelo para todas las tareas")
 	cmd.Flags().StringVar(&ejecutor, "ejecutor", "", "opencode o claude")
 	cmd.Flags().BoolVar(&reintentar, "reintentar", false, "vuelve a correr también las tareas detenidas")

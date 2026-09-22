@@ -56,7 +56,7 @@ func newRunCmd() *cobra.Command {
 			return runCmd(agentes, ejecutor, modelo, reintentar, fondo)
 		},
 	}
-	cmd.Flags().IntVar(&agentes, "agentes", 1, "tareas en paralelo")
+	cmd.Flags().IntVar(&agentes, "agentes", 0, "tareas en paralelo (0 = automático, hasta 8)")
 	cmd.Flags().StringVar(&ejecutor, "ejecutor", "", "opencode o claude (por defecto, el primero disponible)")
 	cmd.Flags().StringVar(&modelo, "modelo", "", "modelo del ejecutor (por defecto, el suyo)")
 	cmd.Flags().BoolVar(&reintentar, "reintentar", false, "vuelve a correr también las tareas detenidas, reusando su cuarto")
@@ -65,7 +65,7 @@ func newRunCmd() *cobra.Command {
 }
 
 func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error {
-	if agentes < 1 {
+	if agentes < 0 {
 		return errors.New("--agentes inválido · mínimo 1")
 	}
 	root, cfg, err := entornoListo(false)
@@ -79,6 +79,7 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 	if fondo {
 		return lanzarEnFondo(root)
 	}
+	defer marcarCorrida(root)()
 	constitucion, err := constitution.Load(root)
 	if err != nil {
 		return err
@@ -319,7 +320,11 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 
 		var verdes []runResult
 		if len(asignadas) > 0 {
-			r := correr(ctx, root, cfg, ex, modelo, constitucion, base, asignadas, agentes, presupuesto, ventanasReg, emit)
+			workers := agentes
+			if workers < 1 {
+				workers = autoAgentes(len(asignadas))
+			}
+			r := correr(ctx, root, cfg, ex, modelo, constitucion, base, asignadas, workers, presupuesto, ventanasReg, emit)
 			results = append(results, r...)
 			for _, rr := range r {
 				procesadas[rr.ID] = true
@@ -560,6 +565,20 @@ func (a agenteExecutor) Run(ctx context.Context, req loop.Request) (loop.Result,
 	}, err
 }
 
+// autoAgentes resuelve el paralelismo cuando --agentes no se pasa: tantos
+// trabajadores como tareas en la oleada, topado a 8. Un tope fijo evita
+// que una oleada enorme dispare el rate limit de los proveedores; bajar de
+// 8 a 1 serializaba un plan bien partido en piezas independientes.
+func autoAgentes(tareas int) int {
+	if tareas > 8 {
+		return 8
+	}
+	if tareas < 1 {
+		return 1
+	}
+	return tareas
+}
+
 // correr lanza las tareas con `agentes` trabajadores en paralelo. onEvent,
 // si no es nil, recibe cada transición para el tablero en vivo.
 func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion, base string, asignadas []task.Task, agentes int, presupuesto *budget.Contador, ventanasReg *ventanas.Registro, onEvent func(tui.EventoRun)) []runResult {
@@ -777,7 +796,7 @@ func (r revisorEnBucle) Revisar(ctx context.Context, _ string, tarea task.Task, 
 }
 
 // revisorParaBucle arma el revisor del bucle con el modelo del rol
-// `revisor`, cayendo al planificador y luego al pesado. Si el CLI no
+// `revisor`, cayendo al pesado si no hay nada declarado. Si el CLI no
 // está disponible, devuelve nil y el bucle corre sin revisión.
 func revisorParaBucle(root string, cfg config.Config, ex executor.Executor) loop.Revisor {
 	if ex == nil {
@@ -789,12 +808,24 @@ func revisorParaBucle(root string, cfg config.Config, ex executor.Executor) loop
 	}
 	modelo := config.ModeloRol(cfg, "revisor")
 	if modelo == "" {
-		modelo = config.ModeloRol(cfg, "planificador")
+		modelo = cfg.ModeloPeso("media")
 	}
 	if modelo == "" {
-		modelo = cfg.ModeloPeso("pesada")
+		modelo = cfg.ModeloPeso("liviana")
 	}
 	return revisorEnBucle{ex: ex, modelo: modelo, root: root}
+}
+
+// modeloExaminador resuelve el modelo del examinador ciego: el rol
+// `examinador` declarado en config.yml, o el modelo liviano por defecto.
+// Escribir pruebas por tarea es trabajo repetitivo, no arquitectura:
+// quemar el modelo pesado ahí multiplica el costo de la corrida sin
+// mejorar el examen.
+func modeloExaminador(cfg config.Config) string {
+	if m := config.ModeloRol(cfg, "examinador"); m != "" {
+		return m
+	}
+	return cfg.ModeloPeso("liviana")
 }
 
 // correrUno ejecuta una tarea completa: cuarto, esclusa de estado,
@@ -819,14 +850,6 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 	exTarea, modeloTarea, skillsTarea, skillPkgsTarea := resolverAgenteTarea(cfg, ex, modelo, t)
 	skillsContenido := skills.Content(root, skillPkgsTarea)
 
-	exam := examiner.Runner{Options: examiner.Options{
-		Agent:    agenteExecutor{exTarea},
-		Task:     t,
-		Root:     root,
-		Model:    config.ModeloRol(cfg, "planificador"),
-		Timeout:  3 * time.Minute,
-		Lenguaje: config.DetectLanguage(root),
-	}}
 	var agentTimeout, pruebaTimeout time.Duration
 	if cfg.TimeoutAgente > 0 {
 		agentTimeout = time.Duration(cfg.TimeoutAgente) * time.Second
@@ -834,6 +857,21 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 	if cfg.TimeoutPruebas > 0 {
 		pruebaTimeout = time.Duration(cfg.TimeoutPruebas) * time.Second
 	}
+
+	// el examen ciego es una invocación de agente como cualquier otra y
+	// cobra el mismo timeout. Con 3 minutos fijos, la tarea con la
+	// frontera más grande —la que más pruebas necesita— era justo la que
+	// se quedaba sin suite: el examinador no alcanzaba a responder,
+	// degradaba, y la tarea moría con "listo_cuando pasó sin ejecutar
+	// ninguna prueba" porque la veda le quita al implementador las suyas.
+	exam := examiner.Runner{Options: examiner.Options{
+		Agent:    agenteExecutor{exTarea},
+		Task:     t,
+		Root:     root,
+		Model:    modeloExaminador(cfg),
+		Timeout:  agentTimeout,
+		Lenguaje: config.DetectLanguage(root),
+	}}
 
 	// presupuesto: las hojas lo gastan con sus intentos; el padre
 	// recursivo no, porque sus subtareas ya lo gastan cada una
@@ -843,7 +881,7 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		agente = recurse.Agent{
 			Cfg:            cfg,
 			Constitucion:   constitucion,
-			Planificador:   generadorPlan{ex: ex, modelo: config.ModeloRol(cfg, "planificador"), root: root},
+			Planificador:   generadorPlan{ex: ex, modelo: config.ModeloRol(cfg, "planificador"), root: root, effort: "medium"},
 			Ejecutor:       agenteExecutor{exTarea},
 			ModeloEjecutor: modeloTarea,
 			Task:           t,

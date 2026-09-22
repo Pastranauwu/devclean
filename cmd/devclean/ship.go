@@ -200,7 +200,7 @@ func (r revisorAgente) Revisar(ctx context.Context, diff string, tareas []task.T
 }
 
 // revisorDelProyecto arma el revisor con el modelo del rol `revisor`, o
-// el del planificador si no se declaró uno propio. El rol lleva
+// el del media/liviana si no se declaró uno propio. El rol lleva
 // declarado en config desde el principio y hasta ahora no lo usaba nadie.
 func revisorDelProyecto(root string, cfg config.Config) (ship.Revisor, error) {
 	ex, err := elegirEjecutor(cfg.Cli)
@@ -209,10 +209,10 @@ func revisorDelProyecto(root string, cfg config.Config) (ship.Revisor, error) {
 	}
 	modelo := config.ModeloRol(cfg, "revisor")
 	if modelo == "" {
-		modelo = config.ModeloRol(cfg, "planificador")
+		modelo = cfg.ModeloPeso("media")
 	}
 	if modelo == "" {
-		modelo = cfg.ModeloPeso("pesada") // revisar todo el diff no es tarea liviana
+		modelo = cfg.ModeloPeso("liviana")
 	}
 	return revisorAgente{gen: generadorPlan{ex: ex, modelo: modelo, root: root}}, nil
 }

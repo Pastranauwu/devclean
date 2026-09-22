@@ -551,3 +551,19 @@ func TestMarshalEscribeConstraints(t *testing.T) {
 		t.Errorf("constraints tras la vuelta = %v, quiero %v\n%s", vuelta.Constraints.NoTocar, s.Constraints.NoTocar, out)
 	}
 }
+
+func TestFindSpecPlural(t *testing.T) {
+	for _, nombre := range []string{"devclean.specs.yml", "devclean.specs.yaml"} {
+		t.Run(nombre, func(t *testing.T) {
+			root := t.TempDir()
+			p := filepath.Join(root, nombre)
+			if err := os.WriteFile(p, []byte("feature: snake\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			got, err := Find(root)
+			if err != nil || got != p {
+				t.Fatalf("Find = %q, %v", got, err)
+			}
+		})
+	}
+}

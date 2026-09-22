@@ -83,8 +83,8 @@ func TestValidate(t *testing.T) {
 	}
 
 	varios := Task{}
-	if errs := varios.Validate(); len(errs) != 6 {
-		t.Errorf("contrato vacío: %d errores, quiero 6: %v", len(errs), errs)
+	if errs := varios.Validate(); len(errs) != 5 {
+		t.Errorf("contrato vacío: %d errores, quiero 5: %v", len(errs), errs)
 	}
 }
 
@@ -291,5 +291,36 @@ func TestNombreDeFirmaNoConfundeProsaConRuta(t *testing.T) {
 	}
 	if n := NombreDeFirma("POST /wake"); n != "/wake" {
 		t.Errorf("NombreDeFirma = %q, quiero /wake", n)
+	}
+}
+
+// Los contratos que genera el planificador para stacks TS declaran tipos y
+// constantes: "type Point = { x: number }" y "levels.LEVELS: Level[]". El
+// nombre tiene que quedar pelado, igual que el de una función, o
+// ValidatePlan marca la pieza como huérfana cuando la consumidora la usa.
+func TestNombreDeFirmaTipoYConstanteTS(t *testing.T) {
+	casos := map[string]string{
+		"type Point = { x: number; y: number }":                     "Point",
+		"type SnakeState = { body: Point[]; direction: Direction }": "SnakeState",
+		"const LEVELS: Level[]":                                     "LEVELS",
+		"levels.LEVELS: Level[]":                                    "LEVELS",
+		"sound.SoundManager = { play(): void }":                     "SoundManager",
+		"type Direction = 'up' | 'down' | 'left' | 'right'":         "Direction",
+	}
+	for firma, want := range casos {
+		if got := NombreDeFirma(firma); got != want {
+			t.Errorf("NombreDeFirma(%q) = %q, quiero %q", firma, got, want)
+		}
+	}
+}
+
+func TestLimiteLineasOpcional(t *testing.T) {
+	tk := Task{Version: Version, ID: "T-001", Titulo: "módulo", ListoCuando: "false", LimiteIntentos: 3}
+	if errs := tk.Validate(); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	tk.LimiteLineas = -1
+	if errs := tk.Validate(); len(errs) != 1 {
+		t.Fatalf("límite negativo: %v", errs)
 	}
 }

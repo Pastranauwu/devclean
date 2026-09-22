@@ -117,7 +117,11 @@ func runInit(cwd, pruebasFlag, plantilla, cli string, in io.Reader, sinSkills bo
 	// Con más de un CLI instalado, en terminal elige el humano: antes
 	// se tomaba el primero (opencode) y el catálogo de claude nunca se veía.
 	if cli == "" && in != nil && esTUI() {
-		cli = elegirCLIAMano(clisInstalados())
+		var err error
+		cli, err = elegirCLIAMano(clisInstalados())
+		if err != nil {
+			return err
+		}
 	}
 	cliDetectado, catalogo := detectarCatalogo(cli)
 	modelos := config.ElegirModelos(catalogo)
@@ -213,19 +217,26 @@ func clisInstalados() []string {
 // elegirCLIAMano pregunta qué CLI usar cuando hay más de uno. Con uno
 // solo (o ninguno) no pregunta y devuelve "" para que decida la
 // autodetección.
-func elegirCLIAMano(instalados []string) string {
+func elegirCLIAMano(instalados []string) (string, error) {
 	if len(instalados) < 2 {
-		return ""
+		return "", nil
 	}
 	ops := make([]tui.Opcion, 0, len(instalados))
 	for _, n := range instalados {
-		ops = append(ops, tui.Opcion{ID: n, Etiqueta: n})
+		detalle := "Usa los proveedores y modelos configurados en OpenCode"
+		if n == "claude" {
+			detalle = "Usa tu sesión de Claude · Opus planifica, Haiku y Sonnet implementan"
+		}
+		ops = append(ops, tui.Opcion{ID: n, Etiqueta: n, Detalle: detalle})
 	}
-	id, err := tui.Elegir("CLI DE AGENTE", "j/k mueve · enter elige · q deja "+instalados[0], ops)
+	id, err := tui.Elegir("CLI DE AGENTE", "↑/↓ mueve · enter elige · esc o ctrl+c cancela", ops)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return id
+	if id == "" {
+		return "", errors.New("inicio cancelado · vuelve a ejecutar devclean up cuando quieras")
+	}
+	return id, nil
 }
 
 // elegirModelosAMano deja al humano fijar el modelo de cada peso sobre el

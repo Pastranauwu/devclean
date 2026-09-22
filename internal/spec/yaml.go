@@ -90,22 +90,42 @@ func Parse(data []byte) (Spec, error) {
 	return s, nil
 }
 
+// flattenStrings aplana requirements y reglas: lista simple, categorías
+// anidadas, o una mezcla.
+//
+// enSecuencia distingue los dos usos de un mapa. Bajo la clave, un mapa
+// son categorías (`functional:`) y el nombre de la categoría se descarta.
+// Dentro de una LISTA, en cambio, `- texto: más texto` no es una
+// categoría: es una frase con dos puntos, y YAML la lee como un mapa de
+// un solo entry. Descartar ahí la clave se comía la mitad del requisito
+// sin avisar —"la lógica no lee el teclado: eso vive en la terminal"
+// llegaba al planificador como "eso vive en la terminal"—, así que se
+// vuelve a unir.
 func flattenStrings(n *yaml.Node) ([]string, error) {
 	var out []string
-	var walk func(*yaml.Node) error
-	walk = func(x *yaml.Node) error {
+	var walk func(*yaml.Node, bool) error
+	walk = func(x *yaml.Node, enSecuencia bool) error {
 		switch x.Kind {
 		case yaml.ScalarNode:
 			out = append(out, x.Value)
 		case yaml.SequenceNode:
 			for _, c := range x.Content {
-				if err := walk(c); err != nil {
+				if err := walk(c, true); err != nil {
 					return err
 				}
 			}
 		case yaml.MappingNode:
 			for i := 1; i < len(x.Content); i += 2 {
-				if err := walk(x.Content[i]); err != nil {
+				clave, valor := x.Content[i-1], x.Content[i]
+				if enSecuencia && valor.Kind == yaml.ScalarNode {
+					texto := clave.Value
+					if valor.Value != "" {
+						texto += ": " + valor.Value
+					}
+					out = append(out, texto)
+					continue
+				}
+				if err := walk(valor, false); err != nil {
 					return err
 				}
 			}
@@ -114,7 +134,7 @@ func flattenStrings(n *yaml.Node) ([]string, error) {
 		}
 		return nil
 	}
-	return out, walk(n)
+	return out, walk(n, false)
 }
 
 func decodeAcceptance(n *yaml.Node) ([]Acceptance, error) {

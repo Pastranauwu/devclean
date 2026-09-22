@@ -326,3 +326,12 @@ func TestEsPuntoDeEntrada(t *testing.T) {
 		}
 	}
 }
+
+func TestPresupuestoSinTope(t *testing.T) {
+	tk := taskTitulo("módulo completo")
+	tk.LimiteLineas = 0
+	d, ok := verificarPresupuesto(10000, 0, 2000, 20, tk)
+	if !ok || !strings.Contains(d, "sin límite") || !strings.Contains(d, "8000") {
+		t.Fatalf("%s: %v", d, ok)
+	}
+}

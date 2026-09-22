@@ -16,7 +16,7 @@ import (
 // Defaults for the optional contract fields.
 const (
 	DefaultLimiteIntentos  = 3
-	DefaultLimiteLineas    = 200
+	DefaultLimiteLineas    = 0 // sin tope; un valor positivo es una restricción explícita
 	DefaultLimiteSubtareas = 5
 )
 
@@ -108,6 +108,23 @@ func DependenciasPorPosicion(deps, ids []string) []string {
 // AST completo sigue pendiente.
 func NombreDeFirma(firma string) string {
 	s := strings.TrimSpace(firma)
+
+	// declaración de tipo o const de TypeScript: "type Point = { x: number }"
+	// → "Point", "const LEVELS: Level[]" → "LEVELS". Sin esto, los
+	// contratos que genera el planificador para stacks TS dejaban el
+	// nombre pegado al cuerpo (p. ej. "}") y ValidatePlan los marcaba
+	// como interfaces huérfanas que sí existían.
+	if i := strings.Index(s, " "); i >= 0 {
+		switch s[:i] {
+		case "type", "interface", "class", "enum", "const", "var", "let", "func":
+			s = strings.TrimSpace(s[i:])
+			if j := strings.IndexAny(s, " \t:=({["); j >= 0 {
+				s = s[:j]
+			}
+			return strings.TrimSpace(s)
+		}
+	}
+
 	if i := strings.Index(s, "("); i >= 0 {
 		s = strings.TrimSpace(s[:i])
 	}
@@ -123,6 +140,11 @@ func NombreDeFirma(firma string) string {
 	}
 	if i := strings.LastIndex(s, "."); i >= 0 {
 		s = s[i+1:]
+	}
+	// anotación de tipo o asignación: "LEVELS: Level[]" → "LEVELS",
+	// "SoundManager = { play(...) }" → "SoundManager"
+	if i := strings.IndexAny(s, ":="); i >= 0 {
+		s = strings.TrimSpace(s[:i])
 	}
 	if i := strings.LastIndex(s, " "); i >= 0 {
 		s = s[i+1:]
@@ -249,8 +271,8 @@ func (t Task) Validate() []error {
 	if t.LimiteIntentos < 1 {
 		errs = append(errs, fmt.Errorf("limite_intentos inválido: %d · mínimo 1", t.LimiteIntentos))
 	}
-	if t.LimiteLineas < 1 {
-		errs = append(errs, fmt.Errorf("limite_lineas inválido: %d · mínimo 1", t.LimiteLineas))
+	if t.LimiteLineas < 0 {
+		errs = append(errs, fmt.Errorf("limite_lineas inválido: %d · usa 0 para no limitar", t.LimiteLineas))
 	}
 	for _, d := range t.DependeDe {
 		if !ValidID(d) {

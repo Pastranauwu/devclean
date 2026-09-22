@@ -57,6 +57,19 @@ const LimiteReplan = 1
 // internos. La ejecución del agente dentro del cuarto no se serializa.
 var muCuarto sync.Mutex
 
+// autoSubagentes resuelve el paralelismo de la recursión cuando config no
+// lo fija: tantas subtareas en paralelo como haya en la oleada, topado a
+// 8. Sin esto la descomposición corría las hojas independientes en fila.
+func autoSubagentes(tareas int) int {
+	if tareas > 8 {
+		return 8
+	}
+	if tareas < 1 {
+		return 1
+	}
+	return tareas
+}
+
 // Agent descompone una tarea recursiva y ejecuta sus subtareas.
 type Agent struct {
 	Cfg            config.Config
@@ -156,7 +169,7 @@ func (a Agent) Run(ctx context.Context, req loop.Request) (loop.Result, error) {
 
 	subagentes := a.Cfg.Subagentes
 	if subagentes < 1 {
-		subagentes = 1
+		subagentes = autoSubagentes(len(aprobadas))
 	}
 
 	verde := map[string]bool{}
@@ -605,7 +618,7 @@ func (a Agent) replanDesdeContrato(sub task.Task, b plan.Borrador) (task.Task, e
 		nuevo.Peso = "liviana"
 	}
 	nuevo.Agente = b.Agente
-	nuevo.Notas = b.Como
+	nuevo.Notas = joinTexto(sub.Notas, b.Como)
 	nuevo.DependeDe = nil
 	if errs := nuevo.Validate(); len(errs) > 0 {
 		return task.Task{}, errs[0]
@@ -720,6 +733,9 @@ func (a Agent) promptDescomposicion() string {
 	if t.Porque != "" {
 		fmt.Fprintf(&b, "Para qué importa: %s\n", t.Porque)
 	}
+	if t.Notas != "" {
+		fmt.Fprintf(&b, "Diseño e instrucciones del padre:\n%s\n\n", t.Notas)
+	}
 	fmt.Fprintf(&b, "La tarea estará lista cuando: %s (lo decide el código, no un modelo)\n", t.ListoCuando)
 	if t.Riesgos != "" {
 		fmt.Fprintf(&b, "Riesgos del padre: %s\n", t.Riesgos)
@@ -743,7 +759,7 @@ func (a Agent) promptDescomposicion() string {
 	b.WriteString("- \"tocar_solo\": array de globs dentro del alcance del padre; sin cruce con otras subtareas que corran en paralelo\n")
 	b.WriteString("- \"depende_de\": array de números de subtareas que deben estar verdes antes (ej. [1]); vacío si no depende de ninguna\n")
 	b.WriteString("- \"expone\" / \"usa\": firmas que esta subtarea produce/consume, si aplica\n")
-	b.WriteString("- \"como\": una línea con el enfoque — cómo encararla, qué tocar primero, a qué no meterse (obligatorio)\n")
+	b.WriteString("- \"como\": instrucciones concretas con archivos, pasos, entradas, salidas, errores y casos de prueba; conserva las decisiones de arquitectura del padre (obligatorio, sin límite de una línea)\n")
 	b.WriteString("- \"riesgos\": o \"\"\n")
 	b.WriteString("- \"peso\": \"liviana\", \"media\" o \"pesada\" según la complejidad (las hojas chicas van a \"liviana\")\n\n")
 	b.WriteString("El conjunto de subtareas debe lograr el listo_cuando del padre. Dividí por capas o archivos, no por pasos temporales: cada subtarea deja algo verde por su cuenta. Si una pieza es chica y bien definida, preferí \"liviana\" y un \"como\" claro — el modelo barato solo necesita seguir instrucciones precisas.\n")
@@ -843,7 +859,7 @@ func (a Agent) tareaDesdeBorrador(b plan.Borrador, indice int) (task.Task, error
 		Agente:         b.Agente,
 		LimiteIntentos: task.DefaultLimiteIntentos,
 		LimiteLineas:   limiteLineas,
-		Notas:          b.Como,
+		Notas:          joinTexto(a.Task.Notas, b.Como),
 	}
 	if errs := sub.Validate(); len(errs) > 0 {
 		return task.Task{}, errs[0]

@@ -132,3 +132,27 @@ func TestPrepararEntregaSinRemoto(t *testing.T) {
 }
 
 func lector(s string) *bufio.Reader { return bufio.NewReader(strings.NewReader(s)) }
+
+func TestPrepararEntornoRespetaCLIExplicito(t *testing.T) {
+	root := repoTemporal(t)
+	out = ui.New(io.Discard, false)
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\necho claude-test\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cfg := config.Config{Base: "main", Cli: "opencode", Modelos: map[string]string{"pesada": "otro-proveedor"}}
+	if err := os.MkdirAll(config.TasksDir(root), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Save(root); err != nil {
+		t.Fatal(err)
+	}
+	_, got, err := prepararEntornoConCLI(root, nil, false, "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Cli != "claude" || got.Modelos["pesada"] != "opus" {
+		t.Fatalf("config: %+v", got)
+	}
+}

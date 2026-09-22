@@ -50,8 +50,13 @@ func (r Runner) Run(ctx context.Context, roomPath string) (bool, error) {
 // Run invokes the examiner agent, parses the response, writes the visible
 // suite to the worktree and seals the hidden suite.
 // Returns (true, nil) when a hidden suite was sealed.
-// Returns (false, nil) on graceful degradation (no sealed suite written).
-// Never returns an error that should stop the implementer.
+// Returns (false, nil) when la tarea no es examinable: no hay examen que
+// hacer y no falló nada.
+// Returns (false, err) on graceful degradation, con el motivo: el error
+// NO debe frenar al implementador, solo queda registrado. Degradar en
+// silencio dejaba la tarea sin suite y sin rastro de por qué: la veda de
+// rutas de prueba sigue activa, la reversión de alcance le quita al
+// implementador las suyas y `listo_cuando` pasa sin ejecutar nada.
 func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	if o.Agent == nil {
 		return false, nil
@@ -137,7 +142,7 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	}
 	res, err := o.Agent.Run(ctx, req)
 	if err != nil {
-		return false, nil // graceful degradation
+		return false, fmt.Errorf("el examinador no pudo invocar al modelo · %s", err)
 	}
 
 	text := res.Text
@@ -145,48 +150,54 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		text = res.Stdout
 	}
 	visible, hidden, imports, err := parseRespText(text)
-	if err != nil || len(visible) == 0 {
-		return false, nil
+	if err != nil {
+		return false, fmt.Errorf("la respuesta del examinador no se pudo leer · %s", err)
+	}
+	if len(visible) == 0 {
+		return false, fmt.Errorf("el examinador no devolvió ninguna prueba visible")
 	}
 
 	visibleRelPath, hiddenRelPath := RutasSuite(o.Task.TocarSolo, lenguaje)
 
 	visibleContent, okVisible := suiteCompleta(lenguaje, roomPath, pkg, importPath, imports, visible)
 	if !okVisible {
-		return false, nil
+		return false, fmt.Errorf("no se pudieron resolver los imports de la suite visible")
 	}
 	// un examinador que emite pruebas que no compilan bloquea al
 	// implementador: no puede tocar el archivo y su impl correcta
 	// igual da "build failed". Si la suite ni siquiera parsea, se
 	// descarta y el implementador corre sin suite ciega.
-	if validarSintaxis(lenguaje, visibleContent) != nil {
-		return false, nil
+	if err := validarSintaxis(lenguaje, visibleContent); err != nil {
+		return false, fmt.Errorf("la suite visible del examinador no compila · %s", err)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return false, nil
+		return false, fmt.Errorf("no se pudo crear %s · %s", dir, err)
 	}
 	visiblePath := filepath.Join(roomPath, filepath.FromSlash(visibleRelPath))
 	if err := os.WriteFile(visiblePath, []byte(visibleContent), 0o644); err != nil {
-		return false, nil
+		return false, fmt.Errorf("no se pudo escribir la suite visible · %s", err)
 	}
 	// commit visible tests so the loop's revertFueraDeAlcance does not
 	// undo them — git status won't list committed files as "changed".
 	commitVisible(roomPath, visiblePath)
 
 	if len(hidden) == 0 {
-		return false, nil
+		return false, fmt.Errorf("el examinador no devolvió suite oculta · el paso suite_oculta se omite")
 	}
 
 	hiddenContent, okHidden := suiteCompleta(lenguaje, roomPath, pkg, importPath, imports, hidden)
-	if !okHidden || validarSintaxis(lenguaje, hiddenContent) != nil {
-		return false, nil // solo visible; sin oculta que sellar
+	if !okHidden {
+		return false, fmt.Errorf("no se pudieron resolver los imports de la suite oculta · solo queda la visible")
+	}
+	if err := validarSintaxis(lenguaje, hiddenContent); err != nil {
+		return false, fmt.Errorf("la suite oculta del examinador no compila · solo queda la visible · %s", err)
 	}
 	s := sealed.SuiteOculta{
 		Content: hiddenContent,
 		Archivo: hiddenRelPath,
 	}
 	if err := sealed.Write(o.Root, o.Task.ID, s); err != nil {
-		return false, nil
+		return false, fmt.Errorf("no se pudo sellar la suite oculta · %s", err)
 	}
 	return true, nil
 }

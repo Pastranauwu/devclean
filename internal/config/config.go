@@ -335,17 +335,32 @@ func sortedAgentNames(m map[string]Agente) []string {
 }
 
 // ModeloRol devuelve el modelo declarado para un rol (planificador,
-// ejecutor, revisor) en la configuración, o "" si no está. Si existe un
-// agente con ese nombre en `agentes:`, su modelo tiene prioridad sobre
+// ejecutor, revisor, examinador) en la configuración, o el que el rol
+// pide por defecto, o "" si no hay nada declarado. Si existe un agente
+// con ese nombre en `agentes:`, su modelo tiene prioridad sobre
 // `proveedores:`.
+//
+// El default de cada rol sigue el principio de no quemar el modelo de
+// frontera en trabajo repetitivo: planificador (arquitectura y
+// decisiones) cae al modelo pesado; revisor y examinador (juicio y
+// pruebas por tarea, corren muchas veces por corrida) caen a modelos
+// baratos. Quien quiera otra cosa, lo escribe en config.yml.
 func ModeloRol(c Config, rol string) string {
 	if a, ok := c.Agentes[rol]; ok && a.Modelo != "" {
 		return a.Modelo
 	}
-	if c.Proveedores == nil {
-		return ""
+	if m := c.Proveedores[rol].Modelo; m != "" {
+		return m
 	}
-	return c.Proveedores[rol].Modelo
+	switch rol {
+	case "planificador":
+		return c.ModeloPeso("pesada")
+	case "revisor":
+		return c.ModeloPeso("media")
+	case "examinador":
+		return c.ModeloPeso("liviana")
+	}
+	return ""
 }
 
 // PesoPorDefecto devuelve el peso que usa una tarea sin peso explícito,
@@ -640,6 +655,16 @@ var pistasPeso = map[string][]string{
 	"pesada":  {"opus", "ultra", "-max", "-pro", "thinking"},
 }
 
+// preferidos son los modelos que devclean elige primero, por peso y en
+// orden, cuando el catálogo del CLI los tiene. Se comparan contra el id
+// sin proveedor ("opencode-go/kimi-k3" casa con "kimi-k3"). Si ninguno
+// está, se cae a las pistas por nombre.
+var preferidos = map[string][]string{
+	"pesada":  {"kimi-k3", "grok-4.7", "grok-4.6"},
+	"media":   {"deepseek-v4-flash", "deepseek-v4.1-flash"},
+	"liviana": {"muse-spark-1.3-contributor", "muse-spark-1.3-contributor-free", "muse-spark-1.2-contributor"},
+}
+
 // ElegirModelos reparte un catálogo real de ids de modelo entre los tres
 // pesos, para que `devclean init` deje una configuración que funciona sin
 // que el usuario adivine ids. Es una heurística por nombre y el usuario
@@ -652,7 +677,20 @@ func ElegirModelos(catalogo []string) map[string]string {
 	if len(catalogo) == 0 {
 		return nil
 	}
+	preferido := func(peso string) string {
+		for _, p := range preferidos[peso] {
+			for _, m := range catalogo {
+				if m == p || strings.HasSuffix(m, "/"+p) {
+					return m
+				}
+			}
+		}
+		return ""
+	}
 	buscar := func(peso string) string {
+		if m := preferido(peso); m != "" {
+			return m
+		}
 		for _, pista := range pistasPeso[peso] {
 			for _, m := range catalogo {
 				if strings.Contains(strings.ToLower(m), pista) {
@@ -666,9 +704,12 @@ func ElegirModelos(catalogo []string) map[string]string {
 	res := map[string]string{}
 	liviana, pesada := buscar("liviana"), buscar("pesada")
 
-	// media: el primero que no sea ni el liviano ni el pesado elegidos
-	media := ""
+	// media: el preferido o el primero que no sea ni el liviano ni el pesado
+	media := preferido("media")
 	for _, m := range catalogo {
+		if media != "" {
+			break
+		}
 		if m != liviana && m != pesada {
 			media = m
 			break

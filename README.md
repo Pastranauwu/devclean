@@ -116,7 +116,7 @@ unidad de trabajo. Incluyen:
 - `depende_de`;
 - `expone` y `usa`;
 - `riesgos`, `peso` y `agente`;
-- límites de intentos y líneas.
+- límite de intentos y, opcionalmente, un límite de líneas elegido por el humano.
 
 Siguen siendo editables y ejecutables como interfaz avanzada. También puedes
 escribir tasks completos en el spec o administrar contratos a mano; el formato
@@ -132,6 +132,32 @@ código + commits         → resultado de ejecución
 
 No es un compilador formal: el planificador usa un modelo y sus contratos pueden
 ser incorrectos. Las verificaciones deterministas deciden qué puede avanzar.
+
+## Arquitectura y delegación
+
+El planificador usa `modelos.pesada` si no hay un modelo explícito para el rol
+`planificador`. En una sola llamada define la arquitectura, distribución de
+archivos, responsabilidades y contratos entre módulos, y propone las tareas.
+Estas decisiones quedan en las notas de los contratos y se transmiten a las
+subtareas recursivas. Las instrucciones piden asignar la base compartida a
+`architect` con peso `pesada`, y la implementación ya definida a agentes
+`liviana`; los pesos efectivos dependen del plan generado y tu configuración.
+
+El formato nuevo de respuesta del planificador es
+`{"arquitectura":"decisiones y árbol de archivos", "tareas":[...]}`.
+Los arrays de contratos anteriores siguen siendo compatibles. Las decisiones
+arquitectónicas son instrucciones para los agentes; las verificaciones de
+alcance, interfaces y pruebas siguen siendo las compuertas ejecutables.
+
+Las tareas nuevas tienen `limite_lineas: 0` (sin tope). El modelo no puede
+imponer un límite ni cambiar uno que hayas declarado en el spec o contrato.
+Los contratos existentes con un valor positivo conservan ese límite; puedes
+ponerlo en `0` para quitarlo. Los límites de tokens e intentos siguen vigentes.
+
+Si un intento repite exactamente el fallo anterior sin dejar cambios en el
+código, el bucle termina antes de gastar los intentos restantes y registra
+`sin progreso`. La recuperación recursiva puede entonces escalar de modelo;
+en tareas normales el diagnóstico queda disponible para corregir el contrato.
 
 ## Progressive disclosure
 
@@ -358,6 +384,7 @@ Flujo principal:
 | `devclean apply [-f archivo]` | Lee un spec, completa/genera contratos y los guarda. `--dry-run` valida sin gastar tokens ni escribir; `--run` ejecuta después. |
 | `devclean board` | Muestra tareas listas, en curso, detenidas y pendientes. |
 | `devclean run [--reintentar]` | Ejecuta pendientes; `--reintentar` revive detenidas reusando su trabajo. |
+| `devclean stop` | Para la corrida en curso (también en `--fondo`) y sus agentes; lo que iba en curso queda detenido. |
 | `devclean ship T-001` | Pasa la esclusa y entrega una tarea. |
 | `devclean ship --todas` | Verifica e integra todas las tareas listas, corre las pruebas globales y crea un solo PR. |
 | `devclean logs T-001` | Muestra intentos y diagnósticos de una tarea. |
@@ -402,7 +429,7 @@ sobre las opciones equivalentes del spec.
 $ devclean up --ship --fondo
 corriendo en segundo plano · pid 41287
 registro · .devclean/corridas/2026-09-10T18-02-29.log
-parar · kill 41287 · retomar después · devclean run --reintentar
+parar · devclean stop · retomar después · devclean run --reintentar
 ```
 
 Las preguntas ocurren antes de desprender el proceso. Si una corrida muere,

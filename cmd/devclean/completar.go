@@ -65,7 +65,7 @@ func completarSpec(root string, s *spec.Spec) error {
 	var bs []plan.Borrador
 	generar := func() error {
 		var err error
-		bs, err = plan.Completar(context.Background(), generadorPlan{ex: ex, modelo: modelo, root: root}, pctx, s.Feature, s.Reglas, s.Tasks)
+		bs, err = plan.Completar(context.Background(), generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium"}, pctx, s.Feature, s.Reglas, s.Tasks)
 		return err
 	}
 	if esTUI() {
@@ -77,6 +77,9 @@ func completarSpec(root string, s *spec.Spec) error {
 		return err
 	}
 	sanearAlcance(bs, zonas, patrones, pctx.Ocupados)
+	if pctx.PruebasPropias {
+		ampliarPruebasPropias(bs)
+	}
 
 	ids := make([]string, len(s.Tasks))
 	for i, t := range s.Tasks {
@@ -130,18 +133,37 @@ func planearRequirements(root string, s *spec.Spec) error {
 			pedido.WriteByte('\n')
 		}
 	}
-	bs, err := plan.Generar(context.Background(), generadorPlan{ex: ex, modelo: config.ModeloRol(cfg, "planificador"), root: root}, pctx, pedido.String())
+	var bs []plan.Borrador
+	modelo := config.ModeloRol(cfg, "planificador")
+	generar := func() error {
+		var err error
+		bs, err = plan.Generar(context.Background(), generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium"}, pctx, pedido.String())
+		return err
+	}
+	if esTUI() {
+		err = tui.Esperar("diseñando arquitectura y tareas · "+modelo, generar)
+	} else {
+		out.Line("· diseñando arquitectura y tareas · %s · %d requisitos", modelo, len(s.Requirements))
+		err = generar()
+	}
 	if err != nil {
 		return err
 	}
 	sanearAlcance(bs, zonas, patrones, pctx.Ocupados)
+	if pctx.PruebasPropias {
+		ampliarPruebasPropias(bs)
+	}
 	ids, err := idsCorrelativos(config.TasksDir(root), len(bs))
 	if err != nil {
 		return err
 	}
 	traducirDependencias(bs, ids)
+	intentos := s.Limites.Intentos
+	if intentos < 1 {
+		intentos = task.DefaultLimiteIntentos
+	}
 	for i, b := range bs {
-		s.Tasks = append(s.Tasks, task.Task{Version: task.Version, ID: ids[i], Titulo: b.Titulo, Porque: b.Porque, ListoCuando: b.ListoCuando, TocarSolo: b.TocarSolo, NoTocar: b.NoTocar, DependeDe: b.DependeDe, Expone: b.Expone, Usa: b.Usa, Riesgos: b.Riesgos, Peso: b.Peso, Agente: b.Agente, Notas: b.Como, LimiteIntentos: task.DefaultLimiteIntentos, LimiteLineas: plan.AcotarLimiteLineas(b.LimiteLineas, task.DefaultLimiteLineas)})
+		s.Tasks = append(s.Tasks, task.Task{Version: task.Version, ID: ids[i], Titulo: b.Titulo, Porque: b.Porque, ListoCuando: b.ListoCuando, TocarSolo: b.TocarSolo, NoTocar: b.NoTocar, DependeDe: b.DependeDe, Expone: b.Expone, Usa: b.Usa, Riesgos: b.Riesgos, Peso: b.Peso, Agente: b.Agente, Notas: b.Como, LimiteIntentos: intentos, LimiteLineas: plan.AcotarLimiteLineas(b.LimiteLineas, s.Limites.Lineas)})
 	}
 	out.Line("· Requirements Analyzer + Planner generaron %d contratos internos", len(s.Tasks))
 
@@ -155,7 +177,7 @@ func planearRequirements(root string, s *spec.Spec) error {
 			return err
 		}
 		integracion.ID = ids[len(ids)-1]
-		integracion.LimiteIntentos = task.DefaultLimiteIntentos
+		integracion.LimiteIntentos = intentos
 		integracion.LimiteLineas = task.DefaultLimiteLineas
 		s.Tasks = append(s.Tasks, integracion)
 		s.Acceptance = append(s.Acceptance, aceptacion)
@@ -199,10 +221,11 @@ func completarTarea(t task.Task, b plan.Borrador, ids []string, defLineas int, a
 	}
 	if t.Notas == "" {
 		t.Notas = b.Como
+	} else if b.Como != "" && b.Como != t.Notas {
+		t.Notas += "\n\n" + b.Como
 	}
-	// un límite igual al por defecto es uno que nadie escribió: la
-	// estimación del modelo por tarea vale más que un número fijo
-	if t.LimiteLineas == 0 || t.LimiteLineas == defLineas {
+	// El límite del contrato o del spec lo decide el humano.
+	if t.LimiteLineas == 0 {
 		t.LimiteLineas = plan.AcotarLimiteLineas(b.LimiteLineas, defLineas)
 	}
 	return t

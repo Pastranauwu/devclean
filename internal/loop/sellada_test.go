@@ -2,8 +2,10 @@ package loop
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Pastranauwu/devclean/internal/sealed"
@@ -95,5 +97,49 @@ func TestRunExaminaSinSuiteSellada(t *testing.T) {
 	}
 	if exam.veces != 1 {
 		t.Errorf("el examinador debió correr una vez, corrió %d", exam.veces)
+	}
+}
+
+// examinadorQueDegrada devuelve el motivo, como el real cuando la suite
+// no compila o el modelo no responde JSON.
+type examinadorQueDegrada struct{}
+
+func (examinadorQueDegrada) Run(context.Context, string) (bool, error) {
+	return false, errors.New("la suite visible del examinador no compila · expected declaration")
+}
+
+// una tarea que queda sin suite tiene que decir POR QUÉ. Antes moría con
+// "no tiene suite que lo juzgue" y el motivo del examinador se tiraba: no
+// había forma de saber si el modelo no respondió, si la suite no
+// compilaba o si faltaban imports sin volver a correr la tarea entera.
+func TestRunDicePorQueNoHuboSuite(t *testing.T) {
+	root := repoConCommit(t)
+	tk := tareaDePrueba()
+	tk.ListoCuando = "echo '?   snake/internal/game [no test files]'"
+
+	o := optsDePrueba(t, root, agenteQueTermina(t), tk)
+	o.Examinador = examinadorQueDegrada{}
+
+	res, err := Run(context.Background(), o)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Verde {
+		t.Fatal("salir con 0 sin ejecutar pruebas no es verde")
+	}
+	if !strings.Contains(res.UltimoError, "no tiene suite que lo juzgue") {
+		t.Errorf("motivo sin el diagnóstico de siempre: %q", res.UltimoError)
+	}
+	if !strings.Contains(res.UltimoError, "no compila") {
+		t.Errorf("el motivo no dice por qué falló el examinador: %q", res.UltimoError)
+	}
+
+	log := filepath.Join(RunsDir(root), tk.ID, "examinador.log")
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatalf("sin examinador.log: %v", err)
+	}
+	if !strings.Contains(string(data), "no compila") {
+		t.Errorf("examinador.log = %q", data)
 	}
 }

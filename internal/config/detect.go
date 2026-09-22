@@ -79,17 +79,23 @@ func DetectLanguage(root string) string {
 // scaffoldNames are files that exist in a fresh repository and say
 // nothing about the code yet.
 var scaffoldNames = map[string]bool{
-	"README.md":          true,
-	"README":             true,
-	"LICENSE":            true,
-	"LICENSE.md":         true,
-	"CHANGELOG.md":       true,
-	"CONTRIBUTING.md":    true,
-	"CODE_OF_CONDUCT.md": true,
-	".gitignore":         true,
-	"skills-lock.json":   true, // lo deja devclean skills sync, no es código
-	".gitattributes":     true,
-	".editorconfig":      true,
+	"README.md":           true,
+	"README":              true,
+	"LICENSE":             true,
+	"LICENSE.md":          true,
+	"CHANGELOG.md":        true,
+	"CONTRIBUTING.md":     true,
+	"CODE_OF_CONDUCT.md":  true,
+	".gitignore":          true,
+	"devclean.spec.yml":   true,
+	"devclean.spec.yaml":  true,
+	"devclean.specs.yml":  true,
+	"devclean.specs.yaml": true,
+	"spec.yml":            true,
+	"spec.yaml":           true,
+	"skills-lock.json":    true, // lo deja devclean skills sync, no es código
+	".gitattributes":      true,
+	".editorconfig":       true,
 }
 
 // DetectEmpty reports whether the repository has no source code yet:

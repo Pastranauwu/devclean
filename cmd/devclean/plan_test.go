@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
+	"github.com/Pastranauwu/devclean/internal/executor"
 	"io"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/plan"
@@ -26,6 +29,43 @@ func TestSanearAlcance(t *testing.T) {
 	}
 	if got := strings.Join(bs[1].TocarSolo, ","); got != "internal/wol/**" {
 		t.Errorf("tocar_solo[1] = %q, sin cambios", got)
+	}
+}
+
+// Sin examinador ciego el archivo de prueba que listo_cuando va a correr
+// tiene que entrar en tocar_solo, o la reversión de alcance se lo quita
+// al agente y la tarea queda roja para siempre quemando los intentos.
+func TestAmpliarPruebasPropias(t *testing.T) {
+	out = ui.New(io.Discard, false)
+	bs := []plan.Borrador{
+		{
+			Titulo:      "definir tipos",
+			ListoCuando: "npx vitest run src/core/types",
+			TocarSolo:   []string{"src/core/types.ts"},
+		},
+		{
+			Titulo:      "almacenar",
+			ListoCuando: "node --test test/validator.test.js",
+			TocarSolo:   []string{"src/store.js"},
+		},
+		{
+			Titulo:      "módulo puro",
+			ListoCuando: "go test ./internal/wol/...",
+			TocarSolo:   []string{"internal/wol/**"},
+		},
+	}
+	ampliarPruebasPropias(bs)
+
+	if !config.MatchesAny(bs[0].TocarSolo, "src/core/types.test.ts") {
+		t.Errorf("vitest sin archivo de prueba: tocar_solo[0] = %v, quiero src/core/types.test.ts", bs[0].TocarSolo)
+	}
+	if !config.MatchesAny(bs[1].TocarSolo, "test/validator.test.js") {
+		t.Errorf("test explícito: tocar_solo[1] = %v, quiero test/validator.test.js", bs[1].TocarSolo)
+	}
+	// Go sí tiene examinador ciego: nada que ampliar, y el glob ya cubre
+	// la suite del paquete.
+	if len(bs[2].TocarSolo) != 1 {
+		t.Errorf("go no debe ampliarse: tocar_solo[2] = %v", bs[2].TocarSolo)
 	}
 }
 
@@ -153,5 +193,33 @@ func TestCerrarDependenciasIgnoraLasDeFueraDelPlan(t *testing.T) {
 	elegidas := map[string]bool{"T-009": true}
 	if arrastradas := cerrarDependencias(props, elegidas); len(arrastradas) != 0 {
 		t.Errorf("arrastradas = %v · T-001 no es parte de este plan", arrastradas)
+	}
+}
+
+type ejecutorPlanCaptura struct{ req executor.Request }
+
+func (e *ejecutorPlanCaptura) Name() string                             { return "claude" }
+func (e *ejecutorPlanCaptura) Available() error                         { return nil }
+func (e *ejecutorPlanCaptura) Models(context.Context) ([]string, error) { return nil, nil }
+func (e *ejecutorPlanCaptura) Run(_ context.Context, r executor.Request) (executor.Result, error) {
+	e.req = r
+	return executor.Result{Text: "plan"}, nil
+}
+func TestGeneradorRespetaTimeoutConfigurado(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(config.Dir(root), 0755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{TimeoutAgente: 900}
+	if err := cfg.Save(root); err != nil {
+		t.Fatal(err)
+	}
+	ex := &ejecutorPlanCaptura{}
+	g := generadorPlan{ex: ex, root: root, modelo: "opus", effort: "medium"}
+	if _, err := g.Generar(context.Background(), "diseña snake"); err != nil {
+		t.Fatal(err)
+	}
+	if ex.req.Timeout != 15*time.Minute || ex.req.Effort != "medium" || ex.req.Model != "opus" {
+		t.Fatalf("request: %+v", ex.req)
 	}
 }

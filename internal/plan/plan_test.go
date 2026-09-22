@@ -20,9 +20,23 @@ func (g generadorFijo) Generar(_ context.Context, _ string) (string, error) {
 
 func TestPromptPideJSON(t *testing.T) {
 	p := Prompt("exportar clientes", Contexto{Lenguaje: "go", Pruebas: "go test ./..."})
-	for _, want := range []string{"exportar clientes", "listo_cuando", "tocar_solo", "array JSON"} {
+	for _, want := range []string{"exportar clientes", "listo_cuando", "tocar_solo", "objeto JSON", "arquitectura"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt sin %q", want)
+		}
+	}
+}
+
+func TestPromptDivideYVenceras(t *testing.T) {
+	p := Prompt("clonar repo", Contexto{Lenguaje: "go", Pruebas: "go test ./..."})
+	for _, want := range []string{"Divide y vencerás", "ARQUITECTO", "no escribes código", "mismo nombre, mismos tipos"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt sin %q:\n%s", want, p)
+		}
+	}
+	for _, viejo := range []string{"evita microtareas", "agrupa trabajo cohesivo"} {
+		if strings.Contains(p, viejo) {
+			t.Errorf("prompt todavía pide %q", viejo)
 		}
 	}
 }
@@ -122,36 +136,12 @@ func TestParseBorradorConAgente(t *testing.T) {
 }
 
 func TestAcotarLimiteLineas(t *testing.T) {
-	// el modelo no lo estimó: se usa el default del proyecto
-	if got := AcotarLimiteLineas(0, 200); got != 200 {
-		t.Errorf("sin propuesta = %d, quiero 200", got)
-	}
-	if got := AcotarLimiteLineas(-50, 200); got != 200 {
-		t.Errorf("negativo = %d, quiero 200", got)
-	}
-	// una estimación razonable manda sobre el default
-	if got := AcotarLimiteLineas(1200, 200); got != 1200 {
-		t.Errorf("propuesto = %d, quiero 1200 · el planificador decide", got)
-	}
-	// absurdos acotados por los dos lados
-	if got := AcotarLimiteLineas(3, 200); got != LimiteLineasMin {
-		t.Errorf("minimo = %d, quiero %d", got, LimiteLineasMin)
-	}
-	if got := AcotarLimiteLineas(999999, 200); got != LimiteLineasMax {
-		t.Errorf("maximo = %d, quiero %d", got, LimiteLineasMax)
-	}
-}
-
-// El prompt tiene que pedir el presupuesto, o el modelo nunca lo manda y
-// todas las tareas vuelven a caer en la constante.
-func TestPromptPideLimiteLineas(t *testing.T) {
-	p := Prompt("lo que sea", Contexto{Lenguaje: "go"})
-	if !strings.Contains(p, `"limite_lineas"`) {
-		t.Error("el prompt no pide limite_lineas")
-	}
-	// y el ejemplo debe traerlo, que es de donde el modelo copia el formato
-	if !strings.Contains(p, `"limite_lineas": 250`) {
-		t.Error("el ejemplo del prompt no incluye limite_lineas")
+	for _, limite := range []int{0, 20, 200, 5000} {
+		for _, propuesta := range []int{-50, 0, 3, 1200, 999999} {
+			if got := AcotarLimiteLineas(propuesta, limite); got != limite {
+				t.Fatalf("modelo=%d humano=%d: quedó %d", propuesta, limite, got)
+			}
+		}
 	}
 }
 
@@ -238,5 +228,38 @@ func TestPromptProhibePrometerDeMas(t *testing.T) {
 		if !strings.Contains(p, quiero) {
 			t.Errorf("el prompt no dice %q", quiero)
 		}
+	}
+}
+
+func TestParseArquitecturaCompartida(t *testing.T) {
+	bs, err := Parse("```json\n" + `{"arquitectura":"Hexagonal: internal/domain/model.go define tipos; internal/http/router.go compone adaptadores.","tareas":[{"titulo":"dominio","listo_cuando":"go test ./internal/domain","como":"Validar entradas"},{"titulo":"http","listo_cuando":"go test ./internal/http","como":"Traducir errores"}]}` + "\n```")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range bs {
+		if !strings.Contains(b.Como, "internal/domain/model.go") || !strings.Contains(b.Como, "internal/http/router.go") {
+			t.Fatalf("se perdió arquitectura: %+v", b)
+		}
+	}
+	if !strings.Contains(bs[0].Como, "Validar entradas") || !strings.Contains(bs[1].Como, "Traducir errores") {
+		t.Fatal("se perdieron instrucciones específicas")
+	}
+}
+
+func TestParseObjetoSinArquitectura(t *testing.T) {
+	if _, err := Parse(`{"tareas":[{"titulo":"x","listo_cuando":"false"}]}`); err == nil {
+		t.Fatal("aceptó plan nuevo sin arquitectura")
+	}
+}
+
+func TestEjemploDelPromptEsUnPlanValido(t *testing.T) {
+	p := Prompt("feature", Contexto{})
+	_, ejemplo, ok := strings.Cut(p, "Ejemplo:\n")
+	if !ok {
+		t.Fatal("falta ejemplo")
+	}
+	bs, err := Parse(ejemplo)
+	if err != nil || len(bs) != 2 {
+		t.Fatalf("ejemplo inválido: %v", err)
 	}
 }

@@ -31,11 +31,8 @@ type Borrador struct {
 	Riesgos     string   `json:"riesgos"`
 	Peso        string   `json:"peso"`
 	Agente      string   `json:"agente,omitempty"`
-	// LimiteLineas es el presupuesto de líneas añadidas que el
-	// planificador estima para esta tarea. Antes era una constante de
-	// 200 para todo, que no mira el alcance: una tarea de empaquetado
-	// con documentación nunca cabe en 200 líneas, y la esclusa de salida
-	// la frenaba después de que el trabajo ya estaba hecho.
+	// LimiteLineas se lee por compatibilidad con planes anteriores.
+	// Solo la configuración humana determina el tope efectivo.
 	LimiteLineas int `json:"limite_lineas"`
 
 	// Como es el enfoque que sugiere el orquestador: cómo encarar la
@@ -118,11 +115,11 @@ type Contexto struct {
 	PruebasPropias bool
 }
 
-// Prompt arma la instrucción para el planificador: una frase entra, un
-// array JSON de contratos sale. El contexto del repo se inyecta para
+// Prompt pide decisiones de arquitectura y contratos en una sola llamada.
+// El contexto del repo se inyecta para
 // que el modelo use el lenguaje y el comando de pruebas reales.
 func Prompt(frase string, c Contexto) string {
-	return prompt("Eres el planificador de devclean. Parte esta petición en tareas independientes, pequeñas y verificables:\n\n", "\""+frase+"\"\n\n", c)
+	return prompt("Eres el planificador de devclean. Diseña la solución y reparte unidades de trabajo completas y verificables:\n\n", "\""+frase+"\"\n\n", c)
 }
 
 // PromptCompletar pide el contrato de tareas que el humano ya decidió en
@@ -176,7 +173,10 @@ func prompt(intro, peticion string, c Contexto) string {
 	}
 	b.WriteString(peticion)
 	b.WriteString(contextoPrompt(c))
-	b.WriteString("\n\nDevuelve SOLO un array JSON, sin texto alrededor, con estos campos por tarea:\n")
+	b.WriteString("\n\nEres el ARQUITECTO de la solución, no un implementador: no escribes código. Tu trabajo es dejar la arquitectura definida —estilo, árbol de archivos, responsabilidades de cada archivo, flujo de datos, tipos compartidos y la firma exacta de cada función pública (parámetros y valor de retorno)— para que cada ejecutor solo escriba los archivos que le tocan sin rediseñar nada. Aplica SOLID donde aporte; usa arquitectura hexagonal o microservicios solo cuando el problema lo justifique.\n")
+	b.WriteString("Devuelve SOLO un objeto JSON con \"arquitectura\" (texto con el árbol de archivos, sus responsabilidades, tipos compartidos y firmas exactas) y \"tareas\" (array de contratos). La arquitectura se guarda en las notas de todos los contratos.\n")
+	b.WriteString("Divide y vencerás: parte en tareas por ARCHIVO o MÓDULO, cada una con su \"tocar_solo\" acotado a los archivos que escribe, su \"expone\"/\"usa\" con las firmas exactas (parámetros y retorno) y un \"como\" que diga exactamente qué escribir. Cuantas más tareas pequeñas e independientes, más modelos corren en paralelo y más rápido el resultado: preferí varias tareas livianas a una sola tarea grande. Si hace falta una base compartida (tipos, contratos), asígnala a una tarea pesada con agente architect y haz que sus consumidoras dependan de ella. Reserva UNA tarea final para la composición y sus pruebas de integración.\n")
+	b.WriteString("Cada tarea contiene estos campos:\n")
 	b.WriteString("- \"titulo\": frase corta en minúscula\n")
 	b.WriteString("- \"porque\": por qué importa (una frase)\n")
 	b.WriteString("- \"listo_cuando\": un comando ejecutable que HOY FALLE y que pase cuando la tarea esté hecha (obligatorio).\n")
@@ -198,10 +198,10 @@ func prompt(intro, peticion string, c Contexto) string {
 		}
 	}
 	b.WriteString("- \"depende_de\": array de ids (ej. \"T-001\") de tareas que deben estar verdes antes que esta; vacío si no depende de ninguna\n")
-	b.WriteString("- \"expone\": array de firmas públicas que esta tarea produce y otra consume (ej. \"wol.Send(mac, addr string) error\", \"POST /wake\"); vacío si no produce ninguna\n")
-	b.WriteString("- \"usa\": array de firmas de OTRAS tareas que esta consume, copiadas palabra por palabra del \"expone\" de aquella; vacío si no consume ninguna\n")
-	b.WriteString("- \"peso\": \"liviana\", \"media\" o \"pesada\" según la complejidad de la tarea (por defecto \"media\")\n")
-	b.WriteString("- \"limite_lineas\": cuántas líneas de código NUEVO crees que necesita esta tarea, con algo de margen. Cuenta solo el código de la solución: las pruebas se miden aparte y no gastan este presupuesto. Estímalo por el alcance real: un archivo de configuración son decenas, un módulo con su lógica unos cientos, empaquetado con documentación puede ser más de mil. Es un tope que se verifica al entregar: quedarse corto frena la entrega de trabajo correcto, y pasarse de largo deja de avisar cuando una tarea se desborda. Si no cabe en unas 600 líneas, probablemente son dos tareas: pártela.\n")
+	b.WriteString("- \"expone\": array de firmas públicas EXACTAS que esta tarea produce y otra consume, con tipos de entrada y de retorno (ej. \"wol.Send(mac string, addr string) error\", \"POST /wake\"); vacío si no produce ninguna\n")
+	b.WriteString("- \"usa\": array de firmas de OTRAS tareas que esta consume, copiadas palabra por palabra del \"expone\" de aquella (mismo nombre, mismos tipos); vacío si no consume ninguna. Si no puedes copiar la firma exacta, la tarea está mal partida: resuelve la dependencia en el plan, no en el ejecutor\n")
+	b.WriteString("- \"peso\": \"liviana\", \"media\" o \"pesada\" según la complejidad: usa liviana para implementación con decisiones ya resueltas, media para lógica compleja y pesada para base arquitectónica o incertidumbre alta\n")
+	b.WriteString("- \"limite_lineas\": 0. No impongas un máximo de líneas ni dividas por tamaño: divide por responsabilidad y dependencias. Los límites positivos solo los decide el humano.\n")
 	if len(c.Agentes) > 0 {
 		var ags []string
 		for nombre, a := range c.Agentes {
@@ -215,13 +215,10 @@ func prompt(intro, peticion string, c Contexto) string {
 		fmt.Fprintf(&b, "- \"agente\": nombre del agente asignado para esta tarea (disponibles: %s); o \"\" para el ejecutor por defecto\n", strings.Join(ags, "; "))
 	}
 	b.WriteString("- \"riesgos\": riesgos o limitaciones, o \"\" si no hay\n")
-	b.WriteString("- \"como\": una línea corta con el enfoque — cómo encarar la tarea, qué tocar primero, a qué no meterse. Es la instrucción que le deja el orquestador al agente que la ejecuta, no el criterio de éxito (eso es listo_cuando)\n\n")
+	b.WriteString("- \"como\": instrucciones suficientes para ejecutar sin rediseñar: archivos concretos, pasos, entradas y salidas, errores, casos límite, dependencias y pruebas que cubran los requisitos. No lo limites a una línea.\n\n")
 	b.WriteString("Las tareas corren en paralelo y aisladas: no pueden leerse el código entre sí. Si una produce algo que otra necesita, la firma DEBE aparecer igual en el \"expone\" de la que la produce y en el \"usa\" de la que la consume; si no, cada una inventará la suya y no van a encajar.\n\n")
 	b.WriteString("Y no prometas de más: lo que una tarea soporta y su consumidora nunca pide no lo prueba nadie, aunque las dos queden verdes. Si una pieza tiene que aceptar un operador, un formato o un caso límite, el \"listo_cuando\" de la tarea que lo consume tiene que cubrirlo, o no lo declares en el \"expone\" de la que lo produce.\n\n")
-	b.WriteString("Ejemplo:\n[\n")
-	b.WriteString("  {\"titulo\": \"enviar magic packet\", \"porque\": \"es la acción central\", \"listo_cuando\": \"go test ./internal/wol/...\", \"tocar_solo\": [\"internal/wol/**\"], \"expone\": [\"wol.Send(mac, addr string) error\"], \"usa\": [], \"peso\": \"media\", \"limite_lineas\": 250, \"riesgos\": \"\"},\n")
-	b.WriteString("  {\"titulo\": \"endpoint http que dispara wol\", \"porque\": \"lo invoca la automatización\", \"listo_cuando\": \"go test ./internal/api/...\", \"tocar_solo\": [\"internal/api/**\"], \"expone\": [\"POST /wake\"], \"usa\": [\"wol.Send(mac, addr string) error\"], \"peso\": \"media\", \"limite_lineas\": 180, \"riesgos\": \"\"}\n")
-	b.WriteString("]")
+	b.WriteString("Ejemplo:\n{\n  \"arquitectura\": \"Módulo Go existente. internal/wol/send.go construye y envía el paquete UDP; internal/api/wake.go adapta HTTP a wol.Send. El handler compone la llamada sin duplicar lógica UDP. Cada módulo conserva sus pruebas junto al código.\",\n  \"tareas\": [\n    {\n      \"titulo\": \"enviar magic packet\",\n      \"porque\": \"es la acción central\",\n      \"listo_cuando\": \"go test ./internal/wol/...\",\n      \"tocar_solo\": [\n        \"internal/wol/**\"\n      ],\n      \"expone\": [\n        \"wol.Send(mac, addr string) error\"\n      ],\n      \"usa\": [],\n      \"depende_de\": [],\n      \"peso\": \"liviana\",\n      \"limite_lineas\": 0,\n      \"riesgos\": \"\",\n      \"como\": \"Implementa Send en internal/wol/send.go: valida MAC, construye 6 bytes FF más 16 repeticiones de la MAC, envía UDP a addr y propaga errores. Verifica paquete exacto, MAC inválida y fallo de envío.\"\n    },\n    {\n      \"titulo\": \"endpoint http que dispara wol\",\n      \"porque\": \"lo invoca la automatización\",\n      \"listo_cuando\": \"go test ./internal/api/...\",\n      \"tocar_solo\": [\n        \"internal/api/**\"\n      ],\n      \"expone\": [\n        \"POST /wake\"\n      ],\n      \"usa\": [\n        \"wol.Send(mac, addr string) error\"\n      ],\n      \"depende_de\": [\n        \"T-001\"\n      ],\n      \"peso\": \"liviana\",\n      \"limite_lineas\": 0,\n      \"riesgos\": \"\",\n      \"como\": \"Crea y registra POST /wake en internal/api/wake.go usando el router existente en ese alcance. Lee JSON mac y addr, llama wol.Send, responde 204 al éxito, 400 para entrada inválida y 502 si falla UDP. Verifica respuestas y que la petición válida invoque el envío.\"\n    }\n  ]\n}")
 	return b.String()
 }
 
@@ -235,7 +232,7 @@ func contextoPrompt(c Contexto) string {
 		if c.Stack != "" {
 			fmt.Fprintf(&b, "- El humano eligió el stack: %s. Úsalo para todas las tareas.\n", c.Stack)
 		} else {
-			b.WriteString("- La PRIMERA tarea elige e inicializa UN stack (Go, Node, Python, ...) y deja el proyecto compilando.\n")
+			b.WriteString("- Elige tú UN stack (Go, Node, Python, ...) y fija su estructura. La PRIMERA tarea lo inicializa siguiendo esas decisiones y deja el proyecto compilando.\n")
 		}
 		b.WriteString("- La primera tarea deja el proyecto compilando; su \"listo_cuando\" es el comando de build o test real del stack (ej. \"go build ./...\" si Go, \"npm test\" si Node).\n")
 		b.WriteString("- Las demás tareas construyen sobre esa base, con \"listo_cuando\" reales de ese mismo stack que hoy fallen, y marcan en \"depende_de\" la tarea que creó la base (y cualquier otra de la que dependan).\n")
@@ -268,16 +265,38 @@ func Parse(texto string) ([]Borrador, error) {
 	t = strings.TrimSuffix(t, "```")
 	t = strings.TrimSpace(t)
 
-	ini := strings.Index(t, "[")
-	fin := strings.LastIndex(t, "]")
-	if ini == -1 || fin <= ini {
-		return nil, errors.New("el modelo no devolvió un array JSON · vuelve a intentarlo")
+	// Conserva compatibilidad con el array de contratos de versiones anteriores.
+	ini := strings.IndexAny(t, "[{")
+	if ini == -1 {
+		return nil, errors.New("el modelo no devolvió un plan JSON · vuelve a intentarlo")
 	}
-
 	var bs []Borrador
-	if err := json.Unmarshal([]byte(t[ini:fin+1]), &bs); err != nil {
+	var arquitectura string
+	dec := json.NewDecoder(strings.NewReader(t[ini:]))
+	if t[ini] == '{' {
+		var documento struct {
+			Arquitectura string     `json:"arquitectura"`
+			Tareas       []Borrador `json:"tareas"`
+		}
+		if err := dec.Decode(&documento); err != nil {
+			return nil, fmt.Errorf("el modelo devolvió JSON inválido · %s", err)
+		}
+		if strings.TrimSpace(documento.Arquitectura) == "" {
+			return nil, errors.New("el plan no define arquitectura · incluye decisiones y árbol de archivos")
+		}
+		bs, arquitectura = documento.Tareas, documento.Arquitectura
+	} else if err := dec.Decode(&bs); err != nil {
 		return nil, fmt.Errorf("el modelo devolvió JSON inválido · %s", err)
 	}
+	for i := range bs {
+		if arquitectura != "" {
+			if strings.TrimSpace(bs[i].Como) == "" {
+				return nil, fmt.Errorf("la tarea %d no trae instrucciones de implementación en como", i+1)
+			}
+			bs[i].Como = "Arquitectura del plan:\n" + arquitectura + "\n\nImplementación de esta tarea:\n" + bs[i].Como
+		}
+	}
+
 	if len(bs) == 0 {
 		return nil, errors.New("el modelo no propuso ninguna tarea")
 	}
@@ -316,28 +335,10 @@ func Completar(ctx context.Context, g Generador, c Contexto, feature string, reg
 	return bs, nil
 }
 
-// Límites del presupuesto que propone el planificador. Es un modelo:
-// puede devolver 0 (no lo estimó), un número absurdo, o uno tan generoso
-// que la esclusa deje de avisar de nada.
-const (
-	LimiteLineasMin = 40
-	LimiteLineasMax = 2000
-)
-
-// AcotarLimiteLineas devuelve el presupuesto que se escribe en el
-// contrato: el propuesto si es razonable, o el más cercano que lo sea.
-// Un 0 significa "el modelo no lo estimó" y cae en porDefecto.
+// AcotarLimiteLineas conserva el límite elegido por el humano. La estimación
+// del modelo no crea ni modifica una restricción de entrega; 0 es sin tope.
 func AcotarLimiteLineas(propuesto, porDefecto int) int {
-	if propuesto <= 0 {
-		return porDefecto
-	}
-	if propuesto < LimiteLineasMin {
-		return LimiteLineasMin
-	}
-	if propuesto > LimiteLineasMax {
-		return LimiteLineasMax
-	}
-	return propuesto
+	return porDefecto
 }
 
 // idsOrdenados devuelve las claves en orden estable: el prompt tiene que

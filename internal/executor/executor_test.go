@@ -161,3 +161,21 @@ func TestParseOpenCodeTokensAnidados(t *testing.T) {
 		t.Errorf("texto = %q", texto)
 	}
 }
+
+func TestClaudePasaEsfuerzoExplicito(t *testing.T) {
+	fakeBin(t, "claude", `printf '%s\n' "$@"`)
+	req := reqDePrueba()
+	req.Effort = "medium"
+	res, err := (Claude{}).Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Stdout, "--effort\nmedium\n") {
+		t.Fatalf("argumentos: %q", res.Stdout)
+	}
+	req.Effort = ""
+	res, err = (Claude{}).Run(context.Background(), req)
+	if err != nil || strings.Contains(res.Stdout, "--effort") {
+		t.Fatalf("alteró el esfuerzo por defecto: %q, %v", res.Stdout, err)
+	}
+}
