@@ -45,6 +45,7 @@ func (s Source) arg() string {
 func DefaultSources() []Source {
 	return []Source{
 		{Nombre: "implement", Repo: "https://github.com/mattpocock/skills"},
+		{Nombre: "caveman", Repo: "https://github.com/JuliusBrussee/caveman"},
 		{Nombre: "clean-code", Repo: "https://github.com/sickn33/agentic-awesome-skills"},
 		{Nombre: "frontend-design", Repo: "https://github.com/anthropics/skills"},
 		{Nombre: "create-a-backend", Repo: "https://github.com/vercel/vercel-plugin"},
@@ -62,8 +63,12 @@ func DefaultSources() []Source {
 // "agent-development" escribe agentes). Quedan los dos que sí cambian el
 // código que sale: cómo implementar y cómo dejarlo limpio. El resto se
 // agrega por rol, o a mano en config.yml.
+//
+// caveman volvió: ~1k tokens de entrada por intento a cambio de recortar
+// la prosa de salida, que se cobra más cara. Solo toca la narración; el
+// código, los commits y los mensajes de error salen normales.
 func BaseSkillNames() []string {
-	return []string{"implement", "clean-code"}
+	return []string{"implement", "clean-code", "caveman"}
 }
 
 // FrontendSkillName, BackendSkillName y PMSkillName son el paquete extra

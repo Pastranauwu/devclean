@@ -71,6 +71,11 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 	if err != nil {
 		return err
 	}
+	soltar, err := tomarEntrega(root)
+	if err != nil {
+		return err
+	}
+	defer soltar()
 	cfg, err := config.Load(root)
 	if err != nil {
 		return err
@@ -103,6 +108,11 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 	if len(listas) == 0 {
 		return errors.New("ninguna tarea está lista · corre devclean run primero")
 	}
+	ids := make([]string, 0, len(listas))
+	for _, t := range listas {
+		ids = append(ids, t.ID)
+	}
+	pruebasDeLosCuartos(root, &cfg, ids)
 	// entregar la mitad de un plan deja el PR incoherente: las tareas que
 	// faltan son justo las que otras consumen
 	if len(detenidas) > 0 || len(pendientes) > 0 {
@@ -225,6 +235,11 @@ func runShip(id string, dryRun bool) error {
 	if err != nil {
 		return err
 	}
+	soltar, err := tomarEntrega(root)
+	if err != nil {
+		return err
+	}
+	defer soltar()
 	cfg, err := config.Load(root)
 	if err != nil {
 		return err
@@ -233,6 +248,7 @@ func runShip(id string, dryRun bool) error {
 	if err != nil {
 		return err
 	}
+	pruebasDeLosCuartos(root, &cfg, []string{id})
 	st, err := state.Get(root, id)
 	if err != nil {
 		return err
@@ -351,4 +367,24 @@ func ultimoModelo(root, id string) string {
 		return ""
 	}
 	return attempts[len(attempts)-1].Modelo
+}
+
+// pruebasDeLosCuartos detecta el comando de pruebas en los cuartos de
+// las tareas cuando config.yml no lo tiene. En un repo que arrancó vacío
+// la preparación no tenía nada que detectar (el package.json o el go.mod
+// lo escriben los agentes), y la entrega se frenaba al final por un
+// comando que ya era obvio. Se guarda para las siguientes corridas.
+func pruebasDeLosCuartos(root string, cfg *config.Config, ids []string) {
+	if strings.TrimSpace(cfg.Pruebas) != "" {
+		return
+	}
+	for i := len(ids) - 1; i >= 0; i-- {
+		if p, ok := config.DetectTestCommand(filepath.Join(room.Dir(root), ids[i])); ok {
+			cfg.Pruebas = p
+			if cfg.Save(root) == nil {
+				out.Line("· comando de pruebas detectado en %s: %s · guardado en config.yml", ids[i], p)
+			}
+			return
+		}
+	}
 }

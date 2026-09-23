@@ -90,3 +90,32 @@ func newStopCmd() *cobra.Command {
 		},
 	}
 }
+
+// tomarEntrega reserva la entrega del repo para este proceso. Dos `ship`
+// a la vez rehacían el mismo cuarto de entrega uno debajo del otro, y el
+// segundo corría las pruebas sobre un árbol a medio montar. Una marca de
+// un proceso que ya murió no cuenta: se toma encima.
+func tomarEntrega(root string) (func(), error) {
+	p := filepath.Join(root, ".devclean", "entrega.pid")
+	pid := strconv.Itoa(os.Getpid())
+	if b, err := os.ReadFile(p); err == nil {
+		otro := strings.TrimSpace(string(b))
+		if otro == pid {
+			return func() {}, nil
+		}
+		if n, err := strconv.Atoi(otro); err == nil && esDevclean(n) {
+			return nil, errors.New("ya hay una entrega en curso (pid " + otro + ") · espera a que termine o párala con devclean stop")
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(p, []byte(pid), 0o644); err != nil {
+		return nil, err
+	}
+	return func() {
+		if b, err := os.ReadFile(p); err == nil && strings.TrimSpace(string(b)) == pid {
+			_ = os.Remove(p)
+		}
+	}, nil
+}
