@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/skills"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
@@ -31,6 +32,9 @@ type Borrador struct {
 	Riesgos     string   `json:"riesgos"`
 	Peso        string   `json:"peso"`
 	Agente      string   `json:"agente,omitempty"`
+	// Skills son las del catálogo que la tarea necesita: nil si el modelo
+	// no lo dijo (quedan las del rol), [] si dijo que ninguna.
+	Skills []string `json:"skills"`
 	// LimiteLineas se lee por compatibilidad con planes anteriores.
 	// Solo la configuración humana determina el tope efectivo.
 	LimiteLineas int `json:"limite_lineas"`
@@ -113,6 +117,9 @@ type Contexto struct {
 	// listo_cuando a un archivo de prueba que deja fuera de alcance, y
 	// nadie puede crearlo: la tarea queda roja para siempre.
 	PruebasPropias bool
+	// Skills es el catálogo de .agents/skills del que el planificador
+	// elige las de cada tarea. Vacío: el campo no se pide.
+	Skills []skills.Skill
 }
 
 // Prompt pide decisiones de arquitectura y contratos en una sola llamada.
@@ -214,6 +221,12 @@ func prompt(intro, peticion string, c Contexto) string {
 		}
 		sort.Strings(ags)
 		fmt.Fprintf(&b, "- \"agente\": nombre del agente asignado para esta tarea (disponibles: %s); o \"\" para el ejecutor por defecto\n", strings.Join(ags, "; "))
+	}
+	if len(c.Skills) > 0 {
+		b.WriteString("- \"skills\": array con las skills que ESTA tarea necesita, de este catálogo; su texto entero entra al prompt del ejecutor, así que cada una cuesta tokens en cada intento. Pon solo las que cambian cómo se escribe esta tarea (p. ej. diseño visual solo en tareas que dibujan interfaz) y [] si ninguna hace falta:\n")
+		for _, sk := range c.Skills {
+			fmt.Fprintf(&b, "  - %s: %s\n", sk.Nombre, recortar(sk.Descripcion, 200))
+		}
 	}
 	b.WriteString("- \"riesgos\": riesgos o limitaciones, o \"\" si no hay\n")
 	b.WriteString("- \"como\": instrucciones suficientes para ejecutar sin rediseñar: archivos concretos, pasos, entradas y salidas, errores, casos límite, dependencias y pruebas que cubran los requisitos. No lo limites a una línea.\n\n")
@@ -351,4 +364,14 @@ func idsOrdenados(m map[string][]string) []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+// recortar acota s a max runas, para que una descripción larga de skill
+// no infle el prompt del planificador.
+func recortar(s string, max int) string {
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= max {
+		return string(r)
+	}
+	return string(r[:max]) + "…"
 }

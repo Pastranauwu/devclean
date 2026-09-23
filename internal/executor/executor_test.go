@@ -207,3 +207,22 @@ func TestUsoConCache(t *testing.T) {
 		t.Errorf("opencode: %+v", oc)
 	}
 }
+
+// Cada agente de claude arranca sin lo que el usuario configuró para su
+// propio Claude Code (hooks, plugins, MCP), y sin --disable-slash-commands,
+// que también apagaría las skills del proyecto.
+func TestClaudeArrancaConContextoLimpio(t *testing.T) {
+	fakeBin(t, "claude", `printf '%s\n' "$@"`)
+	res, err := (Claude{}).Run(context.Background(), reqDePrueba())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, quiero := range []string{"--setting-sources\nproject,local\n", "--strict-mcp-config\n", "--exclude-dynamic-system-prompt-sections\n", "--output-format\nstream-json\n--verbose\n"} {
+		if !strings.Contains(res.Stdout, quiero) {
+			t.Errorf("falta %q en %q", quiero, res.Stdout)
+		}
+	}
+	if strings.Contains(res.Stdout, "--disable-slash-commands") {
+		t.Error("--disable-slash-commands apaga las skills del proyecto")
+	}
+}

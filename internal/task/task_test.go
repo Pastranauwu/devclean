@@ -324,3 +324,18 @@ func TestLimiteLineasOpcional(t *testing.T) {
 		t.Fatalf("límite negativo: %v", errs)
 	}
 }
+
+// skills distingue "no lo dice" (las del rol) de "ninguna": un contrato
+// que declara skills: [] no debe recibir las del rol al releerse.
+func TestSkillsIdaYVuelta(t *testing.T) {
+	for _, quiero := range [][]string{nil, {}, {"frontend-design", "clean-code"}} {
+		tk := Task{Version: Version, ID: "T-001", Titulo: "x", ListoCuando: "true", TocarSolo: []string{"a/**"}, Skills: quiero}
+		got, err := Parse(tk.Marshal())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (got.Skills == nil) != (quiero == nil) || len(got.Skills) != len(quiero) {
+			t.Errorf("skills %#v → %#v", quiero, got.Skills)
+		}
+	}
+}

@@ -77,6 +77,7 @@ func completarSpec(root string, s *spec.Spec) error {
 		return err
 	}
 	sanearAlcance(bs, zonas, patrones, pctx.Ocupados)
+	sanearSkills(bs, pctx.Skills)
 	if pctx.PruebasPropias {
 		ampliarPruebasPropias(bs)
 	}
@@ -150,6 +151,7 @@ func planearRequirements(root string, s *spec.Spec) error {
 		return err
 	}
 	sanearAlcance(bs, zonas, patrones, pctx.Ocupados)
+	sanearSkills(bs, pctx.Skills)
 	if pctx.PruebasPropias {
 		ampliarPruebasPropias(bs)
 	}
@@ -163,7 +165,7 @@ func planearRequirements(root string, s *spec.Spec) error {
 		intentos = task.DefaultLimiteIntentos
 	}
 	for i, b := range bs {
-		s.Tasks = append(s.Tasks, task.Task{Version: task.Version, ID: ids[i], Titulo: b.Titulo, Porque: b.Porque, ListoCuando: b.ListoCuando, TocarSolo: b.TocarSolo, NoTocar: b.NoTocar, DependeDe: b.DependeDe, Expone: b.Expone, Usa: b.Usa, Riesgos: b.Riesgos, Peso: b.Peso, Agente: b.Agente, Notas: b.Como, LimiteIntentos: intentos, LimiteLineas: plan.AcotarLimiteLineas(b.LimiteLineas, s.Limites.Lineas)})
+		s.Tasks = append(s.Tasks, task.Task{Version: task.Version, ID: ids[i], Titulo: b.Titulo, Porque: b.Porque, ListoCuando: b.ListoCuando, TocarSolo: b.TocarSolo, NoTocar: b.NoTocar, DependeDe: b.DependeDe, Expone: b.Expone, Usa: b.Usa, Riesgos: b.Riesgos, Peso: b.Peso, Agente: b.Agente, Skills: b.Skills, Notas: b.Como, LimiteIntentos: intentos, LimiteLineas: plan.AcotarLimiteLineas(b.LimiteLineas, s.Limites.Lineas)})
 	}
 	out.Line("· Requirements Analyzer + Planner generaron %d contratos internos", len(s.Tasks))
 
@@ -222,6 +224,9 @@ func completarTarea(t task.Task, b plan.Borrador, ids []string, defLineas int, a
 	// el agente por defecto del spec es una decisión del humano
 	if t.Agente == "" && agenteSpec == "" {
 		t.Agente = b.Agente
+	}
+	if t.Skills == nil {
+		t.Skills = b.Skills
 	}
 	if t.Notas == "" {
 		t.Notas = b.Como

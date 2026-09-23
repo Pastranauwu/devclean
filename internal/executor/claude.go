@@ -33,6 +33,20 @@ func (Claude) Models(context.Context) ([]string, error) {
 	return []string{"claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5", "claude-haiku-4-5", "opus", "sonnet", "haiku"}, nil
 }
 
+// contextoLimpio deja fuera del agente lo que el usuario configuró para
+// su propio Claude Code. Medido en un cuarto real: el contexto base de un
+// "responde ok" baja de 23,4k a 12k tokens.
+//   - --setting-sources project,local: sin settings de usuario, o sea sin
+//     sus hooks (caveman entraba como estilo de prosa), plugins ni skills.
+//     El .claude/ y el CLAUDE.md del repo siguen cargando.
+//   - --strict-mcp-config: sin MCP, tampoco los conectores de claude.ai.
+//   - --exclude-dynamic-system-prompt-sections: el cwd y el git status
+//     pasan del prompt de sistema al primer mensaje, así el prompt de
+//     sistema es igual en todos los cuartos y el caché se comparte.
+//
+// --disable-slash-commands no va: también apaga las skills del proyecto.
+var contextoLimpio = []string{"--setting-sources", "project,local", "--strict-mcp-config", "--exclude-dynamic-system-prompt-sections"}
+
 func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	// bypassPermissions: el agente no puede preguntar nada (modo -p) y
 	// el contenedor real es el cuarto + la reversión de devclean
@@ -40,6 +54,7 @@ func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	// eventos de cada turno son la única forma de saber cuántos turnos
 	// hubo y con cuánto contexto arrancó el primero
 	args := []string{"-p", req.Prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions"}
+	args = append(args, contextoLimpio...)
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}

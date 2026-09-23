@@ -64,3 +64,25 @@ func TestContentVacioSinSkillsInstaladas(t *testing.T) {
 		t.Errorf("Content = %q, quiero vacío", got)
 	}
 }
+
+// El catálogo es lo instalado menos lo que la Base reemplaza: un repo
+// viejo con implement y caveman descargados no se los ofrece al planificador.
+func TestCatalogoSinLoQueReemplazaLaBase(t *testing.T) {
+	root := t.TempDir()
+	for _, n := range []string{"implement", "caveman", "frontend-design", "clean-code"} {
+		dir := filepath.Join(Dir(root), n)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: "+n+"\ndescription: d "+n+"\n---\ncuerpo"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var nombres []string
+	for _, sk := range Catalogo(root) {
+		nombres = append(nombres, sk.Nombre)
+	}
+	if strings.Join(nombres, ",") != "clean-code,frontend-design" {
+		t.Errorf("catálogo = %v", nombres)
+	}
+}

@@ -204,6 +204,7 @@ func decodeTasks(n *yaml.Node) ([]task.Task, error) {
 			Riesgos  string   `yaml:"riesgos"`
 			Peso     string   `yaml:"peso"`
 			Agente   string   `yaml:"agente"`
+			Skills   []string `yaml:"skills"`
 			Intentos int      `yaml:"limite_intentos"`
 			Lineas   int      `yaml:"limite_lineas"`
 			Notas    string   `yaml:"notas"`
@@ -211,7 +212,7 @@ func decodeTasks(n *yaml.Node) ([]task.Task, error) {
 		if err := item.Decode(&raw); err != nil {
 			return nil, err
 		}
-		out = append(out, task.Task{Version: task.Version, ID: raw.ID, Titulo: raw.Titulo, Porque: raw.Porque, ListoCuando: raw.Listo, TocarSolo: raw.Tocar, NoTocar: raw.NoTocar, DependeDe: raw.Depende, Expone: raw.Expone, Usa: raw.Usa, Riesgos: raw.Riesgos, Peso: raw.Peso, Agente: raw.Agente, LimiteIntentos: raw.Intentos, LimiteLineas: raw.Lineas, Notas: raw.Notas})
+		out = append(out, task.Task{Version: task.Version, ID: raw.ID, Titulo: raw.Titulo, Porque: raw.Porque, ListoCuando: raw.Listo, TocarSolo: raw.Tocar, NoTocar: raw.NoTocar, DependeDe: raw.Depende, Expone: raw.Expone, Usa: raw.Usa, Riesgos: raw.Riesgos, Peso: raw.Peso, Agente: raw.Agente, Skills: raw.Skills, LimiteIntentos: raw.Intentos, LimiteLineas: raw.Lineas, Notas: raw.Notas})
 	}
 	return out, nil
 }

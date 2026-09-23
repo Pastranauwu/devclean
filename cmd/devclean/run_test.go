@@ -340,3 +340,24 @@ func TestVedaNoAplicaALaTareaDeIntegracion(t *testing.T) {
 		t.Errorf("veda = %v · una tarea examinable no toca sus pruebas", got)
 	}
 }
+
+// Las skills del contrato mandan sobre las del rol: una tarea frontend
+// que el planificador marcó sin skills no recibe frontend-design, y la
+// que no declara nada sigue con las de su rol.
+func TestSkillsDelContratoMandanSobreElRol(t *testing.T) {
+	cfg := config.Config{}
+	casos := []struct {
+		skills []string
+		quiero []string
+	}{
+		{nil, []string{"frontend-design"}},
+		{[]string{}, nil},
+		{[]string{"clean-code"}, []string{"clean-code"}},
+	}
+	for _, c := range casos {
+		_, _, _, got := resolverAgenteTarea(cfg, nil, "", task.Task{ID: "T-001", Agente: "frontend", Skills: c.skills})
+		if strings.Join(got, ",") != strings.Join(c.quiero, ",") {
+			t.Errorf("skills %v → %v, quiero %v", c.skills, got, c.quiero)
+		}
+	}
+}

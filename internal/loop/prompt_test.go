@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Pastranauwu/devclean/internal/plan"
+	"github.com/Pastranauwu/devclean/internal/skills"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
@@ -46,7 +47,7 @@ func TestPromptsDeUnPlanCompartenElPrefijoComun(t *testing.T) {
 	for _, tk := range tareasPlan() {
 		prompts = append(prompts, promptPara(tk, tk.Usa, "usa gofmt", nil, "", "", false))
 	}
-	comun := "Constitución del proyecto (convenciones que todos los agentes deben seguir):\nusa gofmt\n\n" +
+	comun := skills.Base + "\n\n" + "Constitución del proyecto (convenciones que todos los agentes deben seguir):\nusa gofmt\n\n" +
 		plan.MarcaReglas + "- sin dependencias nuevas\n\n" +
 		plan.MarcaArquitectura + "STACK: Go 1.22, sin dependencias.\n\nTIPOS COMPARTIDOS:\n Token = {Kind string, Text string}\n\n"
 	for i, p := range prompts {
@@ -87,7 +88,24 @@ func TestPromptRecortaFirmasQueLaTareaNoUsa(t *testing.T) {
 // Un contrato escrito a mano, sin marcas, llega igual que antes.
 func TestPromptSinMarcasConservaLasNotas(t *testing.T) {
 	tk := task.Task{ID: "T-001", Titulo: "x", ListoCuando: "true", Notas: "enfoque libre"}
-	if p := promptPara(tk, nil, "", nil, "", "", false); !strings.HasSuffix(p, "\nNotas:\nenfoque libre\n") || !strings.HasPrefix(p, "Tarea T-001") {
+	if p := promptPara(tk, nil, "", nil, "", "", false); !strings.HasSuffix(p, "\nNotas:\nenfoque libre\n") || !strings.HasPrefix(p, skills.Base+"\n\nTarea T-001") {
 		t.Errorf("prompt:\n%s", p)
+	}
+}
+
+// La base de devclean no manda a narrar ni a usar skills que el agente
+// invocaba por su cuenta: /code-review costaba ~5% de una corrida y
+// caveman entraba como estilo de prosa en cada agente.
+func TestBaseSinCavemanNiSkillsInvocadas(t *testing.T) {
+	for _, fuera := range []string{"/tdd", "/code-review", "caveman"} {
+		if strings.Contains(skills.Base, fuera) {
+			t.Errorf("la base menciona %q", fuera)
+		}
+	}
+	if !strings.Contains(skills.Base, "No narres lo que haces") {
+		t.Error("falta la línea contra la narración")
+	}
+	if len(skills.Base) > 1200 {
+		t.Errorf("la base pesa %d bytes: se paga en cada intento de cada tarea", len(skills.Base))
 	}
 }

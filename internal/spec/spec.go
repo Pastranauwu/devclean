@@ -335,6 +335,9 @@ func Marshal(s Spec) []byte {
 		if t.Agente != "" && t.Agente != s.Agente {
 			fmt.Fprintf(&b, "    agente: %s\n", t.Agente)
 		}
+		if t.Skills != nil {
+			fmt.Fprintf(&b, "    skills: %s\n", kv.MarshalList(t.Skills))
+		}
 		if t.LimiteIntentos > 0 {
 			fmt.Fprintf(&b, "    limite_intentos: %d\n", t.LimiteIntentos)
 		}

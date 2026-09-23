@@ -19,6 +19,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/executor"
 	"github.com/Pastranauwu/devclean/internal/gate"
 	"github.com/Pastranauwu/devclean/internal/plan"
+	"github.com/Pastranauwu/devclean/internal/skills"
 	"github.com/Pastranauwu/devclean/internal/spec"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
@@ -102,6 +103,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 	}
 
 	sanearAlcance(borradores, zonas, patrones, ctx.Ocupados)
+	sanearSkills(borradores, ctx.Skills)
 
 	ids, err := idsCorrelativos(dir, len(borradores))
 	if err != nil {
@@ -179,6 +181,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 				Riesgos:        b.Riesgos,
 				Peso:           b.Peso,
 				Agente:         b.Agente,
+				Skills:         b.Skills,
 				Notas:          b.Como,
 				LimiteIntentos: task.DefaultLimiteIntentos,
 				LimiteLineas:   props[i].LimiteLineas,
@@ -260,6 +263,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 			Riesgos:        b.Riesgos,
 			Peso:           b.Peso,
 			Agente:         b.Agente,
+			Skills:         b.Skills,
 			Notas:          b.Como,
 			LimiteIntentos: task.DefaultLimiteIntentos,
 			LimiteLineas:   props[i].LimiteLineas,
@@ -305,6 +309,7 @@ func contextoPlan(root string, cfg config.Config) (ctx plan.Contexto, zonas, pat
 		PruebasPropias: !examiner.Soportado(lenguaje),
 		Agentes:        cfg.TodosLosAgentes(),
 		Ocupados:       alcancesOcupados(root),
+		Skills:         skills.Catalogo(root),
 	}
 	return ctx, zonas, patrones, nil
 }
@@ -339,6 +344,29 @@ func zonasYPatronesDe(cfg config.Config, root string) (zonas, patrones []string)
 // entrada rechaza sí o sí. El planificador es un modelo y a veces las
 // mete (típico: go.sum junto a go.mod); sin esto el plan entero muere
 // en `devclean run` y no hay arreglo salvo editar a mano.
+// sanearSkills descarta las skills que el planificador nombró y no están
+// en el catálogo: una inventada no tiene texto que inyectar.
+func sanearSkills(bs []plan.Borrador, catalogo []skills.Skill) {
+	existe := map[string]bool{}
+	for _, sk := range catalogo {
+		existe[sk.Nombre] = true
+	}
+	for i := range bs {
+		if bs[i].Skills == nil {
+			continue
+		}
+		validas := []string{}
+		for _, n := range bs[i].Skills {
+			if existe[n] {
+				validas = append(validas, n)
+			} else {
+				out.Line("· %s: skill %q no está en .agents/skills · se omite", bs[i].Titulo, n)
+			}
+		}
+		bs[i].Skills = validas
+	}
+}
+
 func sanearAlcance(bs []plan.Borrador, zonas, patrones []string, ocupados map[string][]string) {
 	for i := range bs {
 		limpio := bs[i].TocarSolo[:0]

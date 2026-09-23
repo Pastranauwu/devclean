@@ -53,6 +53,11 @@ type Task struct {
 	Peso           string `json:"peso,omitempty"`   // liviana | media | pesada ("" = estrategia global)
 	Agente         string `json:"agente,omitempty"` // agente asignado
 
+	// Skills son las skills del catálogo (.agents/skills) que esta tarea
+	// necesita; su texto entra al prompt del agente. nil = las del rol del
+	// agente, como antes del campo; [] = ninguna.
+	Skills []string `json:"skills,omitempty"`
+
 	// Recursivo marca una tarea como demasiado grande para un solo
 	// intento de agente: en vez de escribir código directo, el bucle la
 	// reparte en subtareas reales (mismo contrato, mismo listo_cuando
@@ -225,6 +230,10 @@ func Parse(data []byte) (Task, error) {
 			t.Peso = kv.Unquote(p.Value)
 		case "agente":
 			t.Agente = kv.Unquote(p.Value)
+		case "skills":
+			if t.Skills, err = kv.ParseList(p.Value); t.Skills == nil && err == nil {
+				t.Skills = []string{} // declarada vacía: ninguna, no las del rol
+			}
 		case "recursivo":
 			switch kv.Unquote(p.Value) {
 			case "true":
@@ -330,6 +339,9 @@ func (t Task) Marshal() []byte {
 	}
 	if t.Agente != "" {
 		fmt.Fprintf(&b, "agente: %s\n", t.Agente)
+	}
+	if t.Skills != nil {
+		fmt.Fprintf(&b, "skills: %s\n", kv.MarshalList(t.Skills))
 	}
 	if t.Recursivo {
 		fmt.Fprintf(&b, "recursivo: true\n")

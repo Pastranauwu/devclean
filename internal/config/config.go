@@ -771,50 +771,45 @@ func DefaultAgentes(cli string) map[string]Agente {
 	// significa "usa el modelo por defecto del CLI", que siempre existe.
 	const modeloDelCLI = ""
 
-	base := skills.BaseSkillNames()
-
 	return map[string]Agente{
 		"ejecutor": {
-			Provider:      provider,
-			Modelo:        modeloDelCLI,
-			KeyEnv:        keyEnv,
-			Skills:        []string{"implementacion", "tdd", "refactor"},
-			SkillPackages: base,
+			Provider: provider,
+			Modelo:   modeloDelCLI,
+			KeyEnv:   keyEnv,
+			Skills:   []string{"implementacion", "tdd", "refactor"},
 		},
 		"backend": {
 			Provider:      provider,
 			Modelo:        modeloDelCLI,
 			KeyEnv:        keyEnv,
 			Skills:        []string{"backend", "api", "database", "sql", "performance"},
-			SkillPackages: append(append([]string{}, base...), skills.BackendSkillName()),
+			SkillPackages: []string{skills.BackendSkillName()},
 		},
 		"frontend": {
 			Provider:      provider,
 			Modelo:        modeloDelCLI,
 			KeyEnv:        keyEnv,
 			Skills:        []string{"frontend", "ui", "ux", "components", "css", "state"},
-			SkillPackages: append(append([]string{}, base...), skills.FrontendSkillName()),
+			SkillPackages: []string{skills.FrontendSkillName()},
 		},
 		"architect": {
-			Provider:      provider,
-			Modelo:        modeloDelCLI,
-			KeyEnv:        keyEnv,
-			Skills:        []string{"arquitectura", "diseno", "contratos", "clean-code"},
-			SkillPackages: base,
+			Provider: provider,
+			Modelo:   modeloDelCLI,
+			KeyEnv:   keyEnv,
+			Skills:   []string{"arquitectura", "diseno", "contratos", "clean-code"},
 		},
 		"tester": {
 			Provider:      provider,
 			Modelo:        modeloDelCLI,
 			KeyEnv:        keyEnv,
 			Skills:        []string{"testing", "cobertura", "edge-cases", "examinador"},
-			SkillPackages: append(append([]string{}, base...), skills.PMSkillName()),
+			SkillPackages: []string{skills.PMSkillName()},
 		},
 		"refactor": {
-			Provider:      provider,
-			Modelo:        modeloDelCLI,
-			KeyEnv:        keyEnv,
-			Skills:        []string{"refactoring", "simplificacion", "deuda-tecnica"},
-			SkillPackages: base,
+			Provider: provider,
+			Modelo:   modeloDelCLI,
+			KeyEnv:   keyEnv,
+			Skills:   []string{"refactoring", "simplificacion", "deuda-tecnica"},
 		},
 	}
 }

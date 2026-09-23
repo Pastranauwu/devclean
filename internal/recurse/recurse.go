@@ -857,6 +857,7 @@ func (a Agent) tareaDesdeBorrador(b plan.Borrador, indice int) (task.Task, error
 		Riesgos:        joinTexto(a.Task.Riesgos, b.Riesgos),
 		Peso:           peso,
 		Agente:         b.Agente,
+		Skills:         a.Task.Skills, // la descomposición no ve el catálogo: hereda las del padre
 		LimiteIntentos: task.DefaultLimiteIntentos,
 		LimiteLineas:   limiteLineas,
 		Notas:          joinTexto(a.Task.Notas, b.Como),

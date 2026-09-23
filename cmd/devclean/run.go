@@ -761,6 +761,12 @@ func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagMod
 		etiquetas = ag.Skills
 		paquetes = ag.SkillPackages
 	}
+	// las que el contrato declara mandan sobre las del rol: el
+	// planificador sabe si esta tarea en particular dibuja una interfaz,
+	// el rol no
+	if t.Skills != nil {
+		paquetes = t.Skills
+	}
 
 	return ex, modelo, etiquetas, paquetes
 }

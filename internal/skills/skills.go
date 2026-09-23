@@ -40,12 +40,11 @@ func (s Source) arg() string {
 	return s.Nombre
 }
 
-// DefaultSources son los paquetes que devclean trae por defecto: la base
-// que se inyecta en todo agente, más los específicos por rol.
+// DefaultSources son los paquetes que devclean trae por defecto: el
+// catálogo del que el planificador elige por tarea (campo `skills` del
+// contrato) y el que usan los roles cuando el contrato no lo declara.
 func DefaultSources() []Source {
 	return []Source{
-		{Nombre: "implement", Repo: "https://github.com/mattpocock/skills"},
-		{Nombre: "caveman", Repo: "https://github.com/JuliusBrussee/caveman"},
 		{Nombre: "clean-code", Repo: "https://github.com/sickn33/agentic-awesome-skills"},
 		{Nombre: "frontend-design", Repo: "https://github.com/anthropics/skills"},
 		{Nombre: "create-a-backend", Repo: "https://github.com/vercel/vercel-plugin"},
@@ -53,26 +52,30 @@ func DefaultSources() []Source {
 	}
 }
 
-// BaseSkillNames son los paquetes que devclean inyecta en cualquier
-// agente, sea cual sea su rol.
+// Base es lo que todo implementador recibe, sea cual sea su tarea. Va en
+// la parte común del prompt, así que es idéntica en todos los agentes.
 //
-// La base se paga entera en CADA intento de CADA tarea: el contenido va
-// como texto al principio del prompt. Antes eran ocho paquetes, ~59 KB
-// (~15k tokens) por invocación, con cosas que un implementador no usa
-// ("caveman" es un estilo de prosa, "grill-me" interroga al usuario,
-// "agent-development" escribe agentes). Quedan los dos que sí cambian el
-// código que sale: cómo implementar y cómo dejarlo limpio. El resto se
-// agrega por rol, o a mano en config.yml.
-//
-// caveman volvió: ~1k tokens de entrada por intento a cambio de recortar
-// la prosa de salida, que se cobra más cara. Solo toca la narración; el
-// código, los commits y los mensajes de error salen normales.
-func BaseSkillNames() []string {
-	return []string{"implement", "clean-code", "caveman"}
-}
+// Reemplaza a tres paquetes que se inyectaban enteros en cada intento:
+// implement (pedía /tdd y /code-review: el agente invocaba la skill
+// code-review de Claude Code, ~5% del costo de una corrida, sobre un
+// trabajo que el revisor y la esclusa ya juzgan), clean-code (4,8 KB;
+// queda completa en el catálogo) y caveman (estilo de prosa; aquí basta
+// una línea).
+const Base = `Cómo trabajar:
+- Implementa lo que pide el contrato, nada fuera de tu alcance.
+- Corre seguido las pruebas de lo que tocas y el listo_cuando al final.
+- Haz commit de tu trabajo en la rama actual.
+- No narres lo que haces: actúa. Respuesta final breve.
 
-// FrontendSkillName, BackendSkillName y PMSkillName son el paquete extra
-// que cada rol agrega sobre la base.
+Código limpio:
+- Nombres que dicen qué son, sin abreviaturas crípticas.
+- Funciones cortas que hacen una sola cosa, con pocos parámetros y sin efectos ocultos.
+- Reusa lo que ya existe antes de escribir algo nuevo; nada duplicado.
+- Errores explícitos: no los tragues ni devuelvas valores mágicos.
+- Comentarios solo para el porqué; ni código comentado ni prints de depuración.`
+
+// FrontendSkillName, BackendSkillName y PMSkillName son el paquete de
+// cada rol cuando el contrato no declara skills.
 func FrontendSkillName() string { return "frontend-design" }
 func BackendSkillName() string  { return "create-a-backend" }
 func PMSkillName() string       { return "test-driven-development" }
@@ -184,6 +187,27 @@ func Content(root string, nombres []string) string {
 		fmt.Fprintf(&b, "### Skill: %s\n%s\n\n", n, sk.Cuerpo)
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// Catalogo lista las skills instaladas en .agents/skills, ordenadas por
+// nombre: de ahí elige el planificador las de cada tarea. implement y
+// caveman quedan fuera aunque sigan instaladas en repos viejos: la Base
+// las reemplaza.
+func Catalogo(root string) []Skill {
+	entradas, err := os.ReadDir(Dir(root))
+	if err != nil {
+		return nil
+	}
+	var out []Skill
+	for _, e := range entradas {
+		if !e.IsDir() || e.Name() == "implement" || e.Name() == "caveman" {
+			continue
+		}
+		if sk, err := Read(root, e.Name()); err == nil {
+			out = append(out, sk)
+		}
+	}
+	return out
 }
 
 func tail(s string) string {

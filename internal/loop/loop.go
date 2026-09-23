@@ -16,6 +16,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/sealed"
+	"github.com/Pastranauwu/devclean/internal/skills"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
@@ -587,16 +588,18 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration) (
 // que listo_cuando ejecuta la escribe el propio agente, y decírselo
 // evita que la deje sin crear esperando a un examinador que no existe.
 //
-// Primero va lo común a todas las tareas del plan —constitución, reglas y
-// arquitectura—, idéntico byte a byte, y al final lo de la tarea. Así el
+// Primero va lo común a todas las tareas del plan —la base de devclean,
+// constitución, reglas y arquitectura—, idéntico byte a byte, y al final
+// lo de la tarea (incluidas las skills que declara). Así el
 // inicio del prompt se repite entre agentes e intentos y el caché de
 // prompts del proveedor lo reutiliza. Nada variable (ids, rutas del
 // cuarto, fechas) puede entrar en la parte común.
-func promptPara(t task.Task, interfaces []string, constitucion string, skills []string, skillsContenido string, prevErr string, pruebasPropias bool) string {
+func promptPara(t task.Task, interfaces []string, constitucion string, etiquetas []string, skillsContenido string, prevErr string, pruebasPropias bool) string {
 	notas := plan.SepararNotas(t.Notas)
 	arq := plan.RecortarArquitectura(notas.Arquitectura, t)
 
 	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n\n", skills.Base)
 	if constitucion != "" {
 		fmt.Fprintf(&b, "Constitución del proyecto (convenciones que todos los agentes deben seguir):\n%s\n\n", constitucion)
 	}
@@ -607,11 +610,11 @@ func promptPara(t task.Task, interfaces []string, constitucion string, skills []
 		fmt.Fprintf(&b, "%s%s\n\n", plan.MarcaArquitectura, arq.Comun)
 	}
 
-	if len(skills) > 0 {
-		fmt.Fprintf(&b, "Habilidades de este rol: %s\n\n", strings.Join(skills, ", "))
+	if len(etiquetas) > 0 {
+		fmt.Fprintf(&b, "Habilidades de este rol: %s\n\n", strings.Join(etiquetas, ", "))
 	}
 	if skillsContenido != "" {
-		fmt.Fprintf(&b, "Skills instaladas para este rol — sigue sus instrucciones:\n%s\n\n", skillsContenido)
+		fmt.Fprintf(&b, "Skills de esta tarea — sigue sus instrucciones:\n%s\n\n", skillsContenido)
 	}
 	fmt.Fprintf(&b, "Tarea %s: %s\n", t.ID, t.Titulo)
 	if t.Porque != "" {
