@@ -561,8 +561,14 @@ func (a agenteExecutor) Run(ctx context.Context, req loop.Request) (loop.Result,
 		Stderr:   res.Stderr,
 		Text:     res.Text,
 		ExitCode: res.ExitCode,
-		Tokens:   loop.Tokens{Entrada: res.Tokens.Input, Salida: res.Tokens.Output},
+		Tokens:   tokensDe(res.Tokens),
 	}, err
+}
+
+// tokensDe traduce el gasto del adaptador al del bucle, caché incluida.
+func tokensDe(u executor.Usage) loop.Tokens {
+	return loop.Tokens{Entrada: u.Input, Salida: u.Output, CacheLeida: u.CacheRead, CacheEscrita: u.CacheWrite,
+		Turnos: u.Turns, PrimerTurno: u.FirstTurn, PrimerTurnoEscrita: u.FirstTurnWrite, CostoUSD: u.CostUSD}
 }
 
 // autoAgentes resuelve el paralelismo cuando --agentes no se pasa: tantos
@@ -779,7 +785,7 @@ func (r revisorEnBucle) Revisar(ctx context.Context, _ string, tarea task.Task, 
 		Model:    r.modelo,
 		Timeout:  5 * time.Minute,
 	})
-	tk := loop.Tokens{Entrada: res.Tokens.Input, Salida: res.Tokens.Output}
+	tk := tokensDe(res.Tokens)
 	if err != nil {
 		return true, "", tk // degrada en abierto
 	}

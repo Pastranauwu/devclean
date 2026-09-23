@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/sealed"
 	"github.com/Pastranauwu/devclean/internal/task"
@@ -359,6 +360,13 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 
 		acumulado.Entrada += res.Tokens.Entrada
 		acumulado.Salida += res.Tokens.Salida
+		acumulado.CacheLeida += res.Tokens.CacheLeida
+		acumulado.CacheEscrita += res.Tokens.CacheEscrita
+		acumulado.Turnos += res.Tokens.Turnos
+		acumulado.CostoUSD += res.Tokens.CostoUSD
+		if acumulado.PrimerTurno == 0 {
+			acumulado.PrimerTurno, acumulado.PrimerTurnoEscrita = res.Tokens.PrimerTurno, res.Tokens.PrimerTurnoEscrita
+		}
 
 		codigoAgente := res.ExitCode
 		a := Attempt{
@@ -444,6 +452,8 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			a.Revision = &Revision{Aprobada: aprobada, Cambios: cambios}
 			acumulado.Entrada += tk.Entrada
 			acumulado.Salida += tk.Salida
+			acumulado.CacheLeida += tk.CacheLeida
+			acumulado.CacheEscrita += tk.CacheEscrita
 			m := tk.Entrada + tk.Salida
 			if o.Ventanas != nil && o.Proveedor != "" {
 				_ = o.Ventanas.Registrar(o.Proveedor, m)
@@ -576,11 +586,27 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration) (
 // pruebasPropias marca que el stack no tiene examinador ciego: la suite
 // que listo_cuando ejecuta la escribe el propio agente, y decírselo
 // evita que la deje sin crear esperando a un examinador que no existe.
+//
+// Primero va lo común a todas las tareas del plan —constitución, reglas y
+// arquitectura—, idéntico byte a byte, y al final lo de la tarea. Así el
+// inicio del prompt se repite entre agentes e intentos y el caché de
+// prompts del proveedor lo reutiliza. Nada variable (ids, rutas del
+// cuarto, fechas) puede entrar en la parte común.
 func promptPara(t task.Task, interfaces []string, constitucion string, skills []string, skillsContenido string, prevErr string, pruebasPropias bool) string {
+	notas := plan.SepararNotas(t.Notas)
+	arq := plan.RecortarArquitectura(notas.Arquitectura, t)
+
 	var b strings.Builder
 	if constitucion != "" {
 		fmt.Fprintf(&b, "Constitución del proyecto (convenciones que todos los agentes deben seguir):\n%s\n\n", constitucion)
 	}
+	if notas.Reglas != "" {
+		fmt.Fprintf(&b, "%s\n\n", notas.Reglas)
+	}
+	if arq.Comun != "" {
+		fmt.Fprintf(&b, "%s%s\n\n", plan.MarcaArquitectura, arq.Comun)
+	}
+
 	if len(skills) > 0 {
 		fmt.Fprintf(&b, "Habilidades de este rol: %s\n\n", strings.Join(skills, ", "))
 	}
@@ -617,8 +643,19 @@ func promptPara(t task.Task, interfaces []string, constitucion string, skills []
 	if t.Riesgos != "" {
 		fmt.Fprintf(&b, "Riesgos: %s\n", t.Riesgos)
 	}
-	if t.Notas != "" {
-		fmt.Fprintf(&b, "Notas:\n%s\n", t.Notas)
+	// árbol y firmas recortados a lo que la tarea toca, usa o expone
+	if arq.Arbol != "" {
+		fmt.Fprintf(&b, "\n%s\n", arq.Arbol)
+	}
+	if arq.Firmas != "" {
+		fmt.Fprintf(&b, "\n%s\n", arq.Firmas)
+	}
+	if notas.Tarea != "" {
+		etiqueta := "Notas:"
+		if notas.Arquitectura != "" {
+			etiqueta = strings.TrimSuffix(plan.MarcaImplementacion, "\n")
+		}
+		fmt.Fprintf(&b, "\n%s\n%s\n", etiqueta, notas.Tarea)
 	}
 	if prevErr != "" {
 		fmt.Fprintf(&b, "\nEl intento anterior falló:\n%s\n", prevErr)

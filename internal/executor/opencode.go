@@ -75,10 +75,25 @@ func parseOpenCodeEvents(stdout string) ([]string, string, Usage) {
 // anida bajo "part", no en la raíz del evento: mirando solo la raíz el
 // gasto salía siempre 0, lo que además hacía indistinguible una
 // invocación que nunca llegó al modelo de una que sí trabajó.
+//
+// Cada step_finish es un turno: el primero da el contexto base.
 func collectTokens(m map[string]any, usage *Usage) {
 	if tokens, ok := m["tokens"].(map[string]any); ok {
-		usage.Input += intValue(tokens, "input")
+		in, leida, escrita := intValue(tokens, "input"), 0, 0
+		if cache, ok := tokens["cache"].(map[string]any); ok {
+			leida, escrita = intValue(cache, "read"), intValue(cache, "write")
+		}
+		usage.Input += in
 		usage.Output += intValue(tokens, "output")
+		usage.CacheRead += leida
+		usage.CacheWrite += escrita
+		usage.Turns++
+		if c, ok := m["cost"].(float64); ok {
+			usage.CostUSD += c
+		}
+		if usage.Turns == 1 {
+			usage.FirstTurn, usage.FirstTurnWrite = in+leida+escrita, escrita
+		}
 		return
 	}
 	if part, ok := m["part"].(map[string]any); ok {

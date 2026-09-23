@@ -175,6 +175,7 @@ func prompt(intro, peticion string, c Contexto) string {
 	b.WriteString(contextoPrompt(c))
 	b.WriteString("\n\nEres el ARQUITECTO de la solución, no un implementador: no escribes código. Tu trabajo es dejar la arquitectura definida —estilo, árbol de archivos, responsabilidades de cada archivo, flujo de datos, tipos compartidos y la firma exacta de cada función pública (parámetros y valor de retorno)— para que cada ejecutor solo escriba los archivos que le tocan sin rediseñar nada. Aplica SOLID donde aporte; usa arquitectura hexagonal o microservicios solo cuando el problema lo justifique.\n")
 	b.WriteString("Devuelve SOLO un objeto JSON con \"arquitectura\" (texto con el árbol de archivos, sus responsabilidades, tipos compartidos y firmas exactas) y \"tareas\" (array de contratos). La arquitectura se guarda en las notas de todos los contratos.\n")
+	b.WriteString("Organiza \"arquitectura\" en párrafos separados por una línea en blanco, cada uno con su encabezado en mayúsculas (STACK:, ESTILO:, TIPOS COMPARTIDOS:, ...). Dos son obligatorios y con formato fijo, porque a cada ejecutor le llega solo la parte que le toca: \"ÁRBOL DE ARCHIVOS:\" con una línea por archivo que empiece por su ruta (\" src/a.js (T-001) responsabilidad\"), y \"FIRMAS PÚBLICAS EXACTAS:\" con un bloque por archivo que empiece por \"[T-00N ruta]\" seguido de sus firmas.\n")
 	b.WriteString("Divide y vencerás: parte en tareas por ARCHIVO o MÓDULO, cada una con su \"tocar_solo\" acotado a los archivos que escribe, su \"expone\"/\"usa\" con las firmas exactas (parámetros y retorno) y un \"como\" que diga exactamente qué escribir. Cuantas más tareas pequeñas e independientes, más modelos corren en paralelo y más rápido el resultado: preferí varias tareas livianas a una sola tarea grande. Si hace falta una base compartida (tipos, contratos), asígnala a una tarea pesada con agente architect y haz que sus consumidoras dependan de ella. Reserva UNA tarea final para la composición y sus pruebas de integración.\n")
 	b.WriteString("Cada tarea contiene estos campos:\n")
 	b.WriteString("- \"titulo\": frase corta en minúscula\n")
@@ -293,7 +294,7 @@ func Parse(texto string) ([]Borrador, error) {
 			if strings.TrimSpace(bs[i].Como) == "" {
 				return nil, fmt.Errorf("la tarea %d no trae instrucciones de implementación en como", i+1)
 			}
-			bs[i].Como = "Arquitectura del plan:\n" + arquitectura + "\n\nImplementación de esta tarea:\n" + bs[i].Como
+			bs[i].Como = MarcaArquitectura + arquitectura + "\n\n" + MarcaImplementacion + bs[i].Como
 		}
 	}
 

@@ -49,9 +49,22 @@ type Result struct {
 }
 
 // Usage is the token spend of one invocation, best-effort per adapter.
+//
+// Turns son las llamadas al modelo de la invocación. FirstTurn es el
+// contexto con que arrancó el primer turno (entrada + caché leída + caché
+// escrita): prompt de sistema, herramientas, skills y el prompt de
+// devclean, antes de que el agente trabaje. FirstTurnWrite es la parte
+// de ese contexto que no estaba en caché.
 type Usage struct {
-	Input  int `json:"input"`
-	Output int `json:"output"`
+	Input          int `json:"input"`
+	Output         int `json:"output"`
+	CacheRead      int `json:"cache_read,omitempty"`
+	CacheWrite     int `json:"cache_write,omitempty"`
+	Turns          int `json:"turns,omitempty"`
+	FirstTurn      int `json:"first_turn,omitempty"`
+	FirstTurnWrite int `json:"first_turn_write,omitempty"`
+	// CostUSD es el costo que el propio CLI calcula, a precio de lista.
+	CostUSD float64 `json:"cost_usd,omitempty"`
 }
 
 // run executes a CLI with timeout and returns its stdout, stderr, exit

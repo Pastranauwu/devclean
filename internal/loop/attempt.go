@@ -57,9 +57,22 @@ type Revision struct {
 }
 
 // Tokens is the token spend of one attempt.
+//
+// Entrada es la entrada sin caché: con claude es una fracción mínima del
+// prompt real, que llega casi entero como caché leída o escrita.
+//
+// PrimerTurno es el contexto con que arrancó el agente (entrada + caché
+// leída + caché escrita del primer turno) y PrimerTurnoEscrita la parte
+// que no estaba en caché: lo que el CLI carga antes de trabajar.
 type Tokens struct {
-	Entrada int `json:"entrada"`
-	Salida  int `json:"salida"`
+	Entrada            int     `json:"entrada"`
+	Salida             int     `json:"salida"`
+	CacheLeida         int     `json:"cache_leida,omitempty"`
+	CacheEscrita       int     `json:"cache_escrita,omitempty"`
+	Turnos             int     `json:"turnos,omitempty"`
+	PrimerTurno        int     `json:"primer_turno,omitempty"`
+	PrimerTurnoEscrita int     `json:"primer_turno_escrita,omitempty"`
+	CostoUSD           float64 `json:"costo_usd,omitempty"`
 }
 
 // RunsDir returns the runs directory of the repository at root.

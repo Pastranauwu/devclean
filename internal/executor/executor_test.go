@@ -142,7 +142,7 @@ func TestOpenCodeExtraeTexto(t *testing.T) {
 
 func TestClaudeExtraeTexto(t *testing.T) {
 	stdout := `{"type":"result","result":"[{\"titulo\":\"x\"}]","usage":{"input_tokens":1,"output_tokens":2}}`
-	if got := parseClaudeText(stdout); got != `[{"titulo":"x"}]` {
+	if got, _ := parseClaudeStream(stdout); got != `[{"titulo":"x"}]` {
 		t.Errorf("text = %q", got)
 	}
 }
@@ -177,5 +177,33 @@ func TestClaudePasaEsfuerzoExplicito(t *testing.T) {
 	res, err = (Claude{}).Run(context.Background(), req)
 	if err != nil || strings.Contains(res.Stdout, "--effort") {
 		t.Fatalf("alteró el esfuerzo por defecto: %q, %v", res.Stdout, err)
+	}
+}
+
+// Con claude casi todo el prompt llega como caché: input_tokens solo
+// cuenta lo que quedó fuera de ella. Y el total real está en modelUsage:
+// el usage del resultado se queda corto (789k contra 4,58M medidos).
+func TestUsoConCache(t *testing.T) {
+	stream := `{"type":"system","subtype":"init","tools":["Bash"]}
+{"type":"assistant","parent_tool_use_id":null,"message":{"id":"msg_1","usage":{"input_tokens":10,"cache_creation_input_tokens":11106,"cache_read_input_tokens":12306,"output_tokens":1}}}
+{"type":"assistant","parent_tool_use_id":null,"message":{"id":"msg_1","usage":{"input_tokens":10,"cache_creation_input_tokens":11106,"cache_read_input_tokens":12306,"output_tokens":1}}}
+{"type":"user","parent_tool_use_id":null,"message":{"role":"user"}}
+{"type":"assistant","parent_tool_use_id":"toolu_9","message":{"id":"msg_sub","usage":{"input_tokens":3,"cache_creation_input_tokens":900,"cache_read_input_tokens":0,"output_tokens":5}}}
+{"type":"assistant","parent_tool_use_id":null,"message":{"id":"msg_2","usage":{"input_tokens":2,"cache_creation_input_tokens":300,"cache_read_input_tokens":23412,"output_tokens":40}}}
+{"type":"result","result":"listo","num_turns":2,"total_cost_usd":0.7855,"usage":{"input_tokens":129,"cache_creation_input_tokens":42631,"cache_read_input_tokens":789576,"output_tokens":11848},"modelUsage":{"claude-haiku-4-5":{"inputTokens":554,"outputTokens":28526,"cacheReadInputTokens":4579893,"cacheCreationInputTokens":121937}}}`
+	texto, u := parseClaudeStream(stream)
+	quiero := Usage{Input: 554, Output: 28526, CacheRead: 4579893, CacheWrite: 121937, Turns: 2, FirstTurn: 23422, FirstTurnWrite: 11106, CostUSD: 0.7855}
+	if texto != "listo" || u != quiero {
+		t.Errorf("claude: %q %+v\nquiero %+v", texto, u, quiero)
+	}
+	// la salida de --output-format json (un solo resultado, sin turnos) sigue leyéndose
+	if _, viejo := parseClaudeStream(`{"type":"result","num_turns":19,"usage":{"input_tokens":129,"output_tokens":11848}}`); viejo != (Usage{Input: 129, Output: 11848, Turns: 19}) {
+		t.Errorf("json: %+v", viejo)
+	}
+
+	_, _, oc := parseOpenCodeEvents(`{"type":"step_finish","part":{"cost":0.5,"tokens":{"input":34,"output":67,"cache":{"read":900,"write":50}}}}` + "\n" +
+		`{"type":"step_finish","part":{"cost":0.25,"tokens":{"input":6,"output":3,"cache":{"read":100,"write":0}}}}`)
+	if oc != (Usage{Input: 40, Output: 70, CacheRead: 1000, CacheWrite: 50, Turns: 2, FirstTurn: 984, FirstTurnWrite: 50, CostUSD: 0.75}) {
+		t.Errorf("opencode: %+v", oc)
 	}
 }

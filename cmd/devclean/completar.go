@@ -176,6 +176,11 @@ func planearRequirements(root string, s *spec.Spec) error {
 		return err
 	}
 	if integracion, aceptacion, ok := spec.TareaDeIntegracion(*s, s.Tasks, config.DetectLanguage(root), ids[len(ids)-1]); ok {
+		// la misma arquitectura que sus hermanas: sin ella su prompt
+		// empieza distinto y no comparte el caché del resto del plan
+		if arq := plan.SepararNotas(s.Tasks[0].Notas).Arquitectura; arq != "" {
+			integracion.Notas = plan.MarcaArquitectura + arq + "\n\n" + plan.MarcaImplementacion + integracion.Notas
+		}
 		integracion.LimiteIntentos = intentos
 		integracion.LimiteLineas = task.DefaultLimiteLineas
 		s.Tasks = append(s.Tasks, integracion)
