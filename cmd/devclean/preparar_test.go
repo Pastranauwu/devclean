@@ -152,7 +152,7 @@ func TestPrepararEntornoRespetaCLIExplicito(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Cli != "claude" || got.Modelos["pesada"] != "opus" {
+	if got.Cli != "claude" || got.Modelos["pesada"] != "claude-opus-5-5" {
 		t.Fatalf("config: %+v", got)
 	}
 }

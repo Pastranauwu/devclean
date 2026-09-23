@@ -22,11 +22,11 @@ func TestTareaDeIntegracionCierraLaCostura(t *testing.T) {
 	s := Spec{Version: 1, Feature: "calculadora", Requirements: []string{"evaluar potencias con signo"}}
 	tasks := planCalculadora()
 
-	got, aceptacion, ok := TareaDeIntegracion(s, tasks, "go")
+	got, aceptacion, ok := TareaDeIntegracion(s, tasks, "go", "T-004")
 	if !ok {
 		t.Fatal("con cadena de tareas y sin aceptación ejecutable, la costura necesita prueba")
 	}
-	if got.ListoCuando != "go test ./test/integracion/..." {
+	if got.ListoCuando != "go test ./test/integracion/t-004/..." {
 		t.Errorf("listo_cuando = %q", got.ListoCuando)
 	}
 	if aceptacion.Command != got.ListoCuando {
@@ -44,7 +44,7 @@ func TestTareaDeIntegracionCierraLaCostura(t *testing.T) {
 	if len(got.Expone) != 0 {
 		t.Errorf("la tarea de integración no expone nada: %v", got.Expone)
 	}
-	if len(got.TocarSolo) != 1 || got.TocarSolo[0] != "test/integracion/**" {
+	if len(got.TocarSolo) != 1 || got.TocarSolo[0] != "test/integracion/t-004/**" {
 		t.Errorf("tocar_solo = %v", got.TocarSolo)
 	}
 	// las notas llevan la derivación: el requerimiento y lo que prometió cada tarea
@@ -59,15 +59,15 @@ func TestTareaDeIntegracionCierraLaCostura(t *testing.T) {
 // y sus comandos son la única evidencia.
 func TestTareaDeIntegracionDeduceElStackDelPlan(t *testing.T) {
 	for _, c := range []struct{ comando, quiero string }{
-		{"pytest tests/test_lexer.py", "pytest test/integracion"},
-		{"npm test -- lexer", "node --test test/integracion/"},
-		{"go test ./internal/lexer/...", "go test ./test/integracion/..."},
+		{"pytest tests/test_lexer.py", "pytest test/integracion/t-004"},
+		{"npm test -- lexer", "node --test test/integracion/t-004/"},
+		{"go test ./internal/lexer/...", "go test ./test/integracion/t-004/..."},
 	} {
 		tasks := planCalculadora()
 		tasks[0].ListoCuando = c.comando
 		tasks[1].ListoCuando = c.comando
 		tasks[2].ListoCuando = c.comando
-		got, _, ok := TareaDeIntegracion(Spec{Version: 1, Feature: "x"}, tasks, "")
+		got, _, ok := TareaDeIntegracion(Spec{Version: 1, Feature: "x"}, tasks, "", "T-004")
 		if !ok || got.ListoCuando != c.quiero {
 			t.Errorf("%q → %q (ok=%v), quiero %q", c.comando, got.ListoCuando, ok, c.quiero)
 		}
@@ -92,7 +92,7 @@ func TestTareaDeIntegracionNoInventaCuandoNoToca(t *testing.T) {
 		{"un stack sin comando conocido no se inventa", base, planCalculadora(), "rust"},
 	}
 	for _, c := range casos {
-		if _, _, ok := TareaDeIntegracion(c.s, c.tasks, c.leng); ok {
+		if _, _, ok := TareaDeIntegracion(c.s, c.tasks, c.leng, "T-004"); ok {
 			t.Errorf("%s: no debía derivar tarea", c.nombre)
 		}
 	}
@@ -103,7 +103,28 @@ func TestTareaDeIntegracionNoInventaCuandoNoToca(t *testing.T) {
 func TestTareaDeIntegracionSinIdsNoPuedeOrdenarse(t *testing.T) {
 	tasks := planCalculadora()
 	tasks[1].ID = ""
-	if _, _, ok := TareaDeIntegracion(Spec{Version: 1, Feature: "x"}, tasks, "go"); ok {
+	if _, _, ok := TareaDeIntegracion(Spec{Version: 1, Feature: "x"}, tasks, "go", "T-004"); ok {
 		t.Error("sin ids no se puede declarar depende_de")
+	}
+}
+
+// El planificador ya escribe sus propias pruebas de integración: la tarea
+// derivada vive en su propio directorio para no cruzar con ellas, y si el
+// plan reclamó la zona entera, la costura es de esa tarea.
+func TestTareaDeIntegracionNoCruzaConElPlan(t *testing.T) {
+	tasks := planCalculadora()
+	tasks[2].TocarSolo = append(tasks[2].TocarSolo, "test/integracion/uxui.test.js")
+	got, _, ok := TareaDeIntegracion(Spec{Version: 1, Feature: "x"}, tasks, "node", "T-004")
+	if !ok {
+		t.Fatal("un archivo del plan en test/integracion no impide la costura")
+	}
+	for _, issue := range ValidatePlan(Spec{}, append(tasks, got)) {
+		if issue.Code == "write_overlap" {
+			t.Errorf("la tarea derivada cruza con el plan: %s", issue.Message)
+		}
+	}
+	tasks[2].TocarSolo = []string{"test/integracion/**"}
+	if _, _, ok := TareaDeIntegracion(Spec{Version: 1, Feature: "x"}, tasks, "node", "T-004"); ok {
+		t.Error("el plan reclamó la zona entera: derivar otra tarea ahí es un plan inválido")
 	}
 }

@@ -567,3 +567,21 @@ func TestFindSpecPlural(t *testing.T) {
 		})
 	}
 }
+
+// Un plan nuevo sobre un proyecto en marcha consume lo que expusieron las
+// tareas que ya están en el repo: measureText de T-003 no es un usa huérfano.
+func TestApplyCuentaLasTareasPrevias(t *testing.T) {
+	dir := t.TempDir()
+	previa := task.Task{Version: task.Version, ID: "T-001", Titulo: "pixel", ListoCuando: "node --test src/pixel.test.js", TocarSolo: []string{"src/pixel.js"}, Expone: []string{"measureText(text: string, scale: number) => number"}}
+	if err := task.Save(dir, previa); err != nil {
+		t.Fatal(err)
+	}
+	s := Spec{Version: 1, Tasks: []task.Task{{ID: "T-002", Titulo: "hud", ListoCuando: "node --test src/hud.test.js", TocarSolo: []string{"src/hud.js"}, DependeDe: []string{"T-001"}, Usa: []string{"measureText(text: string, scale: number) => number"}}}}
+	got, err := Apply(dir, s, true)
+	if err != nil {
+		t.Fatalf("la tarea previa expone lo que la nueva usa: %v", err)
+	}
+	if got[0].ID != "T-002" {
+		t.Errorf("id = %s", got[0].ID)
+	}
+}

@@ -660,9 +660,9 @@ var pistasPeso = map[string][]string{
 // sin proveedor ("opencode-go/kimi-k3" casa con "kimi-k3"). Si ninguno
 // está, se cae a las pistas por nombre.
 var preferidos = map[string][]string{
-	"pesada":  {"kimi-k3", "grok-4.7", "grok-4.6"},
-	"media":   {"deepseek-v4-flash", "deepseek-v4.1-flash"},
-	"liviana": {"muse-spark-1.3-contributor", "muse-spark-1.3-contributor-free", "muse-spark-1.2-contributor"},
+	"pesada":  {"claude-opus-5-5", "kimi-k3", "grok-4.7", "grok-4.6"},
+	"media":   {"claude-sonnet-5", "deepseek-v4-flash", "deepseek-v4.1-flash"},
+	"liviana": {"claude-haiku-4-5", "muse-spark-1.3-contributor", "muse-spark-1.3-contributor-free", "muse-spark-1.2-contributor"},
 }
 
 // ElegirModelos reparte un catálogo real de ids de modelo entre los tres

@@ -17,14 +17,33 @@ type Issue struct {
 // ValidatePlan revisa el IR antes de gastar tokens. Los errores son
 // invariantes mecánicas; la cobertura semántica se reporta como advertencia
 // porque no debe fingirse una prueba determinista basada solo en palabras.
-func ValidatePlan(s Spec, tasks []task.Task) []Issue {
+//
+// previas son las tareas que ya viven en el repo: un plan nuevo sobre un
+// proyecto en marcha depende de ellas y consume lo que expusieron. Cuentan
+// como proveedoras y como dependencias, pero no se revalidan ni entran al
+// cruce de alcances: ya se entregaron o tienen su propia corrida.
+func ValidatePlan(s Spec, tasks []task.Task, previas ...task.Task) []Issue {
 	var out []Issue
 	byID := map[string]task.Task{}
 	exposed := map[string]string{}
+	nuevas := map[string]bool{}
+	for _, t := range tasks {
+		nuevas[t.ID] = true
+	}
+	previa := map[string]bool{}
+	for _, t := range previas {
+		if nuevas[t.ID] {
+			continue // se reescribe: vale la versión del plan
+		}
+		previa[t.ID] = true
+		for _, x := range t.Expone {
+			exposed[x] = t.ID
+		}
+	}
 	for _, t := range tasks {
 		byID[t.ID] = t
 		for _, x := range t.Expone {
-			if prev := exposed[x]; prev != "" && prev != t.ID {
+			if prev := exposed[x]; prev != "" && prev != t.ID && !previa[prev] {
 				out = append(out, Issue{"error", "duplicate_interface", fmt.Sprintf("%s y %s exponen %q", prev, t.ID, x)})
 			}
 			exposed[x] = t.ID
@@ -32,7 +51,7 @@ func ValidatePlan(s Spec, tasks []task.Task) []Issue {
 	}
 	for _, t := range tasks {
 		for _, d := range t.DependeDe {
-			if _, ok := byID[d]; !ok {
+			if _, ok := byID[d]; !ok && !previa[d] {
 				out = append(out, Issue{"error", "missing_dependency", fmt.Sprintf("%s depende de %s, que no existe", t.ID, d)})
 			}
 		}

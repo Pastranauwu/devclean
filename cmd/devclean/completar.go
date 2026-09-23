@@ -171,12 +171,11 @@ func planearRequirements(root string, s *spec.Spec) error {
 	// contrato pide y ninguna prueba la cadena completa. La tarea derivada
 	// entra por la frontera final, y su comando vuelve a correr sobre el
 	// conjunto integrado como aceptación del feature.
-	if integracion, aceptacion, ok := spec.TareaDeIntegracion(*s, s.Tasks, config.DetectLanguage(root)); ok {
-		ids, err := idsCorrelativos(config.TasksDir(root), len(s.Tasks)+1)
-		if err != nil {
-			return err
-		}
-		integracion.ID = ids[len(ids)-1]
+	ids, err = idsCorrelativos(config.TasksDir(root), len(s.Tasks)+1)
+	if err != nil {
+		return err
+	}
+	if integracion, aceptacion, ok := spec.TareaDeIntegracion(*s, s.Tasks, config.DetectLanguage(root), ids[len(ids)-1]); ok {
 		integracion.LimiteIntentos = intentos
 		integracion.LimiteLineas = task.DefaultLimiteLineas
 		s.Tasks = append(s.Tasks, integracion)

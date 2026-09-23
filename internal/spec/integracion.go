@@ -8,22 +8,30 @@ import (
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
-// RutaIntegracion es donde vive la prueba de la costura. Fuera del alcance
-// de cualquier otra tarea, para que no haya cruce, y en una ruta de prueba:
-// la tarea de integración no expone nada, así que no hay examen ciego que
-// proteger y la veda de rutas de prueba no le aplica.
+// RutaIntegracion es donde vive la prueba de la costura, en una ruta de
+// prueba: la tarea de integración no expone nada, así que no hay examen
+// ciego que proteger y la veda de rutas de prueba no le aplica.
 const RutaIntegracion = "test/integracion"
+
+// DirIntegracion es el directorio de la tarea de integración id. Uno por
+// tarea y no la raíz: en un proyecto en marcha test/integracion ya tiene
+// las pruebas de features anteriores —el comando pasaría hoy y la esclusa
+// la rechazaría— y el planificador escribe ahí sus propias pruebas, que
+// cruzaban con un test/integracion/** entero.
+func DirIntegracion(id string) string {
+	return RutaIntegracion + "/" + strings.ToLower(id)
+}
 
 // comandoIntegracion es el listo_cuando por lenguaje. Tiene que fallar hoy
 // —el directorio no existe— y pasar cuando la prueba esté escrita.
-func comandoIntegracion(lenguaje string) string {
+func comandoIntegracion(lenguaje, dir string) string {
 	switch lenguaje {
 	case "go":
-		return "go test ./" + RutaIntegracion + "/..."
+		return "go test ./" + dir + "/..."
 	case "node":
-		return "node --test " + RutaIntegracion + "/"
+		return "node --test " + dir + "/"
 	case "python":
-		return "pytest " + RutaIntegracion
+		return "pytest " + dir
 	}
 	return ""
 }
@@ -71,14 +79,15 @@ func LenguajeDeComandos(tasks []task.Task) string {
 // sola tarea, o ninguna relación entre ellas), cuando el humano ya declaró
 // un comando de aceptación —ahí la costura es suya— o cuando el stack no
 // tiene un comando conocido que pueda fallar hoy.
-func TareaDeIntegracion(s Spec, tasks []task.Task, lenguaje string) (task.Task, Acceptance, bool) {
-	if len(tasks) < 2 || len(s.AcceptanceCommands()) > 0 {
+func TareaDeIntegracion(s Spec, tasks []task.Task, lenguaje, id string) (task.Task, Acceptance, bool) {
+	if len(tasks) < 2 || len(s.AcceptanceCommands()) > 0 || id == "" {
 		return task.Task{}, Acceptance{}, false
 	}
 	if lenguaje == "" {
 		lenguaje = LenguajeDeComandos(tasks)
 	}
-	comando := comandoIntegracion(lenguaje)
+	dir := DirIntegracion(id)
+	comando := comandoIntegracion(lenguaje, dir)
 	if comando == "" {
 		return task.Task{}, Acceptance{}, false
 	}
@@ -96,6 +105,12 @@ func TareaDeIntegracion(s Spec, tasks []task.Task, lenguaje string) (task.Task, 
 		if len(t.DependeDe) > 0 || len(t.Usa) > 0 {
 			hayCostura = true
 		}
+		for _, g := range t.TocarSolo {
+			if globsOverlap(g, dir+"/**") {
+				// el plan ya reclamó la zona: la costura es de esa tarea
+				return task.Task{}, Acceptance{}, false
+			}
+		}
 	}
 	if !hayCostura || len(firmas) == 0 {
 		return task.Task{}, Acceptance{}, false
@@ -108,10 +123,11 @@ func TareaDeIntegracion(s Spec, tasks []task.Task, lenguaje string) (task.Task, 
 	}
 	t := task.Task{
 		Version:     task.Version,
+		ID:          id,
 		Titulo:      "prueba de integración de " + feature,
 		Porque:      "una tarea verde no implica un feature correcto: nadie prueba la costura entre tareas",
 		ListoCuando: comando,
-		TocarSolo:   []string{RutaIntegracion + "/**"},
+		TocarSolo:   []string{dir + "/**"},
 		DependeDe:   ids,
 		Usa:         firmas,
 		Peso:        "media",

@@ -211,7 +211,11 @@ func Apply(tasksDir string, s Spec, dryRun bool) ([]task.Task, error) {
 			tasksWithIDs[i].Notas = notasConReglas(s.Reglas, tasksWithIDs[i].Notas)
 		}
 	}
-	if issues := ValidatePlan(s, tasksWithIDs); len(issues) > 0 {
+	previas, err := task.List(tasksDir)
+	if err != nil {
+		return nil, err
+	}
+	if issues := ValidatePlan(s, tasksWithIDs, previas...); len(issues) > 0 {
 		var fatal []string
 		for _, issue := range issues {
 			if issue.Level == "error" {

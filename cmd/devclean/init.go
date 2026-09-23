@@ -256,7 +256,12 @@ func elegirModelosAMano(propuesta map[string]string, catalogo []string) (map[str
 	if err != nil || quiere != "mano" {
 		return nil, err
 	}
+	return elegirPorPeso(propuesta, catalogo)
+}
 
+// elegirPorPeso es el panel de los tres pesos: una lista del catálogo
+// real del CLI por peso. Cancelar un peso deja el de la propuesta.
+func elegirPorPeso(propuesta map[string]string, catalogo []string) (map[string]string, error) {
 	ops := make([]tui.Opcion, 0, len(catalogo))
 	for _, m := range catalogo {
 		ops = append(ops, tui.Opcion{ID: m, Etiqueta: m})

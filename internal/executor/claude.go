@@ -24,11 +24,12 @@ func (Claude) Available() error {
 	return nil
 }
 
-// Models devuelve los alias de modelo que acepta `claude --model`. El
-// CLI no expone un subcomando para listarlos, así que van fijos: son
-// alias estables, no ids de versión.
+// Models devuelve los modelos que acepta `claude --model`. El CLI no
+// expone un subcomando para listarlos, así que van fijos: primero los ids
+// de versión —el alias "opus" apunta a Opus 5, no a 5.5— y después los
+// alias, que siguen valiendo para los config.yml que ya los tienen.
 func (Claude) Models(context.Context) ([]string, error) {
-	return []string{"opus", "sonnet", "haiku"}, nil
+	return []string{"claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5", "claude-haiku-4-5", "opus", "sonnet", "haiku"}, nil
 }
 
 func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
