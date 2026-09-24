@@ -153,6 +153,10 @@ Con tareas previas en el repo, el planificador recibe el id que tendrá su
 primera tarea y las firmas que ya exponen las anteriores, para que
 `depende_de` y `usa` apunten a lo que de verdad existe.
 
+Mientras planea, devclean muestra cuánto tiempo lleva y lo que el modelo va
+haciendo: los comandos que corre, los archivos que lee y cuántos tokens
+escribió en cada turno.
+
 La respuesta cruda del planificador se guarda en `.devclean/plan-crudo.json`.
 Si la corrida falla después de planear (JSON mal formado, plan inválido) y la
 repites sin que se haya escrito ningún contrato, devclean reusa esa respuesta
