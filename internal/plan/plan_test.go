@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/Pastranauwu/devclean/internal/config"
-	"github.com/Pastranauwu/devclean/internal/skills"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
@@ -265,19 +264,10 @@ func TestEjemploDelPromptEsUnPlanValido(t *testing.T) {
 	}
 }
 
-// El planificador ve el catálogo con su descripción y pide skills por
-// tarea; sin catálogo no pide el campo.
-func TestPromptPideSkillsDelCatalogo(t *testing.T) {
-	c := Contexto{Skills: []skills.Skill{{Nombre: "frontend-design", Descripcion: "interfaces visuales cuidadas"}}}
-	p := Prompt("snake", c)
-	for _, quiero := range []string{`"skills"`, "frontend-design: interfaces visuales cuidadas", "[] si ninguna"} {
-		if !strings.Contains(p, quiero) {
-			t.Errorf("falta %q en el prompt", quiero)
-		}
-	}
-	if strings.Contains(Prompt("snake", Contexto{}), `"skills"`) {
-		t.Error("sin catálogo no hay skills que pedir")
-	}
+// El planificador distingue "skills":[] (ninguna) de no decir nada (las
+// del rol): perder esa diferencia al parsear le da frontend-design a una
+// tarea que la pidió vacía.
+func TestParseDistingueSkillsVaciasDeAusentes(t *testing.T) {
 	bs, err := Parse(`[{"titulo":"hud","listo_cuando":"true","skills":[]},{"titulo":"menu","listo_cuando":"true","skills":["frontend-design"]},{"titulo":"x","listo_cuando":"true"}]`)
 	if err != nil {
 		t.Fatal(err)

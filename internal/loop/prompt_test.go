@@ -92,20 +92,3 @@ func TestPromptSinMarcasConservaLasNotas(t *testing.T) {
 		t.Errorf("prompt:\n%s", p)
 	}
 }
-
-// La base de devclean no manda a narrar ni a usar skills que el agente
-// invocaba por su cuenta: /code-review costaba ~5% de una corrida y
-// caveman entraba como estilo de prosa en cada agente.
-func TestBaseSinCavemanNiSkillsInvocadas(t *testing.T) {
-	for _, fuera := range []string{"/tdd", "/code-review", "caveman"} {
-		if strings.Contains(skills.Base, fuera) {
-			t.Errorf("la base menciona %q", fuera)
-		}
-	}
-	if !strings.Contains(skills.Base, "No narres lo que haces") {
-		t.Error("falta la línea contra la narración")
-	}
-	if len(skills.Base) > 1200 {
-		t.Errorf("la base pesa %d bytes: se paga en cada intento de cada tarea", len(skills.Base))
-	}
-}

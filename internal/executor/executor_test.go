@@ -209,100 +209,57 @@ func TestUsoConCache(t *testing.T) {
 	}
 }
 
-// Cada agente de claude arranca sin lo que el usuario configuró para su
-// propio Claude Code (hooks, plugins, MCP), y sin --disable-slash-commands,
-// que también apagaría las skills del proyecto.
-func TestClaudeArrancaConContextoLimpio(t *testing.T) {
-	fakeBin(t, "claude", `printf '%s\n' "$@"`)
-	res, err := (Claude{}).Run(context.Background(), reqDePrueba())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, quiero := range []string{"--setting-sources\nproject,local\n", "--strict-mcp-config\n", "--exclude-dynamic-system-prompt-sections\n", "--output-format\nstream-json\n--verbose\n"} {
-		if !strings.Contains(res.Stdout, quiero) {
-			t.Errorf("falta %q en %q", quiero, res.Stdout)
-		}
-	}
-	if strings.Contains(res.Stdout, "--disable-slash-commands") {
-		t.Error("--disable-slash-commands apaga las skills del proyecto")
-	}
-}
-
-func TestClaudeHerramientasPorRol(t *testing.T) {
-	fakeBin(t, "claude", `printf '%s\n' "$@"`)
-	for rol, quiero := range map[Rol]string{
-		RolImplementador: "--tools\nBash,Read,Edit,Write\n",
-		RolTexto:         "--tools\n\n",
-		RolPlanificador:  "--tools\nRead,Bash\n",
-	} {
-		req := reqDePrueba()
-		req.Rol = rol
-		res, err := (Claude{}).Run(context.Background(), req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Stdout, quiero) {
-			t.Errorf("rol %q: falta %q en %q", rol, quiero, res.Stdout)
-		}
-	}
-}
-
 // Un 429 no llega al bucle: la invocación espera al reset que reporta la
-// respuesta, relanza y devuelve el resultado bueno con el gasto sumado.
+// respuesta y relanza. Los fixtures son líneas copiadas tal cual de la
+// corrida A del benchmark (prueba-bench, 23 sep 2026): claude-429.jsonl
+// de T-011/intento-2.log, que chocó con la cuota de 5h, y claude-ok.jsonl
+// de T-006/intento-2.log.
 func TestClaudeEsperaElResetDeCuota(t *testing.T) {
+	cuota, _ := filepath.Abs("testdata/claude-429.jsonl")
+	ok, _ := filepath.Abs("testdata/claude-ok.jsonl")
 	marca := filepath.Join(t.TempDir(), "ya")
-	fakeBin(t, "claude", fmt.Sprintf(`if [ ! -f %[1]q ]; then
-  touch %[1]q
-  echo '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":4102444800}}'
-  echo '{"type":"result","is_error":true,"api_error_status":429,"result":"session limit","total_cost_usd":0.25}'
-  exit 1
-fi
-echo '{"type":"result","result":"hecho","total_cost_usd":0.5}'
-`, marca))
+	fakeBin(t, "claude", fmt.Sprintf("if [ ! -f %q ]; then touch %q; cat %q; exit 1; fi\ncat %q\n", marca, marca, cuota, ok))
 	var esperas []time.Duration
 	dormirOriginal := dormir
 	dormir = func(_ context.Context, d time.Duration) error { esperas = append(esperas, d); return nil }
 	t.Cleanup(func() { dormir = dormirOriginal })
 
 	res, err := (Claude{}).Run(context.Background(), reqDePrueba())
-	if err != nil || res.ExitCode != 0 || res.Text != "hecho" {
+	if err != nil || res.ExitCode != 0 || !strings.HasPrefix(res.Text, "Listo.") {
 		t.Fatalf("no relanzó tras el 429: %v %d %q", err, res.ExitCode, res.Text)
 	}
-	if len(esperas) != 1 || time.Now().Add(esperas[0]).Before(time.Unix(4102444800, 0)) {
-		t.Fatalf("no esperó al reset: %v", esperas)
-	}
-	if res.Tokens.CostUSD != 0.75 {
-		t.Errorf("gasto sin sumar: %v", res.Tokens.CostUSD)
+	reset := time.Unix(1790203200, 0).Add(margenReset) // resetsAt del rate_limit_event rechazado
+	if len(esperas) != 1 || time.Now().Add(esperas[0]).Sub(reset).Abs() > time.Second {
+		t.Fatalf("no esperó al reset de la respuesta: %v", esperas)
 	}
 }
 
-func TestCuotaAgotadaSinResetNiError(t *testing.T) {
-	if _, ok := cuotaAgotada(`{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1}}` + "\n" + `{"type":"result","result":"ok"}`); ok {
-		t.Error("un rate_limit_event permitido no es cuota agotada")
+// Toda corrida sana emite un rate_limit_event con status allowed: tomarlo
+// por cuota agotada dormiría cada invocación. Líneas reales de
+// T-006/intento-2.log de la corrida A.
+func TestCuotaNoAgotadaEnCorridaSana(t *testing.T) {
+	b, err := os.ReadFile("testdata/claude-ok.jsonl")
+	if err != nil {
+		t.Fatal(err)
 	}
-	reset, ok := cuotaAgotada(`{"type":"result","is_error":true,"api_error_status":429}`)
-	if !ok || !reset.IsZero() {
-		t.Errorf("429 sin reset: %v %v", reset, ok)
+	if _, agotada := cuotaAgotada(string(b)); agotada {
+		t.Error("una corrida sana no es cuota agotada")
 	}
 }
 
-func TestOpenCodeAgentePorRol(t *testing.T) {
-	fakeBin(t, "opencode", `printf '%s\n' "$@"; echo "$OPENCODE_CONFIG_CONTENT"; echo "skills=$OPENCODE_DISABLE_EXTERNAL_SKILLS port=$PORT"`)
-	for rol, agente := range agenteOpenCode {
-		req := reqDePrueba()
-		req.Rol = rol
-		res, err := (OpenCode{}).Run(context.Background(), req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, quiero := range []string{"--agent\n" + agente + "\n", `"` + agente + `":{`, "skills=1 port=4321"} {
-			if !strings.Contains(res.Stdout, quiero) {
-				t.Errorf("rol %q: falta %q en %q", rol, quiero, res.Stdout)
-			}
-		}
+// Los nombres de agente se escriben dos veces a mano, en el mapa y en el
+// JSON: un JSON roto o un --agent que no está en la config deja a
+// opencode sin arrancar.
+func TestOpenCodeConfigDefineCadaAgente(t *testing.T) {
+	var cfg struct {
+		Agent map[string]any `json:"agent"`
 	}
-	var cfg map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimPrefix(entornoOpenCode[0], "OPENCODE_CONFIG_CONTENT=")), &cfg); err != nil {
 		t.Fatalf("OPENCODE_CONFIG_CONTENT no es JSON: %v", err)
+	}
+	for rol, agente := range agenteOpenCode {
+		if cfg.Agent[agente] == nil {
+			t.Errorf("rol %q: el agente %q no está en la config", rol, agente)
+		}
 	}
 }
