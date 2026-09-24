@@ -152,13 +152,6 @@ func prepararEntornoConCLI(cwd string, in io.Reader, entregar bool, cliPreferido
 	if cfg.Cli != ex.Name() {
 		cfg.Cli, guardar = ex.Name(), true
 	}
-	// claude se usa casi siempre con la sesión de la suscripción, sin
-	// key en el entorno: avisar de eso como si fuera un problema asusta
-	// sin motivo. Solo se menciona cuando el CLI de verdad la necesita.
-	if key := keyDe(cfg, ex.Name()); key != "" && os.Getenv(key) == "" && ex.Name() != "claude" {
-		out.Line("· sin %s en el entorno · si %s no está logueado, la corrida va a fallar", key, ex.Name())
-	}
-
 	// 6. modelos: ids que el CLI no reconoce mueren en cada intento
 	if catalogo, err := catalogoDe(ex); err == nil && len(catalogo) > 0 {
 		var declarados []string
@@ -286,18 +279,6 @@ func catalogoDe(ex executor.Executor) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return ex.Models(ctx)
-}
-
-// keyDe devuelve la variable de entorno de la key del CLI: la declarada
-// en config, o la habitual del proveedor.
-func keyDe(cfg config.Config, cli string) string {
-	if k := cfg.KeyEnvDe(cli); k != "" {
-		return k
-	}
-	if cli == "opencode" {
-		return "OPENCODE_API_KEY"
-	}
-	return "ANTHROPIC_API_KEY"
 }
 
 func preguntar(lector *bufio.Reader, msg string) string {
