@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -65,7 +66,43 @@ func (e OpenCode) Run(ctx context.Context, req Request) (Result, error) {
 	stdout, stderr, code, err := run(ctx, req, "opencode", args...)
 	res := Result{Stdout: stdout, Stderr: stderr, ExitCode: code}
 	res.FilesChanged, res.Text, res.Tokens = parseOpenCodeEvents(stdout)
+	if msg := errorDeOpenCode(stdout); msg != "" {
+		res.Stderr += msg + "\n"
+		if err != nil {
+			err = fmt.Errorf("opencode: %s", msg)
+		}
+	}
 	return res, err
+}
+
+// errorDeOpenCode saca el error del proveedor que opencode reporta como
+// evento en stdout (con --format json no escribe nada en stderr). Sin
+// esto un 402 de saldo agotado llegaba al usuario como "exit status 1".
+func errorDeOpenCode(stdout string) string {
+	for _, line := range strings.Split(stdout, "\n") {
+		var ev struct {
+			Type  string `json:"type"`
+			Error struct {
+				Name string `json:"name"`
+				Data struct {
+					Message    string `json:"message"`
+					StatusCode int    `json:"statusCode"`
+				} `json:"data"`
+			} `json:"error"`
+		}
+		if json.Unmarshal([]byte(strings.TrimSpace(line)), &ev) != nil || ev.Type != "error" {
+			continue
+		}
+		msg := ev.Error.Data.Message
+		if msg == "" {
+			msg = ev.Error.Name
+		}
+		if ev.Error.Data.StatusCode != 0 {
+			msg = fmt.Sprintf("%d %s", ev.Error.Data.StatusCode, msg)
+		}
+		return msg
+	}
+	return ""
 }
 
 // parseOpenCodeEvents walks the JSONL event stream best-effort:

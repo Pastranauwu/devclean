@@ -263,3 +263,19 @@ func TestOpenCodeConfigDefineCadaAgente(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCodeRunReportaErrorDelProveedor(t *testing.T) {
+	fixture, err := filepath.Abs("testdata/opencode-402.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeBin(t, "opencode", "cat '"+fixture+"'; exit 1")
+	res, err := OpenCode{}.Run(context.Background(), reqDePrueba())
+	want := "402 Upstream request failed: Insufficient account funds"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, quiero %q", err, want)
+	}
+	if !strings.Contains(res.Stderr, want) {
+		t.Errorf("Stderr = %q", res.Stderr)
+	}
+}
