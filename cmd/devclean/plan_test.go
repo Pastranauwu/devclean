@@ -239,3 +239,30 @@ func TestGeneradorRespetaTimeoutConfigurado(t *testing.T) {
 		t.Fatalf("request: %+v", ex.req)
 	}
 }
+
+type generadorContado struct{ n *int }
+
+func (g generadorContado) Generar(context.Context, string) (string, error) {
+	*g.n++
+	return "plan", nil
+}
+
+// un plan pagado que falló después (parseo, validación) se recompone
+// con el mismo texto: el modelo no se vuelve a llamar mientras el
+// prompt no cambie
+func TestPlanGuardadoReusaMismoPrompt(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(config.Dir(root), 0755); err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	g := planGuardado{generadorContado{&n}, root}
+	for _, p := range []string{"diseña snake", "diseña snake", "diseña tetris"} {
+		if texto, err := g.Generar(context.Background(), p); err != nil || texto != "plan" {
+			t.Fatalf("Generar(%q) = %q, %v", p, texto, err)
+		}
+	}
+	if n != 2 {
+		t.Errorf("llamadas al modelo = %d, quiero 2", n)
+	}
+}

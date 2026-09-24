@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -90,7 +92,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 	var borradores []plan.Borrador
 	generar := func() error {
 		var err error
-		borradores, err = plan.Generar(context.Background(), generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium"}, ctx, frase)
+		borradores, err = plan.Generar(context.Background(), planGuardado{generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium"}, root}, ctx, frase)
 		return err
 	}
 	if esTUI() {
@@ -647,6 +649,34 @@ func (g generadorPlan) Generar(ctx context.Context, prompt string) (string, erro
 		return "", err
 	}
 	return res.Text, nil
+}
+
+// planGuardado reusa la respuesta cruda del planificador mientras el
+// prompt sea idéntico, es decir, mientras ningún contrato se haya escrito
+// (PrimerID y Expuestas cambian en cuanto se escribe uno). Un plan
+// pagado que falló por parseo o validación se recompone con el código
+// arreglado en vez de replanearse desde cero.
+type planGuardado struct {
+	gen  plan.Generador
+	root string
+}
+
+func (g planGuardado) Generar(ctx context.Context, prompt string) (string, error) {
+	ruta := filepath.Join(config.Dir(g.root), "plan-crudo.json")
+	suma := fmt.Sprintf("%x", sha256.Sum256([]byte(prompt)))
+	var guardado struct{ Prompt, Texto string }
+	if b, err := os.ReadFile(ruta); err == nil && json.Unmarshal(b, &guardado) == nil && guardado.Prompt == suma {
+		out.Line("· reusando la respuesta guardada del planificador · borra .devclean/plan-crudo.json para replanear")
+		return guardado.Texto, nil
+	}
+	texto, err := g.gen.Generar(ctx, prompt)
+	if err == nil && strings.TrimSpace(texto) != "" {
+		guardado.Prompt, guardado.Texto = suma, texto
+		if b, errJSON := json.Marshal(guardado); errJSON == nil {
+			_ = os.WriteFile(ruta, b, 0o644)
+		}
+	}
+	return texto, err
 }
 
 // opcionesDePlan arma la lista que ve el humano antes de aprobar. El

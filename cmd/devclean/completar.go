@@ -65,7 +65,7 @@ func completarSpec(root string, s *spec.Spec) error {
 	var bs []plan.Borrador
 	generar := func() error {
 		var err error
-		bs, err = plan.Completar(context.Background(), generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium"}, pctx, s.Feature, s.Reglas, s.Tasks)
+		bs, err = plan.Completar(context.Background(), planGuardado{generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium"}, root}, pctx, s.Feature, s.Reglas, s.Tasks)
 		return err
 	}
 	if esTUI() {
@@ -138,7 +138,7 @@ func planearRequirements(root string, s *spec.Spec) error {
 	modelo := config.ModeloRol(cfg, "planificador")
 	generar := func() error {
 		var err error
-		bs, err = plan.Generar(context.Background(), generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium"}, pctx, pedido.String())
+		bs, err = plan.Generar(context.Background(), planGuardado{generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium"}, root}, pctx, pedido.String())
 		return err
 	}
 	if esTUI() {
