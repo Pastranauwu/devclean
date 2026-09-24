@@ -12,6 +12,29 @@ import (
 // OpenCode wraps the opencode CLI (https://opencode.ai).
 type OpenCode struct{}
 
+// agenteOpenCode es el --agent de cada rol, definido en entornoOpenCode.
+var agenteOpenCode = map[Rol]string{
+	RolImplementador: "devclean-implementador",
+	RolTexto:         "devclean-texto",
+	RolPlanificador:  "devclean-planificador",
+}
+
+// entornoOpenCode trae los agentes de devclean sin tocar la config del
+// usuario (proveedores y credenciales siguen siendo los suyos). Medido
+// con un "responde ok": el agente por defecto arranca con 10,3k tokens,
+// el implementador con 5,8k y el de texto con 2,1k. Las skills del
+// usuario (~/.config/opencode/skills, token-saver-caveman incluida)
+// viajan en la descripción de la herramienta skill: apagarla las saca;
+// las variables DISABLE cubren las de .claude y las externas.
+var entornoOpenCode = []string{
+	`OPENCODE_CONFIG_CONTENT={"agent":{` +
+		`"devclean-implementador":{"mode":"primary","tools":{"webfetch":false,"task":false,"todowrite":false,"todoread":false,"skill":false}},` +
+		`"devclean-texto":{"mode":"primary","tools":{"*":false}},` +
+		`"devclean-planificador":{"mode":"primary","tools":{"*":false,"read":true,"bash":true}}}}`,
+	"OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1",
+	"OPENCODE_DISABLE_EXTERNAL_SKILLS=1",
+}
+
 func (OpenCode) Name() string { return "opencode" }
 
 func (OpenCode) Available() error {
@@ -34,10 +57,11 @@ func (OpenCode) Models(ctx context.Context) ([]string, error) {
 }
 
 func (e OpenCode) Run(ctx context.Context, req Request) (Result, error) {
-	args := []string{"run", req.Prompt, "--dir", req.RoomPath, "--format", "json", "--auto"}
+	args := []string{"run", req.Prompt, "--dir", req.RoomPath, "--format", "json", "--auto", "--agent", agenteOpenCode[req.Rol]}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
+	req.Env = append(append([]string(nil), req.Env...), entornoOpenCode...)
 	stdout, stderr, code, err := run(ctx, req, "opencode", args...)
 	res := Result{Stdout: stdout, Stderr: stderr, ExitCode: code}
 	res.FilesChanged, res.Text, res.Tokens = parseOpenCodeEvents(stdout)

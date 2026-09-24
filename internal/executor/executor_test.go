@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -282,5 +283,26 @@ func TestCuotaAgotadaSinResetNiError(t *testing.T) {
 	reset, ok := cuotaAgotada(`{"type":"result","is_error":true,"api_error_status":429}`)
 	if !ok || !reset.IsZero() {
 		t.Errorf("429 sin reset: %v %v", reset, ok)
+	}
+}
+
+func TestOpenCodeAgentePorRol(t *testing.T) {
+	fakeBin(t, "opencode", `printf '%s\n' "$@"; echo "$OPENCODE_CONFIG_CONTENT"; echo "skills=$OPENCODE_DISABLE_EXTERNAL_SKILLS port=$PORT"`)
+	for rol, agente := range agenteOpenCode {
+		req := reqDePrueba()
+		req.Rol = rol
+		res, err := (OpenCode{}).Run(context.Background(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, quiero := range []string{"--agent\n" + agente + "\n", `"` + agente + `":{`, "skills=1 port=4321"} {
+			if !strings.Contains(res.Stdout, quiero) {
+				t.Errorf("rol %q: falta %q en %q", rol, quiero, res.Stdout)
+			}
+		}
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(entornoOpenCode[0], "OPENCODE_CONFIG_CONTENT=")), &cfg); err != nil {
+		t.Fatalf("OPENCODE_CONFIG_CONTENT no es JSON: %v", err)
 	}
 }

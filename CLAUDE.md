@@ -55,8 +55,8 @@ devclean actúa como una **gerencia técnica de software**:
 - **Control de Versiones:** `git` (CLI nativo).
 - **Gestión de PRs:** `gh` CLI para GitHub, con fallback automático a entrega local en rama `devclean/_entrega` si el repositorio no tiene remoto `origin`.
 - **Motores de Agentes Integrados (Ejecutores):**
-  - **Claude Code (`claude`):** Se ejecuta en modo print/headless (`claude -p <prompt> --output-format json --permission-mode bypassPermissions [--model <modelo>]`).
-  - **OpenCode (`opencode`):** Se ejecuta en modo no interactivo (`opencode run <prompt> --dir <cuarto> --format json --auto [--model <modelo>]`).
+  - **Claude Code (`claude`):** Se ejecuta en modo print/headless (`claude -p <prompt> --output-format stream-json --verbose --permission-mode bypassPermissions <contexto limpio> --tools <por rol> [--model <modelo>]`). Herramientas por rol (`executor.Rol`): implementador `Bash,Read,Edit,Write`, planificador `Read,Bash`, examinador/revisor/constitución ninguna. Un 429 espera al `resetsAt` de la respuesta y relanza la misma invocación: no gasta intento ni escala.
+  - **OpenCode (`opencode`):** Se ejecuta en modo no interactivo (`opencode run <prompt> --dir <cuarto> --format json --auto --agent devclean-<rol> [--model <modelo>]`). Los agentes llegan por `OPENCODE_CONFIG_CONTENT` sin tocar la config del usuario: el implementador sin webfetch/task/todo/skill, el de texto sin herramientas, el planificador con read y bash. Apagar `skill` saca las skills de `~/.config/opencode/skills`.
 - **Parseo YAML:** `gopkg.in/yaml.v3` para el spec humano (`internal/spec/yaml.go`, YAML 1.2 completo con anidación real). `internal/kv` sigue siendo el parser del frontmatter de contratos (`internal/task`), de `config` y del `Marshal` del spec.
 - **Filosofía de Dependencias:** Cero frameworks pesados. Una sola dependencia de parseo (`yaml.v3`), el resto stdlib. Cero servidores escuchando en red.
 
