@@ -149,6 +149,15 @@ Los arrays de contratos anteriores siguen siendo compatibles. Las decisiones
 arquitectónicas son instrucciones para los agentes; las verificaciones de
 alcance, interfaces y pruebas siguen siendo las compuertas ejecutables.
 
+Con tareas previas en el repo, el planificador recibe el id que tendrá su
+primera tarea y las firmas que ya exponen las anteriores, para que
+`depende_de` y `usa` apunten a lo que de verdad existe.
+
+La respuesta cruda del planificador se guarda en `.devclean/plan-crudo.json`.
+Si la corrida falla después de planear (JSON mal formado, plan inválido) y la
+repites sin que se haya escrito ningún contrato, devclean reusa esa respuesta
+en vez de pagar otro plan. Para forzar uno nuevo, borra ese archivo.
+
 Las tareas nuevas tienen `limite_lineas: 0` (sin tope). El modelo no puede
 imponer un límite ni cambiar uno que hayas declarado en el spec o contrato.
 Los contratos existentes con un valor positivo conservan ese límite; puedes
