@@ -75,6 +75,7 @@ func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	}
 	var res Result
 	espera := esperaSinReset
+	req.avanceDe = avanceClaude(req.RoomPath)
 	for {
 		stdout, stderr, code, err := run(ctx, req, "claude", args...)
 		text, uso := parseClaudeStream(stdout)
@@ -89,6 +90,9 @@ func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 			espera = min(2*espera, time.Hour)
 		}
 		res.Stderr += fmt.Sprintf("cuota agotada · se retoma a las %s\n", hasta.Format("15:04:05"))
+		if req.Avance != nil {
+			req.Avance("cuota agotada · se retoma a las " + hasta.Format("15:04:05"))
+		}
 		if err := dormir(ctx, time.Until(hasta)); err != nil {
 			return res, err
 		}
@@ -253,4 +257,46 @@ func parseClaudeStream(stdout string) (string, Usage) {
 		u.Turns = numTurns // salida sin eventos por turno
 	}
 	return texto, u
+}
+
+// avanceClaude saca de cada mensaje del asistente lo que hace: comandos,
+// archivos leídos o editados y su texto, recortado.
+func avanceClaude(dir string) func(string) string {
+	return func(linea string) string {
+		var ev struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content []struct {
+					Type  string         `json:"type"`
+					Name  string         `json:"name"`
+					Text  string         `json:"text"`
+					Input map[string]any `json:"input"`
+				} `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal([]byte(linea), &ev) != nil || ev.Type != "assistant" {
+			return ""
+		}
+		var partes []string
+		for _, c := range ev.Message.Content {
+			switch c.Type {
+			case "tool_use":
+				if cmd, ok := c.Input["command"].(string); ok {
+					partes = append(partes, "$ "+recortar(cmd, 100))
+				} else if f, ok := c.Input["file_path"].(string); ok {
+					partes = append(partes, strings.ToLower(c.Name)+" "+strings.TrimPrefix(strings.TrimPrefix(f, dir), "/"))
+				} else {
+					partes = append(partes, c.Name)
+				}
+			case "text":
+				t := strings.TrimSpace(c.Text)
+				if strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") || strings.HasPrefix(t, "```") {
+					partes = append(partes, fmt.Sprintf("respuesta escrita · %d caracteres", len(t)))
+				} else if t != "" {
+					partes = append(partes, recortar(t, 100))
+				}
+			}
+		}
+		return strings.Join(partes, " · ")
+	}
 }

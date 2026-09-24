@@ -1,28 +1,46 @@
 package tui
 
 import (
+	"fmt"
+	"strings"
+	"time"
+
 	"github.com/charmbracelet/bubbletea"
 )
 
 type esperarMsg struct{ err error }
 
+type avanceMsg string
+
+// maxAvances son los últimos avances que se ven bajo el spinner.
+const maxAvances = 6
+
 type esperarModel struct {
-	titulo string
-	ch     chan error
-	tick   int
-	err    error
-	fin    bool
+	titulo  string
+	ch      chan error
+	tick    int
+	err     error
+	fin     bool
+	inicio  time.Time
+	avances []string
 }
 
 // Esperar muestra un spinner con `titulo` mientras `trabajo` corre en
 // segundo plano. No es una barra de progreso inventada: no se
 // sabe cuánto falta, así que solo gira. Devuelve el error de `trabajo`.
 func Esperar(titulo string, trabajo func() error) error {
-	ch := make(chan error, 1)
-	go func() { ch <- trabajo() }()
+	return EsperarConAvances(titulo, func(func(string)) error { return trabajo() })
+}
 
-	m := esperarModel{titulo: titulo, ch: ch}
-	res, err := tea.NewProgram(m).Run()
+// EsperarConAvances es Esperar con el tiempo transcurrido y los últimos
+// avances que `trabajo` reporte: un planificador de diez minutos que
+// solo gira no deja ver si trabaja o alucina.
+func EsperarConAvances(titulo string, trabajo func(avance func(string)) error) error {
+	ch := make(chan error, 1)
+	m := esperarModel{titulo: titulo, ch: ch, inicio: time.Now()}
+	p := tea.NewProgram(m)
+	go func() { ch <- trabajo(func(s string) { p.Send(avanceMsg(s)) }) }()
+	res, err := p.Run()
 	if err != nil {
 		return err
 	}
@@ -45,6 +63,12 @@ func (m esperarModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.tick++
 		return m, tickCmd()
+	case avanceMsg:
+		m.avances = append(m.avances, string(msg))
+		if len(m.avances) > maxAvances {
+			m.avances = m.avances[len(m.avances)-maxAvances:]
+		}
+		return m, nil
 	case esperarMsg:
 		m.fin = true
 		m.err = msg.err
@@ -60,7 +84,11 @@ func (m esperarModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m esperarModel) View() string {
 	g := estiloEspera.Render(spinnerFrames[m.tick%len(spinnerFrames)])
-	return Logo(80) + "\n" + caja(g+" "+estiloTinta.Render(m.titulo))
+	cuerpo := g + " " + estiloTinta.Render(m.titulo) + " " + estiloApagado.Render("· "+Duracion(time.Since(m.inicio)))
+	if len(m.avances) > 0 {
+		cuerpo += "\n\n" + estiloApagado.Render(strings.Join(m.avances, "\n"))
+	}
+	return Logo(80) + "\n" + caja(cuerpo)
 }
 
 var errInterrumpido = errInterrumpidoT{}
@@ -68,3 +96,12 @@ var errInterrumpido = errInterrumpidoT{}
 type errInterrumpidoT struct{}
 
 func (errInterrumpidoT) Error() string { return "interrumpido" }
+
+// Duracion escribe d al segundo: "4m07s".
+func Duracion(d time.Duration) string {
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return d.String()
+	}
+	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+}

@@ -69,6 +69,7 @@ func (e OpenCode) Run(ctx context.Context, req Request) (Result, error) {
 		args = append(args, "--model", req.Model)
 	}
 	req.Env = append(append([]string(nil), req.Env...), entornoOpenCode...)
+	req.avanceDe = avanceOpenCode(req.RoomPath)
 	stdout, stderr, code, err := run(ctx, req, "opencode", args...)
 	res := Result{Stdout: stdout, Stderr: stderr, ExitCode: code}
 	res.FilesChanged, res.Text, res.Tokens = parseOpenCodeEvents(stdout)
@@ -109,6 +110,63 @@ func errorDeOpenCode(stdout string) string {
 		return msg
 	}
 	return ""
+}
+
+// avanceOpenCode traduce los eventos de opencode a avances legibles: qué
+// comando corre, qué archivo lee y cuánto escribió cada turno. Es lo que
+// deja ver si el planificador trabaja sobre el repo o está alucinando.
+func avanceOpenCode(dir string) func(string) string {
+	turno := 0
+	return func(linea string) string {
+		var ev struct {
+			Type string `json:"type"`
+			Part struct {
+				Tool   string `json:"tool"`
+				Text   string `json:"text"`
+				Reason string `json:"reason"`
+				State  struct {
+					Input map[string]any `json:"input"`
+				} `json:"state"`
+				Tokens struct {
+					Output    int `json:"output"`
+					Reasoning int `json:"reasoning"`
+				} `json:"tokens"`
+			} `json:"part"`
+		}
+		if json.Unmarshal([]byte(linea), &ev) != nil {
+			return ""
+		}
+		switch ev.Type {
+		case "tool_use":
+			in := ev.Part.State.Input
+			if c, ok := in["command"].(string); ok {
+				return "$ " + recortar(c, 100)
+			}
+			if f, ok := in["filePath"].(string); ok {
+				return "lee " + strings.TrimPrefix(strings.TrimPrefix(f, dir), "/")
+			}
+			return ev.Part.Tool
+		case "text":
+			t := strings.TrimSpace(ev.Part.Text)
+			if strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") || strings.HasPrefix(t, "```") {
+				return fmt.Sprintf("respuesta escrita · %d caracteres", len(t))
+			}
+			return recortar(t, 100)
+		case "step_finish":
+			turno++
+			msg := fmt.Sprintf("turno %d · %d tokens escritos", turno, ev.Part.Tokens.Output)
+			if ev.Part.Tokens.Reasoning > 0 {
+				msg += fmt.Sprintf(" · %d razonando", ev.Part.Tokens.Reasoning)
+			}
+			if ev.Part.Reason == "length" {
+				msg += " · se agotó la salida"
+			}
+			return msg
+		case "error":
+			return "error · " + errorDeOpenCode(linea)
+		}
+		return ""
+	}
 }
 
 // parseOpenCodeEvents walks the JSONL event stream best-effort:

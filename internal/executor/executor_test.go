@@ -279,3 +279,27 @@ func TestOpenCodeRunReportaErrorDelProveedor(t *testing.T) {
 		t.Errorf("Stderr = %q", res.Stderr)
 	}
 }
+
+// stream real del planificador: lo que reporta tiene que dejar ver qué
+// corrió, qué leyó y cuánto escribió cada turno
+func TestOpenCodeRunReportaAvances(t *testing.T) {
+	fixture, err := filepath.Abs("testdata/opencode-planificador.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cuarto := t.TempDir()
+	fakeBin(t, "opencode", "sed 's#/cuarto#"+cuarto+"#g' '"+fixture+"'")
+	req := reqDePrueba()
+	req.RoomPath = cuarto
+	var avances []string
+	req.Avance = func(s string) { avances = append(avances, s) }
+	if _, err := (OpenCode{}).Run(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(avances, "\n")
+	for _, want := range []string{"$ ls -la", "lee devclean.spec.yml", "turno 1 ·", "respuesta escrita · 15 caracteres"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("falta %q en avances:\n%s", want, got)
+		}
+	}
+}

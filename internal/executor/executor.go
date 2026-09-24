@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,13 @@ type Request struct {
 	// Rol decide qué herramientas recibe el agente; vacío es el
 	// implementador.
 	Rol Rol
+	// Avance recibe, mientras el CLI corre, lo importante que va
+	// haciendo (un comando, un archivo leído, un turno terminado). Nil
+	// no reporta nada.
+	Avance func(string)
+	// avanceDe traduce una línea de stdout del CLI a un avance; "" la
+	// ignora. Lo pone cada adaptador según su formato de eventos.
+	avanceDe func(string) string
 }
 
 // Rol es para qué se invoca al agente. Cada herramienta que el CLI carga
@@ -107,6 +115,13 @@ func run(ctx context.Context, req Request, name string, args ...string) (string,
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	if req.Avance != nil && req.avanceDe != nil {
+		cmd.Stdout = io.MultiWriter(&stdout, &lineas{fn: func(l string) {
+			if msg := req.avanceDe(l); msg != "" {
+				req.Avance(msg)
+			}
+		}})
+	}
 	// Sin WaitDelay, matar el proceso por timeout no basta: si el CLI
 	// dejó un nieto vivo con el pipe abierto, cmd.Wait se queda esperando
 	// para siempre y `timeout_agente` deja de ser un límite. Con esto se
@@ -125,6 +140,34 @@ func run(ctx context.Context, req Request, name string, args ...string) (string,
 		return stdout.String(), stderr.String(), -1, err
 	}
 	return stdout.String(), stderr.String(), 0, nil
+}
+
+// lineas parte en líneas lo que el CLI va escribiendo y se las pasa a
+// fn a medida que se completan.
+type lineas struct {
+	buf []byte
+	fn  func(string)
+}
+
+func (l *lineas) Write(p []byte) (int, error) {
+	l.buf = append(l.buf, p...)
+	for {
+		i := bytes.IndexByte(l.buf, '\n')
+		if i < 0 {
+			return len(p), nil
+		}
+		l.fn(string(l.buf[:i]))
+		l.buf = l.buf[i+1:]
+	}
+}
+
+// recortar deja s en una línea de a lo sumo n runas.
+func recortar(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > n {
+		return string(r[:n-1]) + "…"
+	}
+	return s
 }
 
 // modelosDeCLI corre un subcomando que lista modelos, una línea cada

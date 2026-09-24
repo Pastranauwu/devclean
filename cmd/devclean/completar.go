@@ -9,7 +9,6 @@ import (
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/spec"
 	"github.com/Pastranauwu/devclean/internal/task"
-	"github.com/Pastranauwu/devclean/internal/tui"
 )
 
 // faltaContrato reporta si una tarea del spec rápido no llega a contrato:
@@ -63,16 +62,11 @@ func completarSpec(root string, s *spec.Spec) error {
 	}
 
 	var bs []plan.Borrador
-	generar := func() error {
+	err = esperarPlan(fmt.Sprintf("completando %d tareas · %s", n, modelo), func(avance func(string)) error {
 		var err error
-		bs, err = plan.Completar(context.Background(), planGuardado{generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium"}, root}, pctx, s.Feature, s.Reglas, s.Tasks)
+		bs, err = plan.Completar(context.Background(), planGuardado{generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium", avance: avance}, root}, pctx, s.Feature, s.Reglas, s.Tasks)
 		return err
-	}
-	if esTUI() {
-		err = tui.Esperar(fmt.Sprintf("completando %d tareas · %s", n, modelo), generar)
-	} else {
-		err = generar()
-	}
+	})
 	if err != nil {
 		return err
 	}
@@ -136,17 +130,11 @@ func planearRequirements(root string, s *spec.Spec) error {
 	}
 	var bs []plan.Borrador
 	modelo := config.ModeloRol(cfg, "planificador")
-	generar := func() error {
+	err = esperarPlan(fmt.Sprintf("diseñando arquitectura y tareas · %s · %d requisitos", modelo, len(s.Requirements)), func(avance func(string)) error {
 		var err error
-		bs, err = plan.Generar(context.Background(), planGuardado{generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium"}, root}, pctx, pedido.String())
+		bs, err = plan.Generar(context.Background(), planGuardado{generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium", avance: avance}, root}, pctx, pedido.String())
 		return err
-	}
-	if esTUI() {
-		err = tui.Esperar("diseñando arquitectura y tareas · "+modelo, generar)
-	} else {
-		out.Line("· diseñando arquitectura y tareas · %s · %d requisitos", modelo, len(s.Requirements))
-		err = generar()
-	}
+	})
 	if err != nil {
 		return err
 	}

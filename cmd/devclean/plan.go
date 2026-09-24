@@ -90,16 +90,11 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 	}
 
 	var borradores []plan.Borrador
-	generar := func() error {
+	err = esperarPlan("generando plan · "+modelo, func(avance func(string)) error {
 		var err error
-		borradores, err = plan.Generar(context.Background(), planGuardado{generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium"}, root}, ctx, frase)
+		borradores, err = plan.Generar(context.Background(), planGuardado{generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium", avance: avance}, root}, ctx, frase)
 		return err
-	}
-	if esTUI() {
-		err = tui.Esperar("generando plan · "+modelo, generar)
-	} else {
-		err = generar()
-	}
+	})
 	if err != nil {
 		return err
 	}
@@ -627,6 +622,7 @@ type generadorPlan struct {
 	modelo string
 	root   string
 	effort string
+	avance func(string) // nil: sin avances
 }
 
 func (g generadorPlan) Generar(ctx context.Context, prompt string) (string, error) {
@@ -641,6 +637,7 @@ func (g generadorPlan) Generar(ctx context.Context, prompt string) (string, erro
 		Model:    g.modelo,
 		Timeout:  timeout,
 		Effort:   g.effort,
+		Avance:   g.avance,
 	})
 	if err != nil {
 		if res.ExitCode == 124 {
@@ -649,6 +646,17 @@ func (g generadorPlan) Generar(ctx context.Context, prompt string) (string, erro
 		return "", err
 	}
 	return res.Text, nil
+}
+
+// esperarPlan corre el planificador mostrando el tiempo que lleva y sus
+// avances: en la TUI bajo el spinner, en --plain como líneas.
+func esperarPlan(titulo string, trabajo func(avance func(string)) error) error {
+	if esTUI() {
+		return tui.EsperarConAvances(titulo, trabajo)
+	}
+	out.Line("· %s", titulo)
+	inicio := time.Now()
+	return trabajo(func(s string) { out.Line("  %s · %s", tui.Duracion(time.Since(inicio)), s) })
 }
 
 // planGuardado reusa la respuesta cruda del planificador mientras el
