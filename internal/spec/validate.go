@@ -49,6 +49,10 @@ func ValidatePlan(s Spec, tasks []task.Task, previas ...task.Task) []Issue {
 			exposed[x] = t.ID
 		}
 	}
+	canonicas := map[string]bool{}
+	for x := range exposed {
+		canonicas[firmaCanonica(x)] = true
+	}
 	for _, t := range tasks {
 		for _, d := range t.DependeDe {
 			if _, ok := byID[d]; !ok && !previa[d] {
@@ -56,7 +60,7 @@ func ValidatePlan(s Spec, tasks []task.Task, previas ...task.Task) []Issue {
 			}
 		}
 		for _, u := range t.Usa {
-			if exposed[u] == "" {
+			if exposed[u] == "" && !canonicas[firmaCanonica(u)] {
 				name := task.NombreDeFirma(u)
 				var similar string
 				for signature := range exposed {
@@ -159,4 +163,25 @@ func dedupeIssues(xs []Issue) []Issue {
 		}
 	}
 	return out
+}
+
+// firmaCanonica quita de una firma lo que no cambia el contrato para
+// quien la consume: la palabra clave de declaración ("def", "func") y
+// la lista de bases de una clase. El modelo expuso "class Garment(Base):
+// id, ..." y en usa copió "class Garment: id, ...", y el plan entero se
+// rechazaba por incompatible. Los tipos sí se comparan: "Iterator" y
+// "Generator" siguen siendo firmas distintas.
+func firmaCanonica(firma string) string {
+	s := strings.Join(strings.Fields(firma), " ")
+	for _, kw := range []string{"async def ", "def ", "func ", "function "} {
+		s = strings.TrimPrefix(s, kw)
+	}
+	if strings.HasPrefix(s, "class ") {
+		if i := strings.IndexAny(s, "(:"); i >= 0 && s[i] == '(' {
+			if j := strings.Index(s[i:], ")"); j >= 0 {
+				s = s[:i] + s[i+j+1:]
+			}
+		}
+	}
+	return s
 }

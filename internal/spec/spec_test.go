@@ -349,6 +349,25 @@ func TestValidatePlanDetectaErroresEstructurales(t *testing.T) {
 	}
 }
 
+// el caso del closet: la base de la clase y "def" no cambian el
+// contrato; el tipo de retorno sí
+func TestValidatePlanComparaFirmasSinBasesNiDef(t *testing.T) {
+	ts := []task.Task{
+		{ID: "T-001", Titulo: "a", ListoCuando: "true", TocarSolo: []string{"a.py"}, Expone: []string{"class Garment(Base): id, filename", "get_db() -> Iterator[Session]"}},
+		{ID: "T-002", Titulo: "b", ListoCuando: "true", TocarSolo: []string{"b.py"}, DependeDe: []string{"T-001"}, Usa: []string{"class Garment: id, filename", "def get_db() -> Iterator[Session]"}},
+		{ID: "T-003", Titulo: "c", ListoCuando: "true", TocarSolo: []string{"c.py"}, DependeDe: []string{"T-001"}, Usa: []string{"get_db() -> Generator[Session]"}},
+	}
+	var errs []string
+	for _, i := range ValidatePlan(Spec{}, ts) {
+		if i.Level == "error" {
+			errs = append(errs, i.Message)
+		}
+	}
+	if len(errs) != 1 || !strings.Contains(errs[0], "T-003") {
+		t.Errorf("errores = %v, quiero solo el Generator de T-003", errs)
+	}
+}
+
 func TestMarshalRoundtripAgentesYShip(t *testing.T) {
 	raw := `version: 1
 feature: "Roundtrip"
