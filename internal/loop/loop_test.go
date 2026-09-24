@@ -106,6 +106,32 @@ func TestRunVerdeEnSegundoIntento(t *testing.T) {
 	}
 }
 
+// Escalar o retomar vuelve a llamar a Run sobre la misma tarea: el
+// intento nuevo sigue la numeración y no pisa el log del anterior.
+func TestRunNumeraIntentosTrasEscalar(t *testing.T) {
+	root := repoConCommit(t)
+	tk := tareaDePrueba()
+	tk.ListoCuando = "false"
+	tk.LimiteIntentos = 1
+	opts := optsDePrueba(t, root, &agenteFalso{nombre: "falso"}, tk)
+	for _, modelo := range []string{"falso-1", "falso-2"} {
+		opts.Model = modelo
+		if _, err := Run(context.Background(), opts); err != nil {
+			t.Fatalf("Run %s: %v", modelo, err)
+		}
+	}
+	attempts, err := ReadAttempts(root, "T-001")
+	if err != nil || len(attempts) != 2 {
+		t.Fatalf("attempts = %v, %v", attempts, err)
+	}
+	if attempts[1].Intento != 2 || attempts[1].Log != ".devclean/runs/T-001/intento-2.log" {
+		t.Errorf("el intento escalado no siguió la cuenta: %d %s", attempts[1].Intento, attempts[1].Log)
+	}
+	if b, err := os.ReadFile(LogPath(root, "T-001", 1)); err != nil || !strings.HasPrefix(string(b), "=== intento 1 ") {
+		t.Errorf("se pisó intento-1.log: %v", err)
+	}
+}
+
 func TestRunAgotaIntentos(t *testing.T) {
 	root := repoConCommit(t)
 	ag := &agenteFalso{nombre: "falso"}

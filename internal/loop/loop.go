@@ -213,6 +213,10 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
+	// escalar de modelo o retomar vuelve a llamar a Run: el límite es por
+	// llamada, pero el número que se registra sigue la cuenta de la tarea
+	// para que un intento nuevo no pise el intento-N.log de otro
+	previos, _ := ReadAttempts(o.Root, o.Task.ID)
 
 	// el latido es el único estado en vivo: attempts.jsonl no se escribe
 	// hasta que el intento termina, y un intento puede durar veinte
@@ -309,7 +313,8 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			Env:          o.Env,
 		}
 		res, agentErr := o.Agent.Run(ctx, req)
-		logRel := guardarLog(o.Root, o.Task.ID, intento, req.Prompt, res, agentErr)
+		numero := len(previos) + intento
+		logRel := guardarLog(o.Root, o.Task.ID, numero, req.Prompt, res, agentErr)
 
 		// la recursión agotó sus caminos: no hay que correr listo_cuando
 		// ni gastar los intentos restantes, se detiene con su motivo
@@ -340,7 +345,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 
 		// el punto de restauración se guarda antes de verificar, para
 		// que el trabajo verde quede commiteado y ship pueda aplanarlo
-		if err := commitWip(o.Room.Path, o.Task.ID, intento); err != nil {
+		if err := commitWip(o.Room.Path, o.Task.ID, numero); err != nil {
 			return Outcome{}, err
 		}
 
@@ -374,7 +379,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 
 		codigoAgente := res.ExitCode
 		a := Attempt{
-			Intento:                  intento,
+			Intento:                  numero,
 			Inicio:                   inicio,
 			Fin:                      fin,
 			SalidaCodigo:             code,
