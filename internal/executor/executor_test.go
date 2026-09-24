@@ -245,3 +245,42 @@ func TestClaudeHerramientasPorRol(t *testing.T) {
 		}
 	}
 }
+
+// Un 429 no llega al bucle: la invocación espera al reset que reporta la
+// respuesta, relanza y devuelve el resultado bueno con el gasto sumado.
+func TestClaudeEsperaElResetDeCuota(t *testing.T) {
+	marca := filepath.Join(t.TempDir(), "ya")
+	fakeBin(t, "claude", fmt.Sprintf(`if [ ! -f %[1]q ]; then
+  touch %[1]q
+  echo '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":4102444800}}'
+  echo '{"type":"result","is_error":true,"api_error_status":429,"result":"session limit","total_cost_usd":0.25}'
+  exit 1
+fi
+echo '{"type":"result","result":"hecho","total_cost_usd":0.5}'
+`, marca))
+	var esperas []time.Duration
+	dormirOriginal := dormir
+	dormir = func(_ context.Context, d time.Duration) error { esperas = append(esperas, d); return nil }
+	t.Cleanup(func() { dormir = dormirOriginal })
+
+	res, err := (Claude{}).Run(context.Background(), reqDePrueba())
+	if err != nil || res.ExitCode != 0 || res.Text != "hecho" {
+		t.Fatalf("no relanzó tras el 429: %v %d %q", err, res.ExitCode, res.Text)
+	}
+	if len(esperas) != 1 || time.Now().Add(esperas[0]).Before(time.Unix(4102444800, 0)) {
+		t.Fatalf("no esperó al reset: %v", esperas)
+	}
+	if res.Tokens.CostUSD != 0.75 {
+		t.Errorf("gasto sin sumar: %v", res.Tokens.CostUSD)
+	}
+}
+
+func TestCuotaAgotadaSinResetNiError(t *testing.T) {
+	if _, ok := cuotaAgotada(`{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1}}` + "\n" + `{"type":"result","result":"ok"}`); ok {
+		t.Error("un rate_limit_event permitido no es cuota agotada")
+	}
+	reset, ok := cuotaAgotada(`{"type":"result","is_error":true,"api_error_status":429}`)
+	if !ok || !reset.IsZero() {
+		t.Errorf("429 sin reset: %v %v", reset, ok)
+	}
+}

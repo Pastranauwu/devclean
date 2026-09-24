@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Claude wraps the claude CLI (Claude Code) in print mode.
@@ -71,10 +73,92 @@ func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	if req.Effort != "" {
 		args = append(args, "--effort", req.Effort)
 	}
-	stdout, stderr, code, err := run(ctx, req, "claude", args...)
-	res := Result{Stdout: stdout, Stderr: stderr, ExitCode: code}
-	res.Text, res.Tokens = parseClaudeStream(stdout)
-	return res, err
+	var res Result
+	espera := esperaSinReset
+	for {
+		stdout, stderr, code, err := run(ctx, req, "claude", args...)
+		text, uso := parseClaudeStream(stdout)
+		res = Result{Stdout: res.Stdout + stdout, Stderr: res.Stderr + stderr, ExitCode: code, Text: text, Tokens: sumarUso(res.Tokens, uso)}
+		reset, agotada := cuotaAgotada(stdout)
+		if !agotada {
+			return res, err
+		}
+		hasta := reset.Add(margenReset)
+		if reset.IsZero() {
+			hasta = time.Now().Add(espera)
+			espera = min(2*espera, time.Hour)
+		}
+		res.Stderr += fmt.Sprintf("cuota agotada · se retoma a las %s\n", hasta.Format("15:04:05"))
+		if err := dormir(ctx, time.Until(hasta)); err != nil {
+			return res, err
+		}
+	}
+}
+
+// Un 429 no es un intento del agente: es la cuota del proveedor. Run
+// espera al reset que trae la respuesta (o, sin él, un backoff que dobla
+// hasta una hora) y relanza la misma invocación. Así el bucle no gasta
+// intentos ni escala de modelo contra una cuota agotada, y el revisor no
+// aprueba sin revisar por "degradar en abierto". Lo que el agente alcanzó
+// a escribir antes del corte queda en el cuarto y el gasto se suma.
+var (
+	esperaSinReset = 5 * time.Minute
+	margenReset    = 30 * time.Second
+	dormir         = func(ctx context.Context, d time.Duration) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(d):
+			return nil
+		}
+	}
+)
+
+// cuotaAgotada dice si la invocación terminó por límite de cuota (el
+// resultado trae api_error_status 429) y cuándo se reinicia la ventana
+// rechazada, si el stream lo reportó.
+func cuotaAgotada(stdout string) (time.Time, bool) {
+	var reset time.Time
+	agotada := false
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line[0] != '{' {
+			continue
+		}
+		var ev struct {
+			Type           string `json:"type"`
+			APIErrorStatus int    `json:"api_error_status"`
+			RateLimitInfo  struct {
+				Status   string `json:"status"`
+				ResetsAt int64  `json:"resetsAt"`
+			} `json:"rate_limit_info"`
+		}
+		if json.Unmarshal([]byte(line), &ev) != nil {
+			continue
+		}
+		switch {
+		case ev.Type == "rate_limit_event" && ev.RateLimitInfo.Status == "rejected" && ev.RateLimitInfo.ResetsAt > 0:
+			reset = time.Unix(ev.RateLimitInfo.ResetsAt, 0)
+		case ev.Type == "result" && ev.APIErrorStatus == 429:
+			agotada = true
+		}
+	}
+	return reset, agotada
+}
+
+// sumarUso junta el gasto de dos invocaciones. El primer turno es el de
+// la primera: es la base con que arrancó el agente.
+func sumarUso(a, b Usage) Usage {
+	a.Input += b.Input
+	a.Output += b.Output
+	a.CacheRead += b.CacheRead
+	a.CacheWrite += b.CacheWrite
+	a.Turns += b.Turns
+	a.CostUSD += b.CostUSD
+	if a.FirstTurn == 0 {
+		a.FirstTurn, a.FirstTurnWrite = b.FirstTurn, b.FirstTurnWrite
+	}
+	return a
 }
 
 // claudeUsage es el gasto como lo reporta la API: en `usage` de cada
