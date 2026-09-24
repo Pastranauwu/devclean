@@ -110,13 +110,29 @@ func TestTraducirDependencias(t *testing.T) {
 		{Titulo: "wol", DependeDe: []string{"T-001", "2"}},
 		{Titulo: "ajena", DependeDe: []string{"T-099"}},
 	}
-	traducirDependencias(bs, []string{"T-003", "T-004", "T-005", "T-006"})
+	traducirDependencias(bs, []string{"T-003", "T-004", "T-005", "T-006"}, nil)
 	got := [][]string{bs[1].DependeDe, bs[2].DependeDe, bs[3].DependeDe}
 	want := [][]string{{"T-003"}, {"T-003", "T-004"}, {"T-099"}}
 	for i := range want {
 		if strings.Join(got[i], ",") != strings.Join(want[i], ",") {
 			t.Errorf("tarea %d: depende_de = %v, quiero %v", i+1, got[i], want[i])
 		}
+	}
+}
+
+// el caso del closet: T-001 ya existe, el plan recibe T-019.. y el
+// modelo usa esos ids reales. Leerlos por posición armaba ciclos.
+func TestTraducirDependenciasRespetaIdsRealesYPrevios(t *testing.T) {
+	bs := []plan.Borrador{
+		{Titulo: "reglas", DependeDe: []string{"T-001"}},
+		{Titulo: "calificador", DependeDe: []string{"T-019", "T-001"}},
+	}
+	traducirDependencias(bs, []string{"T-019", "T-020"}, map[string]bool{"T-001": true})
+	if got := strings.Join(bs[0].DependeDe, ","); got != "T-001" {
+		t.Errorf("reglas depende_de = %s, quiero T-001", got)
+	}
+	if got := strings.Join(bs[1].DependeDe, ","); got != "T-019,T-001" {
+		t.Errorf("calificador depende_de = %s, quiero T-019,T-001", got)
 	}
 }
 

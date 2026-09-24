@@ -159,7 +159,7 @@ func planearRequirements(root string, s *spec.Spec) error {
 	if err != nil {
 		return err
 	}
-	traducirDependencias(bs, ids)
+	traducirDependencias(bs, ids, idsPrevios(config.TasksDir(root)))
 	intentos := s.Limites.Intentos
 	if intentos < 1 {
 		intentos = task.DefaultLimiteIntentos
@@ -204,7 +204,7 @@ func completarTarea(t task.Task, b plan.Borrador, ids []string, defLineas int, a
 		t.NoTocar = b.NoTocar
 	}
 	if len(t.DependeDe) == 0 {
-		t.DependeDe = dependenciasDelModelo(b.DependeDe, ids)
+		t.DependeDe = dependenciasDelModelo(b.DependeDe, ids, nil)
 	}
 	if len(t.Expone) == 0 {
 		t.Expone = b.Expone
@@ -240,17 +240,17 @@ func completarTarea(t task.Task, b plan.Borrador, ids []string, defLineas int, a
 	return t
 }
 
-// dependenciasDelModelo acepta los ids de la lista tal cual y, si el
-// modelo numeró por su cuenta ("T-001" sin estar en la lista), lo lee
-// como posición.
-func dependenciasDelModelo(deps, ids []string) []string {
+// dependenciasDelModelo acepta tal cual los ids de la lista y los de
+// tareas previas y, si el modelo numeró por su cuenta ("T-001" sin estar
+// en ninguna), lo lee como posición.
+func dependenciasDelModelo(deps, ids []string, previas map[string]bool) []string {
 	enLista := make(map[string]bool, len(ids))
 	for _, id := range ids {
 		enLista[id] = true
 	}
 	var out []string
 	for _, d := range deps {
-		if !enLista[d] {
+		if !enLista[d] && !previas[d] {
 			d = task.DependenciasPorPosicion([]string{d}, ids)[0]
 		}
 		out = append(out, d)

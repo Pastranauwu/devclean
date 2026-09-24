@@ -110,6 +110,15 @@ type Contexto struct {
 	// que se cruzan con las que ya corren, la esclusa de entrada las
 	// rechaza por solapamiento y los tokens del plan se gastaron para nada.
 	Ocupados map[string][]string
+	// Expuestas son las firmas que ya prometen las tareas del repo, por
+	// id. ValidatePlan compara el plan contra ellas: sin verlas, el
+	// modelo reescribe "get_db() -> Iterator[Session]" como
+	// "def get_db() -> Generator[Session]" y el plan entero se rechaza.
+	Expuestas map[string][]string
+	// PrimerID es el id que recibirá la primera tarea del plan. Sin
+	// saberlo, el modelo que ve tareas previas numera por su cuenta
+	// (T-002 después de T-001) y leer eso por posición armaba ciclos.
+	PrimerID string
 	Agentes  map[string]config.Agente // agentes disponibles en config.yml
 	// PruebasPropias marca que este stack no tiene examinador ciego, así
 	// que las pruebas las escribe la propia tarea y su archivo tiene que
@@ -206,7 +215,16 @@ func prompt(intro, peticion string, c Contexto) string {
 		}
 	}
 	b.WriteString("- \"depende_de\": array de ids (ej. \"T-001\") de tareas que deben estar verdes antes que esta; vacío si no depende de ninguna\n")
+	if c.PrimerID != "" && c.PrimerID != "T-001" {
+		b.WriteString("  · ya hay tareas en el repo: tus tareas reciben ids correlativos desde " + c.PrimerID + " en el orden del array. Usa esos ids en \"depende_de\", en el ÁRBOL y en las FIRMAS; para depender de una tarea previa usa su id.\n")
+	}
 	b.WriteString("- \"expone\": array de firmas públicas EXACTAS que esta tarea produce y otra consume, con tipos de entrada y de retorno (ej. \"wol.Send(mac string, addr string) error\", \"POST /wake\"); vacío si no produce ninguna\n")
+	if len(c.Expuestas) > 0 {
+		b.WriteString("  · firmas que ya exponen tareas previas; si las consumes, cópialas en \"usa\" palabra por palabra y pon su id en \"depende_de\" (nunca las vuelvas a exponer):\n")
+		for _, id := range idsOrdenados(c.Expuestas) {
+			b.WriteString("      " + id + ": " + strings.Join(c.Expuestas[id], " · ") + "\n")
+		}
+	}
 	b.WriteString("- \"usa\": array de firmas de OTRAS tareas que esta consume, copiadas palabra por palabra del \"expone\" de aquella (mismo nombre, mismos tipos); vacío si no consume ninguna. Si no puedes copiar la firma exacta, la tarea está mal partida: resuelve la dependencia en el plan, no en el ejecutor\n")
 	b.WriteString("- \"peso\": \"liviana\", \"media\" o \"pesada\" según la complejidad: usa liviana para implementación con decisiones ya resueltas, media para lógica compleja y pesada para base arquitectónica o incertidumbre alta\n")
 	b.WriteString("- \"limite_lineas\": 0. No impongas un máximo de líneas ni dividas por tamaño: divide por responsabilidad y dependencias. Los límites positivos solo los decide el humano.\n")

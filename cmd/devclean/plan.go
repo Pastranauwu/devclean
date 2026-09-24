@@ -109,7 +109,7 @@ func runPlan(frase, modelo, ejecutor, exportSpec string, aprobar bool) error {
 	if err != nil {
 		return err
 	}
-	traducirDependencias(borradores, ids)
+	traducirDependencias(borradores, ids, idsPrevios(dir))
 	props := make([]propuesta, len(borradores))
 	for i, b := range borradores {
 		props[i] = propuesta{
@@ -300,6 +300,10 @@ func contextoPlan(root string, cfg config.Config) (ctx plan.Contexto, zonas, pat
 	}
 	zonas, patrones = zonasYPatronesDe(cfg, root)
 	lenguaje := config.DetectLanguage(root)
+	primer, err := task.NextID(config.TasksDir(root))
+	if err != nil {
+		return ctx, nil, nil, err
+	}
 	ctx = plan.Contexto{
 		Lenguaje:       lenguaje,
 		EsVacio:        config.DetectEmpty(root),
@@ -309,6 +313,8 @@ func contextoPlan(root string, cfg config.Config) (ctx plan.Contexto, zonas, pat
 		PruebasPropias: !examiner.Soportado(lenguaje),
 		Agentes:        cfg.TodosLosAgentes(),
 		Ocupados:       alcancesOcupados(root),
+		Expuestas:      firmasExpuestas(root),
+		PrimerID:       primer,
 		Skills:         skills.Catalogo(root),
 	}
 	return ctx, zonas, patrones, nil
@@ -503,6 +509,22 @@ func alcancesOcupados(root string) map[string][]string {
 	return ocupados
 }
 
+// firmasExpuestas devuelve el expone de las tareas que ya hay en el
+// repo, por id: las mismas que ValidatePlan usa de referencia.
+func firmasExpuestas(root string) map[string][]string {
+	tareas, err := task.List(config.TasksDir(root))
+	if err != nil {
+		return nil
+	}
+	out := map[string][]string{}
+	for _, t := range tareas {
+		if len(t.Expone) > 0 {
+			out[t.ID] = t.Expone
+		}
+	}
+	return out
+}
+
 // alcanceOcupado reporta si p se cruza con el alcance de alguna tarea en
 // curso, y con cuál.
 func alcanceOcupado(p string, ocupados map[string][]string) (string, bool) {
@@ -533,14 +555,25 @@ func idsCorrelativos(dir string, n int) ([]string, error) {
 	return ids, nil
 }
 
-// traducirDependencias pasa depende_de de la numeración del planificador
-// a los ids reales. El modelo no sabe qué ids existen y numera su plan
-// desde T-001; sin traducir, con tareas previas en el repo todo el plan
-// quedaba colgado de tareas ajenas y "bloqueada · depende de T-001".
-func traducirDependencias(bs []plan.Borrador, ids []string) {
+// traducirDependencias deja los ids del plan y los de tareas previas tal
+// cual (el prompt le dice al modelo desde qué id numera) y lee por
+// posición solo lo que no reconoce. Leerlo todo por posición convertía
+// el "T-005" real de un modelo que numeraba desde T-002 en la quinta
+// tarea, y el plan salía lleno de ciclos.
+func traducirDependencias(bs []plan.Borrador, ids []string, previas map[string]bool) {
 	for i := range bs {
-		bs[i].DependeDe = task.DependenciasPorPosicion(bs[i].DependeDe, ids)
+		bs[i].DependeDe = dependenciasDelModelo(bs[i].DependeDe, ids, previas)
 	}
+}
+
+// idsPrevios devuelve los ids de las tareas que ya hay en dir.
+func idsPrevios(dir string) map[string]bool {
+	tareas, _ := task.List(dir)
+	out := make(map[string]bool, len(tareas))
+	for _, t := range tareas {
+		out[t.ID] = true
+	}
+	return out
 }
 
 // confirmar pregunta s/n y devuelve si el usuario aprobó.
