@@ -36,7 +36,23 @@ type Request struct {
 	Timeout      time.Duration
 	// Env carries the room's own variables (PORT, ...).
 	Env []string
+	// Rol decide qué herramientas recibe el agente; vacío es el
+	// implementador.
+	Rol Rol
 }
+
+// Rol es para qué se invoca al agente. Cada herramienta que el CLI carga
+// viaja en el contexto de todos los turnos, así que cada rol recibe solo
+// las que usa.
+type Rol string
+
+const (
+	RolImplementador Rol = ""
+	// RolTexto responde con texto a partir del prompt: examinador,
+	// revisor, constitución.
+	RolTexto        Rol = "texto"
+	RolPlanificador Rol = "planificador"
+)
 
 // Result is what one invocation produced.
 type Result struct {

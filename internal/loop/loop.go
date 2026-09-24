@@ -89,6 +89,9 @@ type Request struct {
 	Model        string
 	Timeout      time.Duration
 	Env          []string
+	// Texto pide un agente sin herramientas que solo responde (el
+	// examinador); el implementador las necesita.
+	Texto bool
 }
 
 // Result es lo que devolvió una invocación.

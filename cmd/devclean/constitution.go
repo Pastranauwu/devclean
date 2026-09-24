@@ -63,6 +63,7 @@ func runConstitution(modelo, ejecutorFlag string, forzar bool) error {
 	var contenido string
 	generar := func() error {
 		res, err := ex.Run(context.Background(), executor.Request{
+			Rol:      executor.RolTexto,
 			RoomPath: root,
 			Prompt:   prompt,
 			Model:    modelo,

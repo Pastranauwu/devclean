@@ -600,6 +600,7 @@ func (g generadorPlan) Generar(ctx context.Context, prompt string) (string, erro
 		timeout = time.Duration(cfg.TimeoutAgente) * time.Second
 	}
 	res, err := g.ex.Run(ctx, executor.Request{
+		Rol:      executor.RolPlanificador,
 		RoomPath: g.root,
 		Prompt:   prompt,
 		Model:    g.modelo,

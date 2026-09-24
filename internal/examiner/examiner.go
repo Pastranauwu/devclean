@@ -139,6 +139,7 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 		Prompt:   prompt,
 		Model:    o.Model,
 		Timeout:  o.Timeout,
+		Texto:    true,
 	}
 	res, err := o.Agent.Run(ctx, req)
 	if err != nil {

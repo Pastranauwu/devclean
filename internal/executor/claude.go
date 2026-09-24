@@ -47,6 +47,15 @@ func (Claude) Models(context.Context) ([]string, error) {
 // --disable-slash-commands no va: también apaga las skills del proyecto.
 var contextoLimpio = []string{"--setting-sources", "project,local", "--strict-mcp-config", "--exclude-dynamic-system-prompt-sections"}
 
+// herramientasClaude es el --tools de cada rol. Sin Glob ni Grep: Bash
+// los cubre. "" apaga todas: medido, un "responde ok" arranca con 6,5k
+// tokens sin herramientas contra 11k con Read y Bash.
+var herramientasClaude = map[Rol]string{
+	RolImplementador: "Bash,Read,Edit,Write",
+	RolTexto:         "",
+	RolPlanificador:  "Read,Bash",
+}
+
 func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	// bypassPermissions: el agente no puede preguntar nada (modo -p) y
 	// el contenedor real es el cuarto + la reversión de devclean
@@ -55,6 +64,7 @@ func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	// hubo y con cuánto contexto arrancó el primero
 	args := []string{"-p", req.Prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions"}
 	args = append(args, contextoLimpio...)
+	args = append(args, "--tools", herramientasClaude[req.Rol])
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}

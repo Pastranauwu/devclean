@@ -548,7 +548,12 @@ type agenteExecutor struct {
 func (a agenteExecutor) Name() string { return a.ex.Name() }
 
 func (a agenteExecutor) Run(ctx context.Context, req loop.Request) (loop.Result, error) {
+	rol := executor.RolImplementador
+	if req.Texto {
+		rol = executor.RolTexto
+	}
 	res, err := a.ex.Run(ctx, executor.Request{
+		Rol:          rol,
 		RoomPath:     req.RoomPath,
 		Prompt:       req.Prompt,
 		AllowedGlobs: req.AllowedGlobs,
@@ -786,6 +791,7 @@ type revisorEnBucle struct {
 func (r revisorEnBucle) Revisar(ctx context.Context, _ string, tarea task.Task, diff string, _ int) (bool, string, loop.Tokens) {
 	prompt := revisor.Prompt([]task.Task{tarea}, diff)
 	res, err := r.ex.Run(ctx, executor.Request{
+		Rol:      executor.RolTexto,
 		RoomPath: r.root,
 		Prompt:   prompt,
 		Model:    r.modelo,

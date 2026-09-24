@@ -226,3 +226,22 @@ func TestClaudeArrancaConContextoLimpio(t *testing.T) {
 		t.Error("--disable-slash-commands apaga las skills del proyecto")
 	}
 }
+
+func TestClaudeHerramientasPorRol(t *testing.T) {
+	fakeBin(t, "claude", `printf '%s\n' "$@"`)
+	for rol, quiero := range map[Rol]string{
+		RolImplementador: "--tools\nBash,Read,Edit,Write\n",
+		RolTexto:         "--tools\n\n",
+		RolPlanificador:  "--tools\nRead,Bash\n",
+	} {
+		req := reqDePrueba()
+		req.Rol = rol
+		res, err := (Claude{}).Run(context.Background(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Stdout, quiero) {
+			t.Errorf("rol %q: falta %q en %q", rol, quiero, res.Stdout)
+		}
+	}
+}
