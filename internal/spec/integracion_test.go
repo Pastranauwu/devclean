@@ -44,11 +44,17 @@ func TestTareaDeIntegracionCierraLaCostura(t *testing.T) {
 	if len(got.Expone) != 0 {
 		t.Errorf("la tarea de integración no expone nada: %v", got.Expone)
 	}
-	if len(got.TocarSolo) != 1 || got.TocarSolo[0] != "test/integracion/t-004/**" {
+	// un solo archivo con tope de líneas: sin eso la del snake escribió
+	// 1576 líneas que repetían la suite de cada tarea
+	if len(got.TocarSolo) != 1 || got.TocarSolo[0] != "test/integracion/t-004/costura_test.go" {
 		t.Errorf("tocar_solo = %v", got.TocarSolo)
 	}
-	// las notas llevan la derivación: el requerimiento y lo que prometió cada tarea
-	for _, quiero := range []string{"evaluar potencias con signo", "lexer.Tokenize(s string) []Token", "eval.Eval(n Node) float64", "nunca le pidió"} {
+	if got.LimiteLineas != LimiteLineasIntegracion {
+		t.Errorf("limite_lineas = %d", got.LimiteLineas)
+	}
+	// las notas llevan la derivación: cada costura, lo que prometió cada
+	// tarea y el requerimiento como contexto
+	for _, quiero := range []string{"T-002 usa de T-001: Tokenize", "T-003 usa de T-002: Parse", "evaluar potencias con signo", "eval.Eval(n Node) float64", "nunca le pidió", "costura_test.go", "no repitas"} {
 		if !strings.Contains(got.Notas, quiero) {
 			t.Errorf("las notas no llevan %q:\n%s", quiero, got.Notas)
 		}

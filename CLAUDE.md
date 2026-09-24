@@ -190,8 +190,8 @@ Campos `architecture` y `delivery` están **reservados**: el parser los acepta y
 Cierra la costura que el plan no cierra: cada `listo_cuando` prueba lo que su propio contrato pide, así que una tarea puede soportar un caso que su consumidora nunca pidió y nadie lo ejercita (el `-2^2` de la calculadora, con las cinco tareas verdes). Se deriva del plan, sin modelo:
 
 - **Condiciones:** dos o más tareas, al menos una relación (`depende_de` o `usa`), ningún `acceptance.command` del humano, IDs ya asignados y un stack con comando conocido (go, node, python). Si falta cualquiera, devuelve `false` y no inventa nada.
-- **Forma:** `depende_de` todas las tareas, `usa` todas las firmas que el plan expone (así el agente recibe la superficie completa en su prompt), `expone` **vacío a propósito** y `tocar_solo: ["test/integracion/**"]`.
-- **Notas:** los requirements, los criterios de aceptación y lo que prometió cada tarea, más la instrucción de cubrir los casos que una pieza soporta y su consumidora nunca pidió.
+- **Forma:** `depende_de` todas las tareas, `usa` todas las firmas que el plan expone (así el agente recibe la superficie completa en su prompt), `expone` **vacío a propósito**, `tocar_solo` con **un solo archivo** (`test/integracion/<id>/costura_test.go`, `costura.test.js` o `test_costura.py`) y `limite_lineas: 300`. Ship no cuenta líneas de prueba contra el límite: aquí es guía del prompt, no compuerta. Con el directorio entero, la del snake escribió 8 archivos y 1576 líneas que repetían la suite de cada tarea (29 turnos, 22% del costo).
+- **Notas:** las costuras del plan (`T-012 usa de T-004: createStore, …`, un caso por costura), la instrucción de cubrir los casos que una pieza soporta y su consumidora nunca pidió, lo que prometió cada tarea, y requirements y aceptación **solo como contexto**: cubrirlos es trabajo de cada tarea.
 - **Doble corrida:** su comando entra también como `Acceptance` del spec, así que corre en su cuarto y otra vez sobre el conjunto integrado en `ship --todas`.
 - **Lenguaje:** `config.DetectLanguage` primero; en repo vacío, `spec.LenguajeDeComandos` lo deduce de los `listo_cuando` que escribió el planificador.
 
