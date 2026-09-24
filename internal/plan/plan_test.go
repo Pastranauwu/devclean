@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -274,5 +275,21 @@ func TestParseDistingueSkillsVaciasDeAusentes(t *testing.T) {
 	}
 	if bs[0].Skills == nil || len(bs[0].Skills) != 0 || len(bs[1].Skills) != 1 || bs[2].Skills != nil {
 		t.Errorf("skills: %#v %#v %#v", bs[0].Skills, bs[1].Skills, bs[2].Skills)
+	}
+}
+
+// respuesta real de deepseek-v4-flash: "arquitectura" con saltos de
+// línea crudos dentro del string
+func TestParseToleraSaltosCrudosEnStrings(t *testing.T) {
+	b, err := os.ReadFile("testdata/plan-saltos-crudos.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bs, err := Parse(string(b))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(bs) == 0 || !strings.Contains(bs[0].Como, "ESTILO:") {
+		t.Errorf("plan sin tareas o sin arquitectura: %d tareas", len(bs))
 	}
 }
