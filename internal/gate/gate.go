@@ -115,28 +115,99 @@ func checkContrato(t task.Task) Check {
 	return Check{"contrato válido", false, strings.Join(motivos, " · ")}
 }
 
-// checkEjecutable: listo_cuando exists and names something runnable.
+// checkEjecutable: listo_cuando existe y cada programa que nombra se
+// encuentra. Se lee como lo corre el bucle, con `sh -c`: el primer
+// programa de cada comando simple, sin los builtins del shell. Mirar solo
+// el primer token rechazaba `cd backend && pytest` —el plan de un
+// monorepo— con "comando no encontrado: cd", y a la vez dejaba pasar un
+// pytest inexistente después del &&.
 func checkEjecutable(root string, t task.Task) Check {
 	cmdStr := strings.TrimSpace(t.ListoCuando)
 	if cmdStr == "" {
 		return Check{"ejecutable", false, "falta listo_cuando · escribe el comando que dice \"ya está\""}
 	}
-	bin := strings.Fields(cmdStr)[0]
-	if strings.ContainsRune(bin, '/') {
-		abs := bin
-		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(root, bin)
+	dirConocido := true
+	for _, bin := range programas(cmdStr) {
+		if builtinShell[bin] {
+			if bin == "cd" {
+				// desde aquí una ruta relativa se resuelve contra un
+				// directorio que quizá la tarea todavía no creó
+				dirConocido = false
+			}
+			continue
 		}
-		info, err := os.Stat(abs)
-		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+		if strings.ContainsRune(bin, '/') {
+			if !dirConocido {
+				continue
+			}
+			abs := bin
+			if !filepath.IsAbs(abs) {
+				abs = filepath.Join(root, bin)
+			}
+			info, err := os.Stat(abs)
+			if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+				return Check{"ejecutable", false, fmt.Sprintf("comando no encontrado: %s · instálalo o corrige listo_cuando", bin)}
+			}
+			continue
+		}
+		if _, err := exec.LookPath(bin); err != nil {
 			return Check{"ejecutable", false, fmt.Sprintf("comando no encontrado: %s · instálalo o corrige listo_cuando", bin)}
 		}
-		return Check{"ejecutable", true, ""}
-	}
-	if _, err := exec.LookPath(bin); err != nil {
-		return Check{"ejecutable", false, fmt.Sprintf("comando no encontrado: %s · instálalo o corrige listo_cuando", bin)}
 	}
 	return Check{"ejecutable", true, ""}
+}
+
+// builtinShell son los builtins y palabras clave de sh que un listo_cuando
+// usa: no son binarios del PATH y LookPath nunca los encuentra.
+var builtinShell = map[string]bool{
+	"cd": true, "export": true, "source": true, ".": true, "set": true, "unset": true,
+	"test": true, "[": true, "true": true, "false": true, ":": true, "exit": true,
+	"eval": true, "exec": true, "if": true, "then": true, "else": true, "fi": true,
+	"for": true, "while": true, "do": true, "done": true, "!": true,
+}
+
+// programas devuelve el primer programa de cada comando simple de cmd:
+// parte en &&, ||, ;, | y & fuera de comillas (no en 2>&1 ni &>) y
+// salta las asignaciones VAR=valor del inicio.
+// ponytail: sin subshells ni $(...); un programa dentro de ellos no se
+// revisa, y falla hoy lo corre igual.
+func programas(cmd string) []string {
+	var segmentos []string
+	var actual strings.Builder
+	var comilla rune
+	rs := []rune(cmd)
+	for i, r := range rs {
+		redireccion := r == '&' && ((i > 0 && (rs[i-1] == '>' || rs[i-1] == '<')) || (i+1 < len(rs) && rs[i+1] == '>'))
+		switch {
+		case comilla != 0:
+			if r == comilla {
+				comilla = 0
+			}
+		case r == '\'' || r == '"':
+			comilla = r
+		case (r == '&' && !redireccion) || r == '|' || r == ';' || r == '\n':
+			segmentos = append(segmentos, actual.String())
+			actual.Reset()
+			continue
+		}
+		actual.WriteRune(r)
+	}
+	segmentos = append(segmentos, actual.String())
+
+	var out []string
+	for _, seg := range segmentos {
+		for _, f := range strings.Fields(seg) {
+			if eq := strings.IndexByte(f, '='); eq > 0 && !strings.ContainsAny(f[:eq], "/.-") {
+				continue // VAR=valor antes del programa
+			}
+			f = strings.TrimLeft(f, "({")
+			if f != "" && f[0] != '$' {
+				out = append(out, f)
+			}
+			break
+		}
+	}
+	return out
 }
 
 // checkFallaHoy: the command must fail today. It runs for real with a

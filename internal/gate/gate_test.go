@@ -3,6 +3,7 @@ package gate
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -357,5 +358,39 @@ func TestGateAgenteValidoEInvalido(t *testing.T) {
 	}
 	if !strings.Contains(res.PrimerMotivo(), "agente desconocido: no-existe") {
 		t.Errorf("motivo = %q, quiere que contenga 'agente desconocido: no-existe'", res.PrimerMotivo())
+	}
+}
+
+// listo_cuando reales. Los dos primeros son de los contratos que el
+// planificador escribió para closet (monorepo backend + frontend, 24 sep
+// 2026): la esclusa los rechazaba con "comando no encontrado: cd" aunque
+// el bucle los corre con sh -c sin problema. El tercero es de T-012 del
+// snake, con varios programas encadenados.
+func TestEjecutableLeeElComandoComoSh(t *testing.T) {
+	for _, c := range []struct {
+		cmd       string
+		programas []string
+	}{
+		{"cd backend && pip install -e '.[dev]' -q && python -m pytest tests/test_palette.py -q", []string{"pip", "python"}},
+		{"cd frontend && npm install --silent && npx vitest run src/lib/image", []string{"npm", "npx"}},
+		{"node --test src/app/app.test.js && node --check src/main.js && node --check scripts/serve.js && npm test", []string{"node", "npm"}},
+	} {
+		for _, p := range c.programas {
+			if _, err := exec.LookPath(p); err != nil {
+				t.Skipf("%s no está instalado", p)
+			}
+		}
+		tarea := tareaValida()
+		tarea.ListoCuando = c.cmd
+		if ch := checkEjecutable(t.TempDir(), tarea); !ch.OK {
+			t.Errorf("%q: %s", c.cmd, ch.Motivo)
+		}
+	}
+	// después del cd sigue revisando el resto: un programa que no existe
+	// detrás del && ya no pasa por no ser el primer token
+	tarea := tareaValida()
+	tarea.ListoCuando = "cd backend && binario-que-no-existe-xyz -q 2>&1"
+	if ch := checkEjecutable(t.TempDir(), tarea); ch.OK || !strings.Contains(ch.Motivo, "binario-que-no-existe-xyz") {
+		t.Errorf("programa inexistente tras el cd: %+v", ch)
 	}
 }
