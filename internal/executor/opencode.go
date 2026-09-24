@@ -27,6 +27,11 @@ var agenteOpenCode = map[Rol]string{
 // usuario (~/.config/opencode/skills, token-saver-caveman incluida)
 // viajan en la descripción de la herramienta skill: apagarla las saca;
 // las variables DISABLE cubren las de .claude y las externas.
+//
+// opencode topa la salida en min(limit.output del modelo, 32000). Un
+// modelo que razona (deepseek-v4-flash, 384k de salida real) gastó los
+// 32000 pensando el plan y cortó con finish "length" sin escribir el
+// JSON. El min con el límite del modelo mantiene válido el tope alto.
 var entornoOpenCode = []string{
 	`OPENCODE_CONFIG_CONTENT={"agent":{` +
 		`"devclean-implementador":{"mode":"primary","tools":{"webfetch":false,"task":false,"todowrite":false,"todoread":false,"skill":false}},` +
@@ -34,6 +39,7 @@ var entornoOpenCode = []string{
 		`"devclean-planificador":{"mode":"primary","tools":{"*":false,"read":true,"bash":true}}}}`,
 	"OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1",
 	"OPENCODE_DISABLE_EXTERNAL_SKILLS=1",
+	"OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=128000",
 }
 
 func (OpenCode) Name() string { return "opencode" }
