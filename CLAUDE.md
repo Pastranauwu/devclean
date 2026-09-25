@@ -15,9 +15,9 @@ La interfaz del producto es `devclean.spec.yml` (**Requirements as Code**), no e
 ```text
 Requirements as Code (devclean.spec.yml)
         ↓
-Planning / Task Graph (validación estática del IR)
+Esqueleto (modelo grande: estructura, ARCHITECTURE.md, interfaces, stubs y pruebas)
         ↓
-Internal Task Contracts (.devclean/tasks/*.md)
+Internal Task Contracts (.devclean/tasks/*.md · una tarea de relleno por stub)
         ↓
 Parallel Agents (cuartos aislados)
         ↓
@@ -169,13 +169,11 @@ constraints:
 
 ship: true               # `up` llega hasta la entrega
 ```
-Con `requirements` y sin `tasks`, `completarSpec` delega en `planearRequirements` (`cmd/devclean/completar.go`): el planificador produce **todo** el IR desde la intención, las reglas y la aceptación, más el lenguaje, comando de pruebas, constitución, zonas prohibidas y alcances ocupados detectados en el repo.
+Con `requirements` y sin `tasks` (y con `up "<petición>"`), `completarSpec` delega en `planearRequirements` → `planearEsqueleto` (`cmd/devclean/esqueleto.go`). Ver 4.2.2.
 
 **Dos formas de `acceptance` con garantías distintas:**
 - **Textual:** entra en el prompt del planificador y debe quedar cubierta por el plan. Por sí sola **no** es compuerta determinista; sin cobertura reconocible sale como advertencia.
 - **Con `command`/`comando`:** se guarda en `.devclean/feature.json` (`spec.SaveFeatureState`) y corre sobre la rama donde ya se integraron todas las tareas. Salida distinta de cero frena la entrega.
-
-Cuando el plan tiene varias tareas encadenadas y el spec no declara ningún `acceptance.command`, `spec.TareaDeIntegracion` deriva una última tarea que prueba la costura (ver 4.2.2).
 
 `constraints.no_tocar` se aplica en `Apply`, no en `Parse`: los globs se suman al `no_tocar` de **todo** contrato que se vaya a escribir, venga del YAML o lo haya generado el planificador. La restricción del humano sobrevive el viaje spec → IR.
 
@@ -186,14 +184,17 @@ Campos `architecture` y `delivery` están **reservados**: el parser los acepta y
 2. **Modo Completo:** Lista detallada con límites globales, reglas comunes, agentes y configuración de `ship`.
 3. **Resolución de dependencias relativas:** Si no hay IDs asignados, `depende_de: ["T-001"]` se interpreta relativo a ese spec sin colisionar con tareas preexistentes en el repo.
 
-#### 4.2.2. La Tarea de Integración Derivada (`spec.TareaDeIntegracion`)
-Cierra la costura que el plan no cierra: cada `listo_cuando` prueba lo que su propio contrato pide, así que una tarea puede soportar un caso que su consumidora nunca pidió y nadie lo ejercita (el `-2^2` de la calculadora, con las cinco tareas verdes). Se deriva del plan, sin modelo:
+#### 4.2.2. El Esqueleto (`internal/esqueleto`, `planearEsqueleto`)
+El modelo grande no reparte prosa: escribe código. Corre con el modelo `planificador`, herramientas de escritura, en el cuarto de la primera tarea (`T-00N`), y deja:
+- estructura, manifiestos, `.gitignore`, dependencias instaladas y build verde;
+- `ARCHITECTURE.md` en la raíz: módulos, responsabilidades, dependencias permitidas, flujo de datos. Es la fuente de verdad que el siguiente cambio **evoluciona** (el prompt se lo pasa si ya existe);
+- tipos, interfaces y puertos como código real y completo;
+- un **stub** por módulo: firma exacta, comentario de contrato (entradas, salida, errores, pasos) y cuerpo que lanza `devclean: sin implementar` (`esqueleto.Marca`);
+- **las pruebas** de cada módulo, con fakes para las dependencias (así el relleno es una sola ola en paralelo), y una prueba de punta a punta.
 
-- **Condiciones:** dos o más tareas, al menos una relación (`depende_de` o `usa`), ningún `acceptance.command` del humano, IDs ya asignados y un stack con comando conocido (go, node, python). Si falta cualquiera, devuelve `false` y no inventa nada.
-- **Forma:** `depende_de` todas las tareas, `usa` todas las firmas que el plan expone (así el agente recibe la superficie completa en su prompt), `expone` **vacío a propósito**, `tocar_solo` con **un solo archivo** (`test/integracion/<id>/costura_test.go`, `costura.test.js` o `test_costura.py`) y `limite_lineas: 300`. Ship no cuenta líneas de prueba contra el límite: aquí es guía del prompt, no compuerta. Con el directorio entero, la del snake escribió 8 archivos y 1576 líneas que repetían la suite de cada tarea (29 turnos, 22% del costo).
-- **Notas:** las costuras del plan (`T-012 usa de T-004: createStore, …`, un caso por costura), la instrucción de cubrir los casos que una pieza soporta y su consumidora nunca pidió, lo que prometió cada tarea, y requirements y aceptación **solo como contexto**: cubrirlos es trabajo de cada tarea.
-- **Doble corrida:** su comando entra también como `Acceptance` del spec, así que corre en su cuarto y otra vez sobre el conjunto integrado en `ship --todas`.
-- **Lenguaje:** `config.DetectLanguage` primero; en repo vacío, `spec.LenguajeDeComandos` lo deduce de los `listo_cuando` que escribió el planificador.
+Responde un JSON con `verificar` (build/typecheck que hoy pasa), `integracion` (la prueba de punta a punta) y `tareas` (una por archivo a rellenar). **`esqueleto.Problemas` lo verifica sin modelo:** existe `ARCHITECTURE.md`, `verificar` pasa, ningún `tocar_solo` incluye su propia prueba, cada archivo de `tocar_solo` existe y cada `listo_cuando` **corre y falla por el stub**: no pasa, no es `PruebaNoCorrio` y no es un error de carga (import, sintaxis, `error TS`). Si algo falla, el arquitecto recibe la lista con el mismo prompt delante (caché) y corrige en el mismo cuarto, hasta `correccionesEsqueleto` veces. `room.Ensure` reusa el cuarto: un esqueleto cortado se corrige, no se rehace.
+
+Al pasar: commit `wip: T-00N esqueleto`, estado **lista** y contrato con `listo_cuando: <verificar>`. Cada stub es una tarea de relleno con `depende_de: [T-00N]`, **sin `expone`/`usa`** (las firmas las valida el compilador) y la nota `notaRelleno`. `integracion` entra como `acceptance.command`. `run` integra el esqueleto por `sembrarVerdesPrevias`, igual que cualquier verde previo. Log del arquitecto en `.devclean/runs/T-00N/esqueleto-N.log`.
 
 #### 4.2.1. Análisis Estático del Task Graph (`spec.ValidatePlan`)
 Corre en `Apply` sobre el IR ya con IDs, **antes** de escribir tareas o gastar implementación. Los `Issue{Level:"error"}` abortan el `Apply` completo; los `"warning"` solo se imprimen.
@@ -298,7 +299,7 @@ Aunque el núcleo es sólido y funcional, existen áreas identificadas que requi
 1. **Mutation Score para el Examinador Ciego:** Falta integrar análisis de mutación (ej. `go-mutesting`) para verificar que las suites generadas realmente detecten fallos y no sean triviales.
 2. **Validación de Firmas por AST:** En el paso `interfaces` de la esclusa de salida, la comparación se hace por nombre de función/símbolo (`task.NombreDeFirma`). Falta implementar análisis sintáctico por AST para validar signaturas completas respetando tipos.
 3. **Detección de Duplicación de Código entre Ramas:** Comparación estructural de funciones nuevas entre ramas activas de una misma oleada para alertar si dos agentes están reimplementando la misma utilidad.
-4. **La prueba de costura la escribe un modelo:** `spec.TareaDeIntegracion` garantiza que exista un examen end-to-end y que corra sobre el conjunto integrado, no que sea exhaustivo. Falta medir su cobertura real (ver el punto 1 de mutation score).
+4. **Las pruebas del esqueleto las escribe un modelo:** el grande, una vez, y la verificación exige que corran y fallen por el stub, no que sean exhaustivas. Falta medir su cobertura real (ver el punto 1 de mutation score).
 5. **El presupuesto ignora la caché:** `budget`, `metrics` y el ledger de ventanas suman solo `entrada + salida`, pero con `claude` casi todo el prompt llega como caché (T-008 de un plan real: 129 de entrada contra 789k de caché leída y 42k escrita). `loop.Tokens` ya registra `cache_leida` y `cache_escrita` y `devclean usage` las muestra; falta que el presupuesto las cuente con su peso (leída barata, escrita más cara que la entrada normal).
    - **Corrida A del benchmark (snake, 13 contratos fijos, 23 sep 2026):** 18 intentos contra 13 del original. El recorte de firmas/árbol **no** causó reintentos: de los 5, **3 fueron 429** (límite de 5h agotado; T-011 quemó dos intentos con sonnet y el de opus sin gastar un token) y **2 fueron bugs reales de haiku que atrapó el revisor** (T-002 encerraba a la serpiente en el nivel CRUZ; T-006 lanzaba con `mapKey(undefined)`), ambos con el requisito escrito en el prompt. Contar esos 429 como intento fallido es el pendiente 7.2.3.
 6. **Benchmark de prompts:** `DEVCLEAN_BENCH_DIR=<proyecto> go test -tags bench -run TestBenchPrompts -v ./internal/loop/` mide el tamaño del prompt por tarea, el prefijo común y los intentos por tarea de la última corrida (`DEVCLEAN_BENCH_TAREA=T-00N` vuelca un prompt). Los intentos son de la corrida que ya pasó: para juzgar un cambio en el prompt hay que volver a correr el plan con él.
@@ -311,7 +312,7 @@ Aunque el núcleo es sólido y funcional, existen áreas identificadas que requi
 ### 7.3. Flujos de Tareas y Experiencia de Usuario
 1. **Soporte para Forjas Adicionales:** Integrar soporte nativo para GitLab (`glab`) o Bitbucket en el paso de entrega remota de `ship`.
 2. **Gestión de Fallos en Cascada en Specs:** Cuando una tarea con muchas dependencias (`depende_de`) se detiene o rechaza, refinar la cancelación limpia de las tareas dependientes en la misma oleada.
-3. **La costura semántica entre `expone` y `usa` ya no queda sin probar (v1.2.0), pero su calidad depende de un modelo:** el caso de origen fue una calculadora con 5 agentes (lexer → parser → eval → cli): las 5 tareas verdes, integración verde, y `-2^2` devolvía `unknown binary operator: ^` porque el lexer y el parser tenían `^` en su contrato y el del evaluador nunca lo pidió. Ni los `listo_cuando` ni el nivel funcional del solapamiento lo ven. Ahora `spec.TareaDeIntegracion` deriva una prueba de punta a punta cuando el humano no declaró `acceptance.command`, y el prompt del planificador prohíbe prometer en `expone` lo que ninguna consumidora pide. Lo que falta: **medir** que esa prueba derivada cubra de verdad (sigue siendo un modelo escribiéndola) y derivar los casos en stacks sin comando conocido (rust y los demás quedan sin costura probada).
+3. **La costura semántica entre `expone` y `usa` ya no queda sin probar (v1.2.0), pero su calidad depende de un modelo:** el caso de origen fue una calculadora con 5 agentes (lexer → parser → eval → cli): las 5 tareas verdes, integración verde, y `-2^2` devolvía `unknown binary operator: ^` porque el lexer y el parser tenían `^` en su contrato y el del evaluador nunca lo pidió. Ni los `listo_cuando` ni el nivel funcional del solapamiento lo ven. Con el esqueleto, la prueba de punta a punta la escribe el arquitecto junto al cableado real y corre como aceptación al integrar. Lo que falta: **medir** que cubra de verdad.
 4. **Suite oculta dependiente del examinador:** el 30% sellado solo existe si el modelo examinador devuelve el bloque `hidden` en su JSON. Si no lo devuelve, se sella nada y el paso `suite_oculta` de la esclusa se omite en silencio; conviene registrar ese fallo del examinador en lugar de degradar sin dejar rastro.
 5. **Pulido del Feedback Loop en `listo_cuando`:** Cuando un comando de pruebas produce volcados de error gigantescos (ej. stack traces masivos en Node/Java), filtrar inteligentemente el error para no saturar la ventana de contexto del modelo en el siguiente intento.
 
@@ -342,6 +343,9 @@ Aunque el núcleo es sólido y funcional, existen áreas identificadas que requi
 - **No se escala contra una prueba que no corrió (`Outcome.NoEscalar`):** `loop.PruebaNoCorrio` (127, pytest 4/5, "no test files", "file or directory not found") y la reversión de lo único que tocó el agente marcan un rojo que un modelo caro no arregla. En closet la escalera a qwen-max pagó el 95% de la corrida contra una prueba que no existía.
 - **Sin progreso = un intento (>1) que no deja nada dentro del alcance:** no se compara la salida de la prueba, que cambia por tiempos aunque nada cambie.
 - **El tope de intentos es por tarea, no por llamada a `loop.Run`:** `TopeIntentos × limite_intentos` intentos pagados (con tokens) desde la última edición del contrato. Escalar, retomar y `--reintentar` suman; editar el contrato lo reinicia.
+- **La prueba que ya existía cuando arrancó la tarea es el oráculo (`loop.pruebasFijas`):** si el archivo de prueba de `listo_cuando` está en el commit con que arrancó el cuarto (lo escribió el esqueleto o el humano), se veda como ruta de prueba y no corre el examinador. Se mira ese commit y no el árbol: la prueba que el agente escribió en un intento anterior sigue siendo suya al escalar o retomar.
+- **`write_overlap` no aplica entre tareas encadenadas por `depende_de`:** corren en fila y la segunda arranca sobre lo que dejó la primera. El esqueleto crea los stubs que después rellena cada tarea.
+- **`bisectable` exige el `listo_cuando` cuando la suite ya fallaba al empezar la tarea (`ship.suiteYaFallaba`):** con esqueleto, la suite sigue roja hasta rellenar todos los módulos. Se comprueba corriendo la suite sobre el commit base en el mismo cuarto y volviendo a la rama; la suite completa la exige `integradas`.
 - **`gate.Run` devuelve 6 chequeos:** Búscalos por nombre, nunca por índice en el array.
 - **El chequeo 0 siempre es `contrato válido`:** Llama a `Validate()`. Todo contrato nuevo debe incluir `version: 1` (`task.Version`).
 - **Hay dos parsers y cada uno tiene su territorio:** el spec humano se parsea con `yaml.v3` en `internal/spec/yaml.go` (`spec.Parse`); el frontmatter de contratos (`internal/task`) y `config` siguen en `internal/kv`. No migres uno al otro sin consensuarlo, y no agregues una tercera librería de parseo. En `kv` sigue viva la trampa de las claves repetidas a distinta profundidad: se pisan.
