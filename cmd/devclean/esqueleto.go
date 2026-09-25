@@ -156,6 +156,14 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	if err != nil {
 		return fmt.Errorf("no se pudo listar lo que creó el esqueleto · %s", strings.TrimSpace(creados))
 	}
+	// la suite que la esclusa de salida y la integración van a exigir
+	if strings.TrimSpace(cfg.Pruebas) == "" && res.Pruebas != "" {
+		cfg.Pruebas = res.Pruebas
+		if err := cfg.Save(root); err != nil {
+			return err
+		}
+		out.Line("· pruebas del proyecto · %s", res.Pruebas)
+	}
 	if err := state.Save(root, state.State{ID: id, Estado: state.Lista, Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit}); err != nil {
 		return err
 	}

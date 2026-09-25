@@ -44,7 +44,10 @@ type Resultado struct {
 	Verificar string `json:"verificar"`
 	// Integracion corre la prueba de punta a punta; hoy falla por los
 	// stubs y pasa cuando todo está rellenado. Es la aceptación global.
-	Integracion  string `json:"integracion"`
+	Integracion string `json:"integracion"`
+	// Pruebas corre la suite completa del proyecto. En un monorepo
+	// devclean no la detecta, y la esclusa de salida la necesita.
+	Pruebas      string `json:"pruebas"`
 	Arquitectura string `json:"arquitectura"`
 	Tareas       []plan.Borrador
 }
@@ -99,6 +102,7 @@ RESPONDE AL FINAL SOLO CON ESTE JSON
 {
   "verificar": "comando que compila o hace typecheck de todo el proyecto y hoy pasa (ej. \"npx tsc --noEmit\", \"go vet ./...\", \"python -m compileall -q src\")",
   "integracion": "comando que corre la prueba de punta a punta",
+  "pruebas": "comando que corre TODA la suite del proyecto (todas las carpetas y lenguajes)",
   "arquitectura": "resumen de 5 a 15 líneas; lo completo vive en ` + Documento + `",
   "tareas": [
     {

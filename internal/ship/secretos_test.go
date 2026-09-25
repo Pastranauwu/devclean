@@ -119,3 +119,28 @@ func TestComentarioEnProsaConPuntoYComa(t *testing.T) {
 		}
 	}
 }
+
+// closet: el esqueleto se frenó por pasar la key de settings a un cliente
+// y por la clave falsa de una prueba
+func TestSecretosNoConfundenVariablesNiFixtures(t *testing.T) {
+	limpias := []struct{ archivo, linea string }{
+		{"backend/app/config.py", "            typesafe_api_key=typesafe_key,"},
+		{"backend/app/container.py", "        sdk = TypeSafeClient(api_key=settings.typesafe_api_key, timeout=5)"},
+		{"backend/tests/adapters/test_jev_clients.py", `    return OpenRouterJevClient(http, api_key="sk-or-secret")`},
+	}
+	for _, c := range limpias {
+		if h := escanearSecretos(diffDe(c.archivo, c.linea)); len(h) != 0 {
+			t.Errorf("%s: falso positivo %v", c.archivo, h)
+		}
+	}
+	sucias := []struct{ archivo, linea string }{
+		{"backend/app/config.py", `API_KEY = "sk-or-v1-9f8e7d6c5b4a"`},
+		{"backend/.env", "DB_PASSWORD=hunter2-2024"},
+		{"backend/tests/test_x.py", `KEY = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz"`},
+	}
+	for _, c := range sucias {
+		if h := escanearSecretos(diffDe(c.archivo, c.linea)); len(h) == 0 {
+			t.Errorf("%s: no vio %q", c.archivo, c.linea)
+		}
+	}
+}

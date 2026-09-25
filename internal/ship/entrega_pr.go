@@ -199,7 +199,13 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	}
 	apuntar(Paso{"integrar", true, fmt.Sprintf("%d commits, uno por tarea", len(ordenadas))})
 
-	// 4. la suite completa sobre el conjunto ya integrado
+	// 4. la suite completa sobre el conjunto ya integrado. La rama de
+	// entrega es un worktree nuevo: sin instalar, la suite de un
+	// monorepo falla por .venv o node_modules y no por el código
+	if err := room.InstalarDependencias(ctx, path); err != nil {
+		apuntar(Paso{"integradas", false, err.Error()})
+		return e
+	}
 	pruebas := strings.TrimSpace(o.Config.Pruebas)
 	if pruebas == "" {
 		apuntar(Paso{"integradas", true, "sin comando de pruebas en config.yml · no se verificó el conjunto"})
@@ -381,6 +387,7 @@ func correrPruebas(ctx context.Context, dir, cmdStr string, timeout time.Duratio
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), room.Entorno(dir)...)
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		return fmt.Sprintf("las pruebas tardaron más de %s", timeout), false

@@ -1,8 +1,11 @@
 package ship
 
 import (
+	"path"
 	"regexp"
 	"strings"
+
+	"github.com/Pastranauwu/devclean/internal/task"
 )
 
 // escanearSecretos busca credenciales en las líneas añadidas.
@@ -12,7 +15,7 @@ func escanearSecretos(diff string) []Hallazgo {
 	var h []Hallazgo
 	for _, ad := range parseDiffAnadido(diff) {
 		for _, linea := range ad.lineas {
-			if nombre := tipoSecreto(linea); nombre != "" {
+			if nombre := tipoSecreto(ad.nombre, linea); nombre != "" {
 				h = append(h, Hallazgo{Tipo: nombre, Archivo: ad.nombre})
 			}
 		}
@@ -85,20 +88,44 @@ func esSecretoLiteral(v string) bool {
 	return strings.ContainsAny(v, "0123456789-_./+")
 }
 
-func tipoSecreto(linea string) string {
+func tipoSecreto(archivo, linea string) string {
 	for _, p := range patronesSecretos {
 		if p.re.MatchString(linea) {
 			return p.nombre
 		}
 	}
+	// una prueba lleva claves falsas a propósito ("sk-or-secret"); una
+	// real ahí la cazan los patrones de proveedor de arriba
+	if task.EsArchivoDePrueba(archivo) {
+		return ""
+	}
 	if m := reAsignacion.FindStringSubmatch(linea); m != nil {
 		// grupos 2, 3 y 4 son las tres formas del valor: comilla simple,
-		// comilla doble y sin comillas. Solo una viene llena.
-		for _, v := range m[2:] {
+		// comilla doble y sin comillas. Solo una viene llena. Sin
+		// comillas solo es literal en un archivo de configuración: en
+		// código, `api_key=settings.api_key` es una variable.
+		for i, v := range m[2:] {
+			if i == 2 && !esConfiguracion(archivo) {
+				continue
+			}
 			if v != "" && esSecretoLiteral(v) {
 				return "credencial en claro"
 			}
 		}
 	}
 	return ""
+}
+
+// esConfiguracion reporta si el archivo guarda valores sin comillas:
+// .env, yaml, ini, toml, properties.
+func esConfiguracion(archivo string) bool {
+	base := strings.ToLower(path.Base(archivo))
+	if strings.HasPrefix(base, ".env") || strings.HasSuffix(base, ".env") {
+		return true
+	}
+	switch path.Ext(base) {
+	case ".yml", ".yaml", ".ini", ".toml", ".properties", ".cfg", ".conf", ".env", "":
+		return true
+	}
+	return false
 }

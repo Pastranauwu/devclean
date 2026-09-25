@@ -3,10 +3,13 @@ package ship
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/Pastranauwu/devclean/internal/room"
 )
 
 // verificarBisectable corre el comando de pruebas del proyecto sobre el
@@ -52,6 +55,7 @@ func runComando(ctx context.Context, dir, cmdStr string, timeout time.Duration) 
 		cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	}
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), room.Entorno(dir)...)
 
 	out, err := cmd.CombinedOutput()
 	code := 0
