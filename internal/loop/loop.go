@@ -193,6 +193,9 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	if o.PruebaTimeout <= 0 {
 		o.PruebaTimeout = DefaultTimeout
 	}
+	if len(o.PatronesPrueba) == 0 {
+		o.Task.TocarSolo = conPruebasPropias(o.Task)
+	}
 	if o.PatronesPrueba == nil {
 		o.PatronesPrueba = config.DefaultTestPatterns()
 	}
@@ -588,6 +591,28 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration) (
 		return string(out) + err.Error(), nil
 	}
 	return string(out), &code
+}
+
+// conPruebasPropias suma a tocar_solo los archivos de prueba que corre
+// listo_cuando. Sin examinador el prompt le pide al agente escribirlos,
+// pero si no están en su alcance la reversión los borra: la tarea era
+// imposible por diseño. En closet, T-003 (`npm --prefix frontend test --
+// src/image/compress.test.ts`) quemó 15 intentos y la escalera a otro
+// modelo así. La ruta puede ser relativa a un --prefix o a un `cd`, por
+// eso también entra con cualquier prefijo.
+func conPruebasPropias(t task.Task) []string {
+	alcance := append([]string(nil), t.TocarSolo...)
+	for _, p := range task.ArchivosDePrueba(t.ListoCuando) {
+		p = strings.TrimPrefix(p, "./")
+		if config.MatchesAny(alcance, p) {
+			continue
+		}
+		alcance = append(alcance, p)
+		if !strings.HasPrefix(p, "/") {
+			alcance = append(alcance, "**/"+p)
+		}
+	}
+	return alcance
 }
 
 // promptPara arma el prompt de un intento: el contrato y, si lo hay, la

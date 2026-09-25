@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/task"
 )
 
 func TestRevertFueraDeAlcance(t *testing.T) {
@@ -192,5 +195,26 @@ func TestRevertCuandoElAgenteCommiteaSolo(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(root, "src/export/base.go"))
 	if err != nil || string(data) != "package export // tocado\n" {
 		t.Errorf("base.go = %q, quiero el cambio del agente intacto", data)
+	}
+}
+
+// los dos casos de closet: sin examinador, el archivo de prueba que
+// corre listo_cuando tiene que poder escribirse, también detrás de un
+// --prefix
+func TestConPruebasPropiasAbreElArchivoDelListoCuando(t *testing.T) {
+	casos := []struct {
+		listo, archivo string
+	}{
+		{"pytest backend/tests/test_base.py", "backend/tests/test_base.py"},
+		{"npm --prefix frontend test -- src/image/compress.test.ts", "frontend/src/image/compress.test.ts"},
+	}
+	for _, c := range casos {
+		alcance := conPruebasPropias(task.Task{ListoCuando: c.listo, TocarSolo: []string{"otro.go"}})
+		if !config.MatchesAny(alcance, c.archivo) {
+			t.Errorf("%q: %s fuera del alcance %v", c.listo, c.archivo, alcance)
+		}
+		if config.MatchesAny(alcance, "frontend/src/otra.test.ts") {
+			t.Errorf("%q: abrió pruebas ajenas: %v", c.listo, alcance)
+		}
 	}
 }
