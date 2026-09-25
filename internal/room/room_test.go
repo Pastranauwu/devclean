@@ -259,3 +259,21 @@ func TestCreateInstalaPythonEnSubcarpetaYLoExcluye(t *testing.T) {
 		t.Errorf("exclude repetido:\n%s", b)
 	}
 }
+
+// closet: el agente creó backend/.venv con uv, que no trae pip, y la
+// instalación se caía después de pagar el esqueleto
+func TestInstalaEnVenvSinPip(t *testing.T) {
+	if _, err := exec.LookPath("uv"); err != nil {
+		t.Skip("sin uv")
+	}
+	dir := t.TempDir()
+	if out, err := exec.Command("uv", "venv", "-q", filepath.Join(dir, ".venv")).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstalarDependencias(context.Background(), dir); err != nil {
+		t.Fatalf("venv de uv: %v", err)
+	}
+}

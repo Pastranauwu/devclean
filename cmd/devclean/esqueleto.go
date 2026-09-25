@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,8 +64,13 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	if err != nil {
 		return err
 	}
-	previo, _ := os.ReadFile(filepath.Join(r.Path, esqueleto.Documento))
-	original := esqueleto.Prompt(esqueleto.Pedido{Texto: pedido, Previo: string(previo), PrimerID: ids[1]}, pctx)
+	// de la base y no del cuarto: al retomar, el cuarto ya tiene el
+	// ARCHITECTURE.md que escribió este mismo arquitecto
+	previo, err := gitEn(root, "show", cfg.Base+":"+esqueleto.Documento)
+	if err != nil {
+		previo = ""
+	}
+	original := esqueleto.Prompt(esqueleto.Pedido{Texto: pedido, Previo: previo, PrimerID: ids[1]}, pctx)
 
 	modelo := config.ModeloRol(cfg, "planificador")
 	timeout := timeoutArquitecto
@@ -78,26 +85,37 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 
 	var res esqueleto.Resultado
 	prompt := original
+	guardada := respuestaEsqueleto(root, id, original)
 	for vuelta := 0; ; vuelta++ {
 		titulo := fmt.Sprintf("el arquitecto escribe el esqueleto · %s · %s", id, modelo)
 		if vuelta > 0 {
 			titulo = fmt.Sprintf("el arquitecto corrige el esqueleto (%d/%d) · %s", vuelta, correccionesEsqueleto, modelo)
 		}
 		var texto string
-		err = esperarPlan(titulo, func(avance func(string)) error {
-			out, err := ex.Run(ctx, executor.Request{
-				RoomPath: r.Path,
-				Prompt:   prompt,
-				Model:    modelo,
-				Timeout:  timeout,
-				Env:      room.Entorno(r.Path),
-				Avance:   avance,
+		if vuelta == 0 && guardada != "" {
+			// el esqueleto ya se pagó: lo que falló fue devclean después
+			// (instalar, parsear, verificar). Se reverifica sin llamarlo.
+			out.Line("· reusando la respuesta guardada del arquitecto · borra %s para rehacerlo", rutaRespuestaEsqueleto(root, id))
+			texto, err = guardada, nil
+		} else {
+			err = esperarPlan(titulo, func(avance func(string)) error {
+				out, err := ex.Run(ctx, executor.Request{
+					RoomPath: r.Path,
+					Prompt:   prompt,
+					Model:    modelo,
+					Timeout:  timeout,
+					Env:      room.Entorno(r.Path),
+					Avance:   avance,
+				})
+				guardarLogEsqueleto(root, id, vuelta, prompt, out)
+				reg.Registrar(ex.Name(), out.Tokens.Input+out.Tokens.Output)
+				if out.Text != "" {
+					guardarRespuestaEsqueleto(root, id, original, out.Text)
+				}
+				texto = out.Text
+				return err
 			})
-			guardarLogEsqueleto(root, id, vuelta, prompt, out)
-			reg.Registrar(ex.Name(), out.Tokens.Input+out.Tokens.Output)
-			texto = out.Text
-			return err
-		})
+		}
 		if err != nil {
 			return fmt.Errorf("el arquitecto no terminó · %w · lo escrito sigue en %s, vuelve a correr para que lo corrija", err, r.Path)
 		}
@@ -180,6 +198,29 @@ func valorO(s, def string) string {
 		return def
 	}
 	return s
+}
+
+func rutaRespuestaEsqueleto(root, id string) string {
+	return filepath.Join(loop.RunsDir(root), id, "esqueleto-respuesta.json")
+}
+
+// respuestaEsqueleto es la última respuesta del arquitecto para este
+// mismo pedido, "" si no hay o si el spec cambió desde entonces.
+func respuestaEsqueleto(root, id, pedido string) string {
+	b, err := os.ReadFile(rutaRespuestaEsqueleto(root, id))
+	if err != nil {
+		return ""
+	}
+	var g struct{ Prompt, Texto string }
+	if json.Unmarshal(b, &g) != nil || g.Prompt != fmt.Sprintf("%x", sha256.Sum256([]byte(pedido))) {
+		return ""
+	}
+	return g.Texto
+}
+
+func guardarRespuestaEsqueleto(root, id, pedido, texto string) {
+	b, _ := json.Marshal(struct{ Prompt, Texto string }{fmt.Sprintf("%x", sha256.Sum256([]byte(pedido))), texto})
+	_ = os.WriteFile(rutaRespuestaEsqueleto(root, id), b, 0o644)
 }
 
 // guardarLogEsqueleto deja el prompt y la salida del arquitecto junto a

@@ -279,8 +279,8 @@ func venv(ctx context.Context, dir string) error {
 		}
 	}
 	if exists(filepath.Join(dir, "requirements.txt")) {
-		if out, err := run(ctx, dir, py, "-m", "pip", "install", "-q", "-r", "requirements.txt"); err != nil {
-			return errors.New(tail(out))
+		if err := pipInstall(ctx, dir, py, "-r", "requirements.txt"); err != nil {
+			return err
 		}
 	}
 	if !exists(filepath.Join(dir, "pyproject.toml")) {
@@ -294,7 +294,25 @@ func venv(ctx context.Context, dir string) error {
 	if len(deps) == 0 {
 		return nil
 	}
-	if out, err := run(ctx, dir, py, append([]string{"-m", "pip", "install", "-q"}, deps...)...); err != nil {
+	return pipInstall(ctx, dir, py, deps...)
+}
+
+// pipInstall instala en el venv de py. Un .venv creado con uv (lo hacen
+// los agentes) no trae pip: ahí se usa `uv pip`, y sin uv, ensurepip.
+// Asumir pip tiró el esqueleto de closet después de 39 minutos pagados.
+func pipInstall(ctx context.Context, dir, py string, args ...string) error {
+	if _, err := run(ctx, dir, py, "-m", "pip", "--version"); err != nil {
+		if _, errUV := exec.LookPath("uv"); errUV == nil {
+			if out, err := run(ctx, dir, "uv", append([]string{"pip", "install", "-q", "--python", py}, args...)...); err != nil {
+				return errors.New(tail(out))
+			}
+			return nil
+		}
+		if out, err := run(ctx, dir, py, "-m", "ensurepip", "-q"); err != nil {
+			return errors.New(tail(out))
+		}
+	}
+	if out, err := run(ctx, dir, py, append([]string{"-m", "pip", "install", "-q"}, args...)...); err != nil {
 		return errors.New(tail(out))
 	}
 	return nil
