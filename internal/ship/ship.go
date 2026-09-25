@@ -103,12 +103,27 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	res.LineasMenos = menos
 
 	// 3. ruido — prints de debug, temporales, código comentado
-	if h := escanearRuido(diff, archivos); len(h) > 0 {
-		res.Ruido = len(h)
-		apuntar(Paso{"ruido", false, resumenHallazgos(h)})
+	// el código comentado avisa pero no frena: un contrato con pasos o
+	// un ejemplo en un comentario se ve igual, y el esqueleto los
+	// escribe a propósito. Prints de debug y temporales sí frenan.
+	var frena, avisa []Hallazgo
+	for _, x := range escanearRuido(diff, archivos) {
+		if x.Tipo == "código comentado" {
+			avisa = append(avisa, x)
+		} else {
+			frena = append(frena, x)
+		}
+	}
+	res.Ruido = len(frena) + len(avisa)
+	if len(frena) > 0 {
+		apuntar(Paso{"ruido", false, resumenHallazgos(frena)})
 		return res
 	}
-	apuntar(Paso{"ruido", true, "sin ruido"})
+	if len(avisa) > 0 {
+		apuntar(Paso{"ruido", true, "revísalo a ojo: " + resumenHallazgos(avisa)})
+	} else {
+		apuntar(Paso{"ruido", true, "sin ruido"})
+	}
 
 	// 4. secretos — en el diff y en el commit
 	if h := escanearSecretos(diff); len(h) > 0 {
