@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Pastranauwu/devclean/internal/state"
@@ -75,6 +76,9 @@ func ResetIntegration(ctx context.Context, root, base string) error {
 	if err := VerificarBase(ctx, root, base); err != nil {
 		return err
 	}
+	if err := ExcluirArtefactos(ctx, root); err != nil {
+		return err
+	}
 	path := filepath.Join(Dir(root), "_integra")
 	if out, err := git(ctx, root, "worktree", "add", path, "-b", IntegrationBranch, base); err != nil {
 		return fmt.Errorf("no se pudo crear la rama de integración · %s", strings.TrimSpace(out))
@@ -122,6 +126,9 @@ func Create(ctx context.Context, root, id, base string) (Room, error) {
 	}
 	// verificar la base antes: el mensaje de git varía con el idioma
 	if err := VerificarBase(ctx, root, base); err != nil {
+		return Room{}, err
+	}
+	if err := ExcluirArtefactos(ctx, root); err != nil {
 		return Room{}, err
 	}
 	if out, err := git(ctx, root, "worktree", "add", r.Path, "-b", r.Rama, base); err != nil {
@@ -210,24 +217,209 @@ func freePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-// InstalarDependencias installs dependencies per manifest: npm install
-// for package.json, go mod download for go.mod. Lo usa Create y tambien
-// el nivel funcional de overlap, que monta un arbol fusionado en un
-// worktree suelto y necesita las mismas dependencias para correr las
-// suites: sin node_modules una suite falla por motivos que no son el
-// solapamiento que se esta midiendo.
+// InstalarDependencias instala dependencias por cada manifiesto hasta
+// dos niveles bajo path: npm install por package.json, go mod download
+// por go.mod y un .venv por pyproject.toml o requirements.txt. Lo usa
+// Create y también el nivel funcional de overlap, que monta un árbol
+// fusionado en un worktree suelto y necesita las mismas dependencias.
+//
+// Mirar solo la raíz dejaba sin instalar un monorepo (frontend/ +
+// backend/): las suites fallaban por dependencias o pasaban porque un
+// agente había commiteado node_modules. Un package.json instalado no
+// se vuelve a buscar debajo: los workspaces de npm los resuelve la raíz.
 func InstalarDependencias(ctx context.Context, path string) error {
-	if exists(filepath.Join(path, "package.json")) {
-		if out, err := run(ctx, path, "npm", "install"); err != nil {
-			return fmt.Errorf("npm install falló en el cuarto · %s", tail(out))
+	for _, dir := range dirsManifiesto(path) {
+		rel, _ := filepath.Rel(path, dir)
+		if exists(filepath.Join(dir, "package.json")) && !bajoNode(path, dir) {
+			if out, err := run(ctx, dir, "npm", "install"); err != nil {
+				return fmt.Errorf("npm install falló en %s · %s", rel, tail(out))
+			}
 		}
-	}
-	if exists(filepath.Join(path, "go.mod")) {
-		if out, err := run(ctx, path, "go", "mod", "download"); err != nil {
-			return fmt.Errorf("go mod download falló en el cuarto · %s", tail(out))
+		if exists(filepath.Join(dir, "go.mod")) {
+			if out, err := run(ctx, dir, "go", "mod", "download"); err != nil {
+				return fmt.Errorf("go mod download falló en %s · %s", rel, tail(out))
+			}
+		}
+		if exists(filepath.Join(dir, "pyproject.toml")) || exists(filepath.Join(dir, "requirements.txt")) {
+			if err := venv(ctx, dir); err != nil {
+				return fmt.Errorf("dependencias de python fallaron en %s · %s", rel, err)
+			}
 		}
 	}
 	return nil
+}
+
+// Entorno devuelve el PATH con los bin de cada .venv del cuarto
+// delante, para que `pytest` en listo_cuando y en el agente use las
+// dependencias instaladas y no las del sistema. Vacío si no hay venv.
+func Entorno(path string) []string {
+	var bins []string
+	for _, dir := range dirsManifiesto(path) {
+		bin := filepath.Join(dir, ".venv", binVenv())
+		if info, err := os.Stat(bin); err == nil && info.IsDir() {
+			bins = append(bins, bin)
+		}
+	}
+	if len(bins) == 0 {
+		return nil
+	}
+	return []string{"PATH=" + strings.Join(append(bins, os.Getenv("PATH")), string(os.PathListSeparator))}
+}
+
+// venv crea dir/.venv con acceso a los paquetes del sistema (pytest
+// global sigue a mano aunque el proyecto no lo declare) e instala las
+// dependencias declaradas. Del pyproject se instalan solo las
+// dependencias, no el proyecto: un layout plano con app/ y tests/ hace
+// fallar `pip install -e .` por "multiple top-level packages".
+func venv(ctx context.Context, dir string) error {
+	py := filepath.Join(dir, ".venv", binVenv(), "python")
+	if !exists(py) && !exists(py+".exe") {
+		if out, err := run(ctx, dir, pythonSistema(), "-m", "venv", "--system-site-packages", ".venv"); err != nil {
+			return errors.New(tail(out))
+		}
+	}
+	if exists(filepath.Join(dir, "requirements.txt")) {
+		if out, err := run(ctx, dir, py, "-m", "pip", "install", "-q", "-r", "requirements.txt"); err != nil {
+			return errors.New(tail(out))
+		}
+	}
+	if !exists(filepath.Join(dir, "pyproject.toml")) {
+		return nil
+	}
+	out, err := run(ctx, dir, py, "-c", depsPyproject)
+	if err != nil {
+		return errors.New(tail(out))
+	}
+	deps := strings.Fields(out)
+	if len(deps) == 0 {
+		return nil
+	}
+	if out, err := run(ctx, dir, py, append([]string{"-m", "pip", "install", "-q"}, deps...)...); err != nil {
+		return errors.New(tail(out))
+	}
+	return nil
+}
+
+// depsPyproject imprime las dependencias y los extras de pyproject.toml,
+// una por línea y sin espacios (pip acepta "fastapi>=0.110").
+const depsPyproject = `import tomllib
+p = tomllib.load(open("pyproject.toml", "rb")).get("project", {})
+d = list(p.get("dependencies", []))
+for v in p.get("optional-dependencies", {}).values():
+    d.extend(v)
+print("\n".join(x.replace(" ", "") for x in d))`
+
+func binVenv() string {
+	if runtime.GOOS == "windows" {
+		return "Scripts"
+	}
+	return "bin"
+}
+
+func pythonSistema() string {
+	if _, err := exec.LookPath("python3"); err == nil {
+		return "python3"
+	}
+	return "python"
+}
+
+// dirsManifiesto lista path y sus subdirectorios hasta dos niveles,
+// sin dependencias, artefactos ni carpetas ocultas.
+func dirsManifiesto(path string) []string {
+	dirs := []string{path}
+	nivel := []string{path}
+	for i := 0; i < 2; i++ {
+		var siguiente []string
+		for _, d := range nivel {
+			entradas, err := os.ReadDir(d)
+			if err != nil {
+				continue
+			}
+			for _, e := range entradas {
+				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || Artefacto(e.Name()) {
+					continue
+				}
+				siguiente = append(siguiente, filepath.Join(d, e.Name()))
+			}
+		}
+		dirs = append(dirs, siguiente...)
+		nivel = siguiente
+	}
+	return dirs
+}
+
+// bajoNode reporta si algún ancestro de dir dentro de path ya tiene
+// package.json: esos los instala la raíz (workspaces).
+func bajoNode(path, dir string) bool {
+	for d := filepath.Dir(dir); len(d) >= len(path) && d != dir; d = filepath.Dir(d) {
+		if exists(filepath.Join(d, "package.json")) {
+			return true
+		}
+		if d == path {
+			break
+		}
+	}
+	return false
+}
+
+// artefactos son carpetas que se generan o se instalan, nunca código:
+// ni se versionan ni se buscan manifiestos adentro.
+var artefactos = []string{"node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "dist", "build", "target", ".next", ".nuxt", ".svelte-kit", "coverage", ".turbo", ".gradle", "vendor"}
+
+// Artefacto reporta si name es una carpeta de dependencias o de build.
+func Artefacto(name string) bool {
+	for _, a := range artefactos {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ExcluirArtefactos agrega las carpetas de dependencias y de build al
+// info/exclude del repo, que comparten todos sus worktrees. El bucle
+// indexa con `git add -A`: en un repo nuevo sin .gitignore, la tarea
+// que corrió `npm install` commiteó 1.3M líneas de node_modules y esa
+// basura viajó a cada cuarto, diff y revisor siguiente. info/exclude no
+// se versiona, así que no ensucia el repo del usuario.
+func ExcluirArtefactos(ctx context.Context, root string) error {
+	dir, err := git(ctx, root, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return fmt.Errorf("no se pudo ubicar el repo git · %s", strings.TrimSpace(dir))
+	}
+	dir = strings.TrimSpace(dir)
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(root, dir)
+	}
+	p := filepath.Join(dir, "info", "exclude")
+	previo, _ := os.ReadFile(p)
+	tiene := map[string]bool{}
+	for _, l := range strings.Split(string(previo), "\n") {
+		tiene[strings.TrimSpace(l)] = true
+	}
+	var faltan []string
+	for _, a := range artefactos {
+		if !tiene[a+"/"] {
+			faltan = append(faltan, a+"/")
+		}
+	}
+	if len(faltan) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	sep := ""
+	if len(previo) > 0 && !strings.HasSuffix(string(previo), "\n") {
+		sep = "\n"
+	}
+	_, err = f.WriteString(sep + "# devclean: dependencias y artefactos de build\n" + strings.Join(faltan, "\n") + "\n")
+	return err
 }
 
 func exists(path string) bool {

@@ -163,6 +163,7 @@ func correrSuite(ctx context.Context, dir, listoCuando string, timeout time.Dura
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", "-c", listoCuando)
+	cmd.Env = append(os.Environ(), room.Entorno(dir)...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {

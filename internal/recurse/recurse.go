@@ -294,7 +294,7 @@ func (a Agent) resolverSubtarea(ctx context.Context, req loop.Request, sub task.
 	}
 
 	// hoja roja: solo merece escalar de modelo si de verdad dejó trabajo
-	if m := a.Cfg.ModeloEscalado(sub.Peso, modelo); m != "" && huboTrabajo(rootPara(a, req), sub.ID) {
+	if m := a.Cfg.ModeloEscalado(sub.Peso, modelo); m != "" && !outcome.NoEscalar && huboTrabajo(rootPara(a, req), sub.ID) {
 		outcome, agentErr, tk = a.correrSubtarea(ctx, req, r, sub, m)
 		modelo = m
 		if agentErr == nil && outcome.Verde {

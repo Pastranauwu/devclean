@@ -219,3 +219,43 @@ func gitOut(t *testing.T, dir string, args ...string) (string, error) {
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
 }
+
+// monorepo: el pyproject de backend/ está un nivel abajo y antes nadie
+// lo instalaba; su .venv queda delante en el PATH y fuera de git.
+func TestCreateInstalaPythonEnSubcarpetaYLoExcluye(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("sin python3")
+	}
+	root := repoConCommit(t)
+	if err := os.MkdirAll(filepath.Join(root, "backend"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "backend", "pyproject.toml"), []byte("[project]\nname = \"x\"\nversion = \"0\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, root, "add", "-A")
+	gitCmd(t, root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "backend")
+
+	r, err := Create(context.Background(), root, "T-001", "main")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	env := Entorno(r.Path)
+	if len(env) != 1 || !strings.HasPrefix(env[0], "PATH="+filepath.Join(r.Path, "backend", ".venv")) {
+		t.Fatalf("entorno = %v", env)
+	}
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = r.Path
+	out, _ := cmd.CombinedOutput()
+	if strings.Contains(string(out), ".venv") {
+		t.Errorf(".venv no quedó excluido:\n%s", out)
+	}
+	// idempotente: una segunda vez no repite líneas
+	if err := ExcluirArtefactos(context.Background(), root); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(root, ".git", "info", "exclude"))
+	if strings.Count(string(b), "node_modules/") != 1 {
+		t.Errorf("exclude repetido:\n%s", b)
+	}
+}

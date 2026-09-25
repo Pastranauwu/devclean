@@ -3,6 +3,7 @@ package loop
 import (
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // parseTestCounts extrae tests_pasaron/tests_fallaron de la salida de
@@ -77,4 +78,25 @@ func SinPruebas(salida string) bool {
 		return false
 	}
 	return !corrioRE.MatchString(salida)
+}
+
+// noCorrioRE reconoce la salida de un runner que no llegó a ejecutar la
+// prueba pedida: el archivo no existe o el filtro no encontró nada.
+var noCorrioRE = regexp.MustCompile(`(?i)no test files found|no tests? found|no tests ran|file or directory not found|matched no packages|no go files in|cannot find module .*\.(test|spec)\.|collected 0 items`)
+
+// PruebaNoCorrio reporta si listo_cuando falló sin llegar a probar el
+// código: comando inexistente (127), pytest sin archivo o sin pruebas
+// (4 y 5) o un runner que avisa que no encontró nada. Ese rojo no lo
+// arregla un modelo más caro: falta la prueba o el contrato apunta mal.
+func PruebaNoCorrio(cmd string, code *int, salida string) bool {
+	if code == nil || *code == 127 {
+		return true
+	}
+	if *code == 0 {
+		return false
+	}
+	if strings.Contains(cmd, "pytest") && (*code == 4 || *code == 5) {
+		return true
+	}
+	return noCorrioRE.MatchString(salida)
 }

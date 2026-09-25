@@ -175,6 +175,12 @@ type Outcome struct {
 	Intentos    int    `json:"intentos"`
 	UltimoError string `json:"ultimo_error,omitempty"`
 	Pregunta    string `json:"pregunta,omitempty"`
+	// NoEscalar marca un rojo que un modelo más caro no arregla: la
+	// prueba ni llegó a correr, el agente solo tocó lo que la reversión
+	// de alcance quita, o la tarea ya gastó su tope. En closet la
+	// escalera a qwen-max pagó el 95% de la corrida contra una prueba
+	// que no existía.
+	NoEscalar bool `json:"no_escalar,omitempty"`
 }
 
 // Run dirige el bucle de intentos e instrumenta cada uno en attempts.jsonl.
@@ -193,6 +199,8 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	if o.PruebaTimeout <= 0 {
 		o.PruebaTimeout = DefaultTimeout
 	}
+	// el .venv del cuarto va delante en el PATH del agente y de la prueba
+	o.Env = append(append([]string(nil), o.Env...), room.Entorno(o.Room.Path)...)
 	if len(o.PatronesPrueba) == 0 {
 		o.Task.TocarSolo = conPruebasPropias(o.Task)
 	}
@@ -220,6 +228,17 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	// llamada, pero el número que se registra sigue la cuenta de la tarea
 	// para que un intento nuevo no pise el intento-N.log de otro
 	previos, _ := ReadAttempts(o.Root, o.Task.ID)
+
+	// tope por tarea, no por llamada: escalar, retomar y --reintentar
+	// vuelven a llamar a Run, y un límite de 3 terminó en 15 intentos.
+	// Editar el contrato lo reinicia: cuenta desde la última edición.
+	tope := TopeIntentos * limite
+	if usados := intentosPagados(previos, contratoEditado(o.Root, o.Task.ID)); usados >= tope {
+		motivo := fmt.Sprintf("tope de %d intentos agotado · edita %s (listo_cuando, tocar_solo o notas) y reintenta", tope, o.Task.ID)
+		return Outcome{Intentos: 0, UltimoError: motivo, Pregunta: motivo, NoEscalar: true}, nil
+	} else if tope-usados < limite {
+		limite = tope - usados
+	}
 
 	// el latido es el único estado en vivo: attempts.jsonl no se escribe
 	// hasta que el intento termina, y un intento puede durar veinte
@@ -293,7 +312,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	}
 
 	var prevErr string
-	var falloAnterior string
+	var noCorrio bool
 	for intento := 1; intento <= limite; intento++ {
 		inicio := time.Now().UTC()
 		avisar(intento, FaseAgente)
@@ -356,7 +375,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		var salida string
 		var code *int
 		if detener == nil {
-			salida, code = runPrueba(ctx, o.Room.Path, o.Task.ListoCuando, o.PruebaTimeout)
+			salida, code = runPrueba(ctx, o.Room.Path, o.Task.ListoCuando, o.PruebaTimeout, o.Env)
 		}
 		pasaron, fallaron := ParseTestCounts(salida)
 		fin := time.Now().UTC()
@@ -501,15 +520,18 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			return Outcome{Verde: false, Intentos: intento, UltimoError: a.ErrorAgente, Pregunta: motivo}, nil
 		}
 
-		// Compara el fallo completo, no el resumen truncado. Solo corta cuando
-		// se repite sin ningún cambio conservado en este intento.
-		fallo := fmt.Sprintf("%v\n%s\n%s", valorSalida(code), salida, a.ErrorAgente)
-		if intento > 1 && intento < limite && fallo == falloAnterior && len(archivos) == 0 {
-			motivo := "sin progreso: mismo fallo sin cambios de código · revisa el contrato o escala el modelo"
-			return Outcome{Intentos: intento, UltimoError: resumenFallo(o.Task.ListoCuando, code, salida), Pregunta: motivo}, nil
+		// un intento que no dejó nada dentro del alcance deja el código
+		// igual que el anterior: repetir da el mismo rojo. No se compara
+		// la salida, que cambia por tiempos (vitest) aunque nada cambie.
+		if intento > 1 && len(archivos) == 0 {
+			motivo := "sin progreso: el intento no dejó cambios dentro del alcance · revisa el contrato"
+			if len(revertidos) > 0 {
+				motivo = fmt.Sprintf("sin progreso: el agente solo tocó archivos fuera de tocar_solo (%s) y se revirtieron · agrégalos a tocar_solo si la tarea los necesita", strings.Join(revertidos, ", "))
+			}
+			return Outcome{Intentos: intento, UltimoError: resumenFallo(o.Task.ListoCuando, code, salida), Pregunta: motivo, NoEscalar: len(revertidos) > 0 || PruebaNoCorrio(o.Task.ListoCuando, code, salida)}, nil
 		}
-		falloAnterior = fallo
 		prevErr = resumenFallo(o.Task.ListoCuando, code, salida)
+		noCorrio = PruebaNoCorrio(o.Task.ListoCuando, code, salida)
 		if agentErr != nil {
 			prevErr = strings.TrimSpace(a.ErrorAgente + " · " + prevErr)
 		}
@@ -521,7 +543,36 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		Intentos:    limite,
 		UltimoError: prevErr,
 		Pregunta:    pregunta,
+		NoEscalar:   noCorrio,
 	}, nil
+}
+
+// TopeIntentos multiplica limite_intentos para dar el tope total de una
+// tarea: su escalón y uno de escalada.
+const TopeIntentos = 2
+
+// intentosPagados cuenta los intentos que gastaron tokens desde que se
+// editó el contrato. Los que no llegaron al modelo (sin saldo, CLI caído)
+// no cuentan: no costaron nada.
+func intentosPagados(as []Attempt, desde time.Time) int {
+	n := 0
+	for _, a := range as {
+		if a.Inicio.Before(desde) || a.Tokens.Entrada+a.Tokens.Salida == 0 {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// contratoEditado es la última modificación del contrato de la tarea;
+// cero si no está (las subtareas de la recursión no tienen archivo).
+func contratoEditado(root, id string) time.Time {
+	info, err := os.Stat(task.Path(config.TasksDir(root), id))
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
 }
 
 // suiteManualEnCuarto copia al cuarto la suite visible que el usuario
@@ -564,7 +615,7 @@ func commitWip(roomPath, id string, intento int) error {
 
 // runPrueba ejecuta listo_cuando dentro del cuarto y devuelve la salida
 // combinada y su código de salida (nil si ni siquiera arrancó).
-func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration) (string, *int) {
+func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration, env []string) (string, *int) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -575,6 +626,7 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration) (
 		cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	}
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), env...)
 
 	out, err := cmd.CombinedOutput()
 	code := 0

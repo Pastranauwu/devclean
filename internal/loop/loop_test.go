@@ -134,7 +134,10 @@ func TestRunNumeraIntentosTrasEscalar(t *testing.T) {
 
 func TestRunAgotaIntentos(t *testing.T) {
 	root := repoConCommit(t)
-	ag := &agenteFalso{nombre: "falso"}
+	ag := &agenteFalso{nombre: "falso", hacer: func(n int, req Request) (string, int, error) {
+		escribir(t, req.RoomPath, "src/progreso.txt", strings.Repeat("avance\n", n))
+		return "", 0, nil
+	}}
 	tk := tareaDePrueba()
 	tk.ListoCuando = "false"
 	tk.LimiteIntentos = 2
@@ -506,5 +509,81 @@ func TestRunContinuaConCambiosAunqueFalloSeaIgual(t *testing.T) {
 	out, err := Run(context.Background(), optsDePrueba(t, root, ag, tareaDePrueba()))
 	if err != nil || !out.Verde || ag.veces != 3 {
 		t.Fatalf("%+v, error=%v, llamadas=%d", out, err, ag.veces)
+	}
+}
+
+// closet: el agente reescribía cada vez la prueba que la reversión
+// quitaba; el intento no dejaba nada y la escalera pagaba qwen-max.
+func TestRunSinProgresoPorReversionNoEscala(t *testing.T) {
+	root := repoConCommit(t)
+	ag := &agenteFalso{nombre: "falso", hacer: func(n int, req Request) (string, int, error) {
+		escribir(t, req.RoomPath, "fuera/x.txt", "otra vez")
+		return "", 0, nil
+	}}
+	tk := tareaDePrueba()
+	tk.ListoCuando = "exit 1"
+	tk.LimiteIntentos = 5
+	out, err := Run(context.Background(), optsDePrueba(t, root, ag, tk))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ag.veces != 2 || !out.NoEscalar || !strings.Contains(out.Pregunta, "fuera/x.txt") {
+		t.Fatalf("%+v, llamadas=%d", out, ag.veces)
+	}
+}
+
+func TestRunTopePorTareaSumaLlamadas(t *testing.T) {
+	root := repoConCommit(t)
+	ag := &agenteFalso{nombre: "falso", hacer: func(n int, req Request) (string, int, error) {
+		escribir(t, req.RoomPath, "src/progreso.txt", strings.Repeat("avance\n", n))
+		return "", 0, nil
+	}}
+	tk := tareaDePrueba()
+	tk.ListoCuando = "exit 1"
+	tk.LimiteIntentos = 2
+	opts := optsDePrueba(t, root, ag, tk)
+	for i := 0; i < 3; i++ {
+		if _, err := Run(context.Background(), opts); err != nil {
+			t.Fatal(err)
+		}
+	}
+	as, _ := ReadAttempts(root, tk.ID)
+	// el agente falso no reporta tokens: ningún intento cuenta como
+	// pagado y el tope no corta
+	if len(as) != 6 {
+		t.Fatalf("intentos=%d", len(as))
+	}
+	if n := intentosPagados(as, time.Time{}); n != 0 {
+		t.Fatalf("pagados=%d", n)
+	}
+	for i := range as {
+		as[i].Tokens.Entrada = 1
+	}
+	if n := intentosPagados(as, as[3].Inicio); n != 3 {
+		t.Fatalf("desde el cuarto: pagados=%d", n)
+	}
+}
+
+func TestPruebaNoCorrio(t *testing.T) {
+	uno, cuatro, cero, ciento := 1, 4, 0, 127
+	casos := []struct {
+		cmd    string
+		code   *int
+		salida string
+		quiero bool
+	}{
+		{"pytest backend/tests/test_base.py", &cuatro, "ERROR: file or directory not found", true},
+		{"npm test -- x.test.tsx", &uno, "No test files found, exiting with code 1", true},
+		{"go test ./nada/...", &uno, "go: warning: \"./nada/...\" matched no packages", true},
+		{"foo", &ciento, "sh: foo: not found", true},
+		{"pytest", &uno, "1 failed, 2 passed", false},
+		{"go test ./...", &uno, "--- FAIL: TestX", false},
+		{"pytest", &cero, "", false},
+		{"pytest", nil, "", true},
+	}
+	for _, c := range casos {
+		if got := PruebaNoCorrio(c.cmd, c.code, c.salida); got != c.quiero {
+			t.Errorf("%q %q = %v", c.cmd, c.salida, got)
+		}
 	}
 }

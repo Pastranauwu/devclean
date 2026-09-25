@@ -979,7 +979,7 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 	if !outcome.Verde && err == nil && !recursiva {
 		// escalera: el modelo barato dejó trabajo y las pruebas siguen
 		// rojas; se sube un escalón reusando el cuarto, sin re-examinar
-		if m := cfg.ModeloEscalado(t.Peso, modeloTarea); m != "" && huboTrabajoRun(root, t.ID) {
+		if m := cfg.ModeloEscalado(t.Peso, modeloTarea); m != "" && !outcome.NoEscalar && huboTrabajoRun(root, t.ID) {
 			escalado := opts
 			escalado.Model = m
 			escalado.Examinador = nil

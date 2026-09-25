@@ -13,6 +13,7 @@ import (
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/executor"
+	"github.com/Pastranauwu/devclean/internal/room"
 )
 
 // entornoListo es prepararEntorno desde el cwd y la terminal, una sola
@@ -224,6 +225,8 @@ func commitInicial(root string, lector *bufio.Reader) error {
 			return errors.New("sin commit inicial · hazlo vos y vuelve a correr")
 		}
 	}
+	// sin .gitignore, el commit inicial se llevaría node_modules y .venv
+	_ = room.ExcluirArtefactos(context.Background(), root)
 	if _, err := gitEn(root, "add", "-A"); err != nil {
 		return fmt.Errorf("no se pudo preparar el commit inicial · %s", err)
 	}
