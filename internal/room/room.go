@@ -175,6 +175,16 @@ func Ensure(ctx context.Context, root, id, base string) (Room, error) {
 	// que hereda de una oleada anterior
 	if st, err := state.Get(root, id); err == nil && st.Commit != "" {
 		r.Commit = st.Commit
+	} else {
+		// sin estado (el esqueleto lo guarda al terminar, o se borró
+		// .devclean/state): el punto de partida es donde la rama se
+		// separó de la base. Vacío, `git diff "" HEAD` salía con 128.
+		if base == "" {
+			base = "HEAD"
+		}
+		if h, err := git(ctx, r.Path, "merge-base", base, "HEAD"); err == nil {
+			r.Commit = strings.TrimSpace(h)
+		}
 	}
 	puerto, err := freePort()
 	if err != nil {

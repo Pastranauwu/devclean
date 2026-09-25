@@ -277,3 +277,25 @@ func TestInstalaEnVenvSinPip(t *testing.T) {
 		t.Fatalf("venv de uv: %v", err)
 	}
 }
+
+// un cuarto que sobrevive sin archivo de estado (el esqueleto lo guarda
+// al terminar) tiene que seguir sabiendo desde dónde arrancó
+func TestEnsureSinEstadoRecuperaElPuntoDePartida(t *testing.T) {
+	root := repoConCommit(t)
+	base := strings.TrimSpace(func() string {
+		out, _ := exec.Command("git", "-C", root, "rev-parse", "main").Output()
+		return string(out)
+	}())
+	r, err := Create(context.Background(), root, "T-001", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, r.Path, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "wip")
+	otra, err := Ensure(context.Background(), root, "T-001", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if otra.Commit != base {
+		t.Fatalf("commit = %q, quiero %q", otra.Commit, base)
+	}
+}

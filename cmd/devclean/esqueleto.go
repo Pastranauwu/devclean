@@ -143,15 +143,18 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 		prompt = esqueleto.PromptCorregir(original, problemas)
 	}
 
-	if _, err := gitEn(r.Path, "add", "-A"); err != nil {
-		return err
+	if salida, err := gitEn(r.Path, "add", "-A"); err != nil {
+		return fmt.Errorf("no se pudo indexar el esqueleto · %s", strings.TrimSpace(salida))
 	}
-	if _, err := gitEn(r.Path, "-c", "user.name=devclean", "-c", "user.email=devclean@local", "commit", "--quiet", "--allow-empty", "-m", "wip: "+id+" esqueleto"); err != nil {
-		return err
+	// al retomar, el esqueleto puede estar ya commiteado: nada que agregar
+	if _, err := gitEn(r.Path, "diff", "--cached", "--quiet"); err != nil {
+		if salida, err := gitEn(r.Path, "-c", "user.name=devclean", "-c", "user.email=devclean@local", "commit", "--quiet", "-m", "wip: "+id+" esqueleto"); err != nil {
+			return fmt.Errorf("no se pudo commitear el esqueleto · %s", strings.TrimSpace(salida))
+		}
 	}
 	creados, err := gitEn(r.Path, "diff", "--name-only", r.Commit, "HEAD")
 	if err != nil {
-		return err
+		return fmt.Errorf("no se pudo listar lo que creó el esqueleto · %s", strings.TrimSpace(creados))
 	}
 	if err := state.Save(root, state.State{ID: id, Estado: state.Lista, Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit}); err != nil {
 		return err
