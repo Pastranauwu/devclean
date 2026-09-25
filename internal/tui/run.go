@@ -202,6 +202,9 @@ func renderFilaRun(f FilaRun, v *tareaViva, inicio time.Time, tick int) string {
 	case v.estado == "lista":
 		g = estiloPresion.Render("✓")
 		estado = estiloPresion.Render("verde en " + intentosTxt(v.intentos))
+	case v.estado == "sin_saldo":
+		g = estiloAlerta.Render("⏸")
+		estado = estiloAlerta.Render("sin saldo · queda pendiente")
 	case v.estado == "detenida":
 		g = estiloAlerta.Render("⏸")
 		estado = estiloAlerta.Render("detenida")

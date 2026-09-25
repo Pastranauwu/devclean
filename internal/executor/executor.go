@@ -142,6 +142,21 @@ func run(ctx context.Context, req Request, name string, args ...string) (string,
 	return stdout.String(), stderr.String(), 0, nil
 }
 
+// SinSaldo reporta si un fallo es la cuenta del proveedor sin fondos. No
+// es de la tarea sino de toda la corrida: reintentar o escalar de modelo
+// por la misma cuenta devuelve el mismo 402. En closet, un saldo agotado
+// dejó 5 tareas detenidas tras 36 invocaciones fallidas y el resto
+// colgado de ellas.
+func SinSaldo(msg string) bool {
+	m := strings.ToLower(msg)
+	for _, s := range []string{"insufficient account funds", "insufficient funds", "insufficient balance", "credit balance is too low", "payment required"} {
+		if strings.Contains(m, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // lineas parte en líneas lo que el CLI va escribiendo y se las pasa a
 // fn a medida que se completan.
 type lineas struct {

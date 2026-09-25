@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -287,6 +288,17 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 		results = append(results, sembrarVerdesPrevias(ctx, root, aprobadas, integrada)...)
 	}
 
+	// las olas siguientes a un 402 chocarían con lo mismo: quedan
+	// pendientes, no bloqueadas
+	pendientesSinSaldo := func() {
+		for _, t := range aprobadas {
+			if !procesadas[t.ID] {
+				results = append(results, runResult{ID: t.ID, Titulo: t.Titulo, Estado: estadoSinSaldo, Motivo: "no se lanzó · el proveedor no tiene saldo"})
+				procesadas[t.ID] = true
+			}
+		}
+	}
+
 	for {
 		var ola []task.Task
 		for _, t := range aprobadas {
@@ -319,6 +331,7 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 		}
 
 		var verdes []runResult
+		sinSaldo := false
 		if len(asignadas) > 0 {
 			workers := agentes
 			if workers < 1 {
@@ -328,6 +341,7 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 			results = append(results, r...)
 			for _, rr := range r {
 				procesadas[rr.ID] = true
+				sinSaldo = sinSaldo || rr.Estado == estadoSinSaldo
 				if rr.Estado == "lista" {
 					verdes = append(verdes, rr)
 				}
@@ -335,6 +349,10 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 		}
 
 		if !tieneDeps {
+			if sinSaldo {
+				pendientesSinSaldo()
+				break
+			}
 			continue
 		}
 		sort.Slice(verdes, func(i, j int) bool { return verdes[i].ID < verdes[j].ID })
@@ -347,6 +365,10 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 				continue
 			}
 			integrada[v.ID] = true
+		}
+		if sinSaldo {
+			pendientesSinSaldo()
+			break
 		}
 	}
 	return results
@@ -600,6 +622,7 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 	}
 
 	jobs := make(chan task.Task)
+	var sinSaldo atomic.Bool
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	results := make([]runResult, 0, len(asignadas))
@@ -609,6 +632,12 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 		go func() {
 			defer wg.Done()
 			for t := range jobs {
+				if sinSaldo.Load() {
+					mu.Lock()
+					results = append(results, runResult{ID: t.ID, Titulo: t.Titulo, Estado: estadoSinSaldo, Motivo: "no se lanzó · el proveedor no tiene saldo"})
+					mu.Unlock()
+					continue
+				}
 				if presupuesto.Agotado() {
 					mu.Lock()
 					results = append(results, runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Motivo: loop.MotivoPresupuesto})
@@ -619,6 +648,9 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 					onEvent(tui.EventoRun{ID: t.ID, Estado: "trabajando"})
 				}
 				r := correrUno(ctx, root, cfg, ex, modelo, base, constitucion, presupuesto, ventanasReg, t)
+				if r.Estado == estadoSinSaldo {
+					sinSaldo.Store(true)
+				}
 				if onEvent != nil {
 					onEvent(tui.EventoRun{ID: r.ID, Estado: r.Estado, Intentos: r.Intentos, Motivo: r.Motivo})
 				}
@@ -938,6 +970,12 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 	opts.Proveedor = exTarea.Name()
 
 	outcome, err := loop.Run(ctx, opts)
+	if !outcome.Verde && err == nil && executor.SinSaldo(outcome.UltimoError) {
+		// sin escalar y sin detener: la tarea no falló, la cuenta no
+		// tiene fondos. Pendiente, `up` la retoma al recargar.
+		_ = state.Save(root, state.State{ID: t.ID, Estado: state.Pendiente, Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit, UltimoError: outcome.UltimoError})
+		return runResult{ID: t.ID, Titulo: t.Titulo, Estado: estadoSinSaldo, Motivo: motivoSinSaldo(exTarea.Name(), outcome.UltimoError), Tokens: tokensDeTarea(root, t.ID)}
+	}
 	if !outcome.Verde && err == nil && !recursiva {
 		// escalera: el modelo barato dejó trabajo y las pruebas siguen
 		// rojas; se sube un escalón reusando el cuarto, sin re-examinar
@@ -969,6 +1007,15 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		UltimoError: outcome.UltimoError, Pregunta: outcome.Pregunta,
 	})
 	return runResult{ID: t.ID, Titulo: t.Titulo, Estado: "detenida", Intentos: outcome.Intentos, Motivo: outcome.Pregunta, Tokens: tokens}
+}
+
+// estadoSinSaldo marca una tarea que no corrió o no terminó porque la
+// cuenta del proveedor se quedó sin fondos. Su estado guardado sigue
+// pendiente: no es un fallo suyo.
+const estadoSinSaldo = "sin_saldo"
+
+func motivoSinSaldo(cli, detalle string) string {
+	return fmt.Sprintf("%s sin saldo (%s) · recarga la cuenta o cambia modelos: en .devclean/config.yml · devclean up retoma donde quedó", cli, strings.TrimSpace(detalle))
 }
 
 // huboTrabajoRun reporta si la tarea tocó archivos en algún intento: es
@@ -1026,8 +1073,15 @@ func emitirResultados(results []runResult) error {
 	if err := out.Data(results); err != nil {
 		return err
 	}
+	var motivoSaldo string
+	sinSaldo := 0
 	for _, r := range results {
 		switch r.Estado {
+		case estadoSinSaldo:
+			sinSaldo++
+			if !strings.HasPrefix(r.Motivo, "no se lanzó") {
+				motivoSaldo = r.Motivo
+			}
 		case "lista":
 			extra := ""
 			if r.Tokens > 0 {
@@ -1043,6 +1097,14 @@ func emitirResultados(results []runResult) error {
 		case "rechazada":
 			out.Line("✗ %s  %s  · %s", r.ID, r.Titulo, r.Motivo)
 		}
+	}
+	if sinSaldo > 0 {
+		// una línea para todas: repetir el 402 por tarea lo hacía parecer
+		// veinte fallos distintos
+		if motivoSaldo == "" {
+			motivoSaldo = "el proveedor no tiene saldo · recarga la cuenta y corre devclean up"
+		}
+		out.Line("⏸ %d tareas quedaron pendientes · %s", sinSaldo, motivoSaldo)
 	}
 	return nil
 }
