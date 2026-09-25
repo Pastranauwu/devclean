@@ -146,12 +146,20 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	}
 
 	// 7. bisectable — el commit compila y pasa las pruebas
-	if detalle, ok := verificarBisectable(ctx, o.Room.Path, o.Config.Pruebas, o.Timeout); !ok {
+	detalle, ok := verificarBisectable(ctx, o.Room.Path, o.Config.Pruebas, o.Timeout)
+	if !ok && suiteYaFallaba(ctx, o.Room.Path, o.Base, o.Config.Pruebas, o.Timeout) {
+		// con esqueleto, la suite del proyecto sigue roja hasta que se
+		// rellenan todos los módulos: exigirla verde en cada tarea frena
+		// a todas. Se exige su listo_cuando; la suite completa la exige
+		// la integración (paso integradas).
+		detalle, ok = verificarBisectable(ctx, o.Room.Path, o.Task.ListoCuando, o.Timeout)
+		detalle = "la suite ya fallaba al empezar la tarea · " + detalle + " · la suite completa se exige al integrar"
+	}
+	if !ok {
 		apuntar(Paso{"bisectable", false, detalle})
 		return res
-	} else {
-		apuntar(Paso{"bisectable", true, detalle})
 	}
+	apuntar(Paso{"bisectable", true, detalle})
 
 	// 8. suite_oculta — hidden test gate; skipped if no sealed suite
 	pruebas := o.Config.Pruebas

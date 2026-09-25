@@ -23,6 +23,24 @@ func verificarBisectable(ctx context.Context, roomPath, pruebas string, timeout 
 	return "falla " + pruebas + " · " + tail(salida), false
 }
 
+// suiteYaFallaba corre pruebas sobre el commit base de la tarea, en el
+// mismo cuarto (sus dependencias instaladas sirven), y vuelve a la rama.
+func suiteYaFallaba(ctx context.Context, roomPath, base, pruebas string, timeout time.Duration) bool {
+	if strings.TrimSpace(pruebas) == "" || base == "" {
+		return false
+	}
+	rama, err := exec.Command("git", "-C", roomPath, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil || strings.TrimSpace(string(rama)) == "HEAD" {
+		return false
+	}
+	if err := exec.Command("git", "-C", roomPath, "checkout", "--quiet", "--detach", base).Run(); err != nil {
+		return false
+	}
+	defer exec.Command("git", "-C", roomPath, "checkout", "--quiet", strings.TrimSpace(string(rama))).Run()
+	_, code := runComando(ctx, roomPath, pruebas, timeout)
+	return code == nil || *code != 0
+}
+
 func runComando(ctx context.Context, dir, cmdStr string, timeout time.Duration) (string, *int) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

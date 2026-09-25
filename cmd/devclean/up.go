@@ -51,8 +51,11 @@ pregunta solo cuando no puede resolverlo solo.`,
 			var s spec.Spec
 			if frase := strings.TrimSpace(strings.Join(args, " ")); frase != "" {
 				// una petición manda sobre la spec: es lo que el humano
-				// acaba de pedir, aquí y ahora
-				if err := runPlan(frase, modelo, ejecutor, "", true); err != nil {
+				// acaba de pedir, aquí y ahora. Va por el mismo esqueleto
+				// que un spec con requirements
+				var err error
+				s, err = aplicarSpec(root, spec.Spec{Feature: frase, Requirements: []string{frase}}, "la petición", false, false)
+				if err != nil {
 					return err
 				}
 				out.Line("")

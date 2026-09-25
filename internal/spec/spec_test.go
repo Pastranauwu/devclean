@@ -333,6 +333,7 @@ func TestValidatePlanDetectaErroresEstructurales(t *testing.T) {
 	ts := []task.Task{
 		{ID: "T-001", Titulo: "a", ListoCuando: "true", TocarSolo: []string{"internal/auth/**"}, DependeDe: []string{"T-002"}, Usa: []string{"auth.Missing()"}},
 		{ID: "T-002", Titulo: "b", ListoCuando: "true", TocarSolo: []string{"internal/auth/token.go"}, DependeDe: []string{"T-001"}},
+		{ID: "T-003", Titulo: "c", ListoCuando: "true", TocarSolo: []string{"internal/auth/token.go"}},
 	}
 	issues := ValidatePlan(Spec{}, ts)
 	var codes []string
@@ -602,5 +603,20 @@ func TestApplyCuentaLasTareasPrevias(t *testing.T) {
 	}
 	if got[0].ID != "T-002" {
 		t.Errorf("id = %s", got[0].ID)
+	}
+}
+
+// el esqueleto crea los stubs que después rellena cada tarea: compartir
+// archivos con quien depende de ti no es solapamiento.
+func TestValidatePlanPermiteCompartirConDependencia(t *testing.T) {
+	ts := []task.Task{
+		{ID: "T-001", Titulo: "esqueleto", ListoCuando: "true", TocarSolo: []string{"src/**"}},
+		{ID: "T-002", Titulo: "a", ListoCuando: "true", TocarSolo: []string{"src/a.ts"}, DependeDe: []string{"T-001"}},
+		{ID: "T-003", Titulo: "b", ListoCuando: "true", TocarSolo: []string{"src/b.ts"}, DependeDe: []string{"T-001"}},
+	}
+	for _, i := range ValidatePlan(Spec{}, ts) {
+		if i.Code == "write_overlap" {
+			t.Errorf("solapamiento falso: %s", i.Message)
+		}
 	}
 }

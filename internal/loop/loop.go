@@ -201,6 +201,13 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	}
 	// el .venv del cuarto va delante en el PATH del agente y de la prueba
 	o.Env = append(append([]string(nil), o.Env...), room.Entorno(o.Room.Path)...)
+	// la prueba que listo_cuando nombra y ya estaba cuando arrancó la
+	// tarea es el oráculo que alguien más escribió (el esqueleto, el
+	// humano): se protege como ruta de prueba y no se examina encima.
+	if fijas := pruebasFijas(o.Room, o.Base, o.Task.ListoCuando); len(fijas) > 0 {
+		o.Examinador = nil
+		o.PatronesPrueba = append(append([]string{}, o.PatronesPrueba...), fijas...)
+	}
 	if len(o.PatronesPrueba) == 0 {
 		o.Task.TocarSolo = conPruebasPropias(o.Task)
 	}
@@ -652,6 +659,39 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration, e
 // src/image/compress.test.ts`) quemó 15 intentos y la escalera a otro
 // modelo así. La ruta puede ser relativa a un --prefix o a un `cd`, por
 // eso también entra con cualquier prefijo.
+// pruebasFijas devuelve los archivos de prueba de listo_cuando que ya
+// existían en el commit con que arrancó el cuarto. Se mira ese commit y
+// no el árbol: la prueba que el agente escribió en un intento anterior
+// sigue siendo suya al escalar o retomar.
+func pruebasFijas(r room.Room, base, listoCuando string) []string {
+	nombradas := task.ArchivosDePrueba(listoCuando)
+	if len(nombradas) == 0 {
+		return nil
+	}
+	desde := r.Commit
+	if desde == "" {
+		desde = base
+	}
+	if desde == "" {
+		desde = "HEAD"
+	}
+	out, err := gitRun(r.Path, "ls-tree", "-r", "--name-only", desde)
+	if err != nil {
+		return nil
+	}
+	var fijas []string
+	for _, p := range nombradas {
+		p = strings.TrimPrefix(p, "./")
+		patrones := []string{p, "**/" + p}
+		for _, f := range strings.Split(out, "\n") {
+			if f != "" && config.MatchesAny(patrones, f) {
+				fijas = append(fijas, f)
+			}
+		}
+	}
+	return fijas
+}
+
 func conPruebasPropias(t task.Task) []string {
 	alcance := append([]string(nil), t.TocarSolo...)
 	for _, p := range task.ArchivosDePrueba(t.ListoCuando) {

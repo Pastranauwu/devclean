@@ -94,19 +94,10 @@ func completarSpec(root string, s *spec.Spec) error {
 	return nil
 }
 
+// planearRequirements convierte la intención del spec en el pedido del
+// arquitecto: requirements, reglas y aceptación, numerados para que el
+// esqueleto pueda citar a qué requisito responde cada módulo.
 func planearRequirements(root string, s *spec.Spec) error {
-	cfg, err := config.Load(root)
-	if err != nil {
-		return err
-	}
-	ex, err := elegirEjecutor(cfg.Cli)
-	if err != nil {
-		return err
-	}
-	pctx, zonas, patrones, err := contextoPlan(root, cfg)
-	if err != nil {
-		return err
-	}
 	var pedido strings.Builder
 	fmt.Fprintf(&pedido, "Feature: %s\nRequerimientos obligatorios:\n", s.Feature)
 	for i, r := range s.Requirements {
@@ -119,7 +110,7 @@ func planearRequirements(root string, s *spec.Spec) error {
 		}
 	}
 	if len(s.Acceptance) > 0 {
-		pedido.WriteString("Aceptación global (cada criterio debe quedar cubierto por listo_cuando o por una tarea final de integración):\n")
+		pedido.WriteString("Aceptación global (la prueba de integración tiene que cubrirla):\n")
 		for _, a := range s.Acceptance {
 			fmt.Fprintf(&pedido, "- %s", a.Criterion)
 			if a.Command != "" {
@@ -128,56 +119,7 @@ func planearRequirements(root string, s *spec.Spec) error {
 			pedido.WriteByte('\n')
 		}
 	}
-	var bs []plan.Borrador
-	modelo := config.ModeloRol(cfg, "planificador")
-	err = esperarPlan(fmt.Sprintf("diseñando arquitectura y tareas · %s · %d requisitos", modelo, len(s.Requirements)), func(avance func(string)) error {
-		var err error
-		bs, err = plan.Generar(context.Background(), planGuardado{generadorPlan{ex: ex, modelo: modelo, root: root, effort: "medium", avance: avance}, root}, pctx, pedido.String())
-		return err
-	})
-	if err != nil {
-		return err
-	}
-	sanearAlcance(bs, zonas, patrones, pctx.Ocupados)
-	sanearSkills(bs, pctx.Skills)
-	if pctx.PruebasPropias {
-		ampliarPruebasPropias(bs)
-	}
-	ids, err := idsCorrelativos(config.TasksDir(root), len(bs))
-	if err != nil {
-		return err
-	}
-	traducirDependencias(bs, ids, idsPrevios(config.TasksDir(root)))
-	intentos := s.Limites.Intentos
-	if intentos < 1 {
-		intentos = task.DefaultLimiteIntentos
-	}
-	for i, b := range bs {
-		s.Tasks = append(s.Tasks, task.Task{Version: task.Version, ID: ids[i], Titulo: b.Titulo, Porque: b.Porque, ListoCuando: b.ListoCuando, TocarSolo: b.TocarSolo, NoTocar: b.NoTocar, DependeDe: b.DependeDe, Expone: b.Expone, Usa: b.Usa, Riesgos: b.Riesgos, Peso: b.Peso, Agente: b.Agente, Skills: b.Skills, Notas: b.Como, LimiteIntentos: intentos, LimiteLineas: plan.AcotarLimiteLineas(b.LimiteLineas, s.Limites.Lineas)})
-	}
-	out.Line("· Requirements Analyzer + Planner generaron %d contratos internos", len(s.Tasks))
-
-	// el plan no cierra la costura entre tareas: cada una prueba lo que su
-	// contrato pide y ninguna prueba la cadena completa. La tarea derivada
-	// entra por la frontera final, y su comando vuelve a correr sobre el
-	// conjunto integrado como aceptación del feature.
-	ids, err = idsCorrelativos(config.TasksDir(root), len(s.Tasks)+1)
-	if err != nil {
-		return err
-	}
-	if integracion, aceptacion, ok := spec.TareaDeIntegracion(*s, s.Tasks, config.DetectLanguage(root), ids[len(ids)-1]); ok {
-		// la misma arquitectura que sus hermanas: sin ella su prompt
-		// empieza distinto y no comparte el caché del resto del plan
-		if arq := plan.SepararNotas(s.Tasks[0].Notas).Arquitectura; arq != "" {
-			integracion.Notas = plan.MarcaArquitectura + arq + "\n\n" + plan.MarcaImplementacion + integracion.Notas
-		}
-		integracion.LimiteIntentos = intentos
-		integracion.LimiteLineas = task.DefaultLimiteLineas
-		s.Tasks = append(s.Tasks, integracion)
-		s.Acceptance = append(s.Acceptance, aceptacion)
-		out.Line("· %s prueba la costura entre tareas · %s", integracion.ID, integracion.ListoCuando)
-	}
-	return nil
+	return planearEsqueleto(root, s, pedido.String())
 }
 
 // completarTarea rellena los campos vacíos de t con los del borrador.

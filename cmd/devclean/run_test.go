@@ -9,7 +9,6 @@ import (
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/gate"
-	"github.com/Pastranauwu/devclean/internal/spec"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/ui"
@@ -322,7 +321,7 @@ func TestVedaNoAplicaALaTareaDeIntegracion(t *testing.T) {
 	integracion := task.Task{
 		Version: task.Version, ID: "T-004", Titulo: "prueba de integración",
 		ListoCuando: "go test ./test/integracion/...",
-		TocarSolo:   []string{spec.RutaIntegracion + "/**"},
+		TocarSolo:   []string{"test/integracion/**"},
 		Usa:         []string{"lexer.Tokenize(s string) []Token"},
 	}
 	if got := patronesPruebaTarea(cfg, goRepo, integracion); len(got) != 0 {

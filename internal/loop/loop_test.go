@@ -587,3 +587,39 @@ func TestPruebaNoCorrio(t *testing.T) {
 		}
 	}
 }
+
+type examinadorContado struct{ veces int }
+
+func (e *examinadorContado) Run(context.Context, string) (bool, error) { e.veces++; return true, nil }
+
+// la prueba del esqueleto ya está en el commit con que arranca la tarea:
+// es el oráculo, el agente barato no la puede aflojar ni se examina encima
+func TestRunProtegeLaPruebaQueYaExistia(t *testing.T) {
+	root := repoConCommit(t)
+	escribir(t, root, "src/suma.test.js", "original\n")
+	gitCmd(t, root, "add", "-A")
+	gitCmd(t, root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "esqueleto")
+	ag := &agenteFalso{nombre: "falso", hacer: func(n int, req Request) (string, int, error) {
+		escribir(t, req.RoomPath, "src/suma.test.js", "aflojada\n")
+		escribir(t, req.RoomPath, "src/suma.js", strings.Repeat("x\n", n))
+		return "", 0, nil
+	}}
+	tk := tareaDePrueba()
+	tk.ListoCuando = "grep -q aflojada src/suma.test.js"
+	tk.LimiteIntentos = 1
+	opts := optsDePrueba(t, root, ag, tk)
+	opts.PatronesPrueba = []string{}
+	ex := &examinadorContado{}
+	opts.Examinador = ex
+	out, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Verde || ex.veces != 0 {
+		t.Fatalf("verde=%v examinador=%d", out.Verde, ex.veces)
+	}
+	as, _ := ReadAttempts(root, tk.ID)
+	if len(as) != 1 || strings.Join(as[0].RevertidosFueraDeAlcance, ",") != "src/suma.test.js" {
+		t.Fatalf("%+v", as)
+	}
+}

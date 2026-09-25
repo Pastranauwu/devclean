@@ -1,0 +1,195 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/esqueleto"
+	"github.com/Pastranauwu/devclean/internal/executor"
+	"github.com/Pastranauwu/devclean/internal/loop"
+	"github.com/Pastranauwu/devclean/internal/room"
+	"github.com/Pastranauwu/devclean/internal/spec"
+	"github.com/Pastranauwu/devclean/internal/state"
+	"github.com/Pastranauwu/devclean/internal/task"
+	"github.com/Pastranauwu/devclean/internal/ventanas"
+)
+
+// correccionesEsqueleto es cuántas veces se le devuelve al arquitecto lo
+// que la verificación encontró antes de rendirse.
+const correccionesEsqueleto = 2
+
+// timeoutArquitecto: escribir el esqueleto de un proyecto es la
+// invocación más larga de la corrida (el plan en prosa de closet ya
+// tardó 19 minutos sin escribir un archivo).
+const timeoutArquitecto = 45 * time.Minute
+
+// notaRelleno va en las notas de cada tarea de relleno: el agente barato
+// no necesita más que saber qué reemplazar y dónde está el contrato.
+const notaRelleno = "Rellena los cuerpos que lanzan \"" + esqueleto.Marca + "\" en tus archivos. No cambies firmas, nombres ni exportaciones: otros módulos y las pruebas ya dependen de ellas. El contrato de cada función está en su comentario y en " + esqueleto.Documento + "; las pruebas ya existen y no puedes tocarlas."
+
+// planearEsqueleto es el camino de requirements: el modelo grande
+// escribe el esqueleto en el cuarto de la primera tarea, devclean lo
+// verifica sin modelo y lo deja como tarea `lista`; cada módulo stub
+// pasa a ser una tarea de relleno que depende de él. run lo integra por
+// sembrarVerdesPrevias como cualquier verde de una corrida anterior.
+func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+	ex, err := elegirEjecutor(cfg.Cli)
+	if err != nil {
+		return err
+	}
+	pctx, zonas, patrones, err := contextoPlan(root, cfg)
+	if err != nil {
+		return err
+	}
+	ids, err := idsCorrelativos(config.TasksDir(root), 2)
+	if err != nil {
+		return err
+	}
+	id := ids[0]
+	ctx := context.Background()
+	// Ensure y no Create: si una corrida anterior del arquitecto se cortó
+	// o no pasó la verificación, lo que escribió sigue ahí y se corrige
+	r, err := room.Ensure(ctx, root, id, cfg.Base)
+	if err != nil {
+		return err
+	}
+	previo, _ := os.ReadFile(filepath.Join(r.Path, esqueleto.Documento))
+	original := esqueleto.Prompt(esqueleto.Pedido{Texto: pedido, Previo: string(previo), PrimerID: ids[1]}, pctx)
+
+	modelo := config.ModeloRol(cfg, "planificador")
+	timeout := timeoutArquitecto
+	if t := time.Duration(cfg.TimeoutAgente) * time.Second; t > timeout {
+		timeout = t
+	}
+	pruebaTimeout := loop.DefaultTimeout
+	if cfg.TimeoutPruebas > 0 {
+		pruebaTimeout = time.Duration(cfg.TimeoutPruebas) * time.Second
+	}
+	reg := ventanas.Nuevo(ventanas.LedgerPath(), cfg.PresupuestoVentanas)
+
+	var res esqueleto.Resultado
+	prompt := original
+	for vuelta := 0; ; vuelta++ {
+		titulo := fmt.Sprintf("el arquitecto escribe el esqueleto · %s · %s", id, modelo)
+		if vuelta > 0 {
+			titulo = fmt.Sprintf("el arquitecto corrige el esqueleto (%d/%d) · %s", vuelta, correccionesEsqueleto, modelo)
+		}
+		var texto string
+		err = esperarPlan(titulo, func(avance func(string)) error {
+			out, err := ex.Run(ctx, executor.Request{
+				RoomPath: r.Path,
+				Prompt:   prompt,
+				Model:    modelo,
+				Timeout:  timeout,
+				Env:      room.Entorno(r.Path),
+				Avance:   avance,
+			})
+			guardarLogEsqueleto(root, id, vuelta, prompt, out)
+			reg.Registrar(ex.Name(), out.Tokens.Input+out.Tokens.Output)
+			texto = out.Text
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("el arquitecto no terminó · %w · lo escrito sigue en %s, vuelve a correr para que lo corrija", err, r.Path)
+		}
+		// lo que el arquitecto instaló después de crear el cuarto
+		// (package.json nuevo, pyproject) también tiene que estar
+		if err := room.InstalarDependencias(ctx, r.Path); err != nil {
+			return err
+		}
+		res, err = esqueleto.Parse(texto)
+		var problemas []string
+		if err != nil {
+			problemas = []string{err.Error()}
+		} else {
+			problemas = esqueleto.Problemas(ctx, r.Path, res, pruebaTimeout, room.Entorno(r.Path))
+		}
+		if len(problemas) == 0 {
+			break
+		}
+		if vuelta == correccionesEsqueleto {
+			return fmt.Errorf("el esqueleto no pasó la verificación · %s · lo escrito sigue en %s", strings.Join(problemas, " · "), r.Path)
+		}
+		for _, p := range problemas {
+			out.Line("  · %s", p)
+		}
+		prompt = esqueleto.PromptCorregir(original, problemas)
+	}
+
+	if _, err := gitEn(r.Path, "add", "-A"); err != nil {
+		return err
+	}
+	if _, err := gitEn(r.Path, "-c", "user.name=devclean", "-c", "user.email=devclean@local", "commit", "--quiet", "--allow-empty", "-m", "wip: "+id+" esqueleto"); err != nil {
+		return err
+	}
+	creados, err := gitEn(r.Path, "diff", "--name-only", r.Commit, "HEAD")
+	if err != nil {
+		return err
+	}
+	if err := state.Save(root, state.State{ID: id, Estado: state.Lista, Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit}); err != nil {
+		return err
+	}
+
+	bs := res.Tareas
+	sanearAlcance(bs, zonas, patrones, pctx.Ocupados)
+	idsRelleno, err := idsCorrelativos(config.TasksDir(root), len(bs)+1)
+	if err != nil {
+		return err
+	}
+	idsRelleno = idsRelleno[1:]
+	traducirDependencias(bs, idsRelleno, idsPrevios(config.TasksDir(root)))
+	intentos := s.Limites.Intentos
+	if intentos < 1 {
+		intentos = task.DefaultLimiteIntentos
+	}
+	s.Tasks = append(s.Tasks, task.Task{
+		Version: task.Version, ID: id, Titulo: "esqueleto · " + s.Feature,
+		Porque:      "estructura, interfaces, stubs y pruebas que cada tarea rellena",
+		ListoCuando: res.Verificar, TocarSolo: strings.Fields(creados), Peso: "pesada",
+		Notas: res.Arquitectura, LimiteIntentos: intentos,
+	})
+	for i, b := range bs {
+		// las firmas viven en el código y las valida el compilador: sin
+		// expone/usa en prosa no hay nada que comparar a mano
+		s.Tasks = append(s.Tasks, task.Task{
+			Version: task.Version, ID: idsRelleno[i], Titulo: b.Titulo, Porque: b.Porque,
+			ListoCuando: b.ListoCuando, TocarSolo: b.TocarSolo, NoTocar: b.NoTocar,
+			DependeDe: append([]string{id}, b.DependeDe...), Peso: b.Peso, Agente: b.Agente,
+			Skills: b.Skills, Notas: b.Como + "\n\n" + notaRelleno,
+			LimiteIntentos: intentos, LimiteLineas: s.Limites.Lineas,
+		})
+	}
+	if res.Integracion != "" {
+		s.Acceptance = append(s.Acceptance, spec.Acceptance{Criterion: "flujo de punta a punta del esqueleto", Command: res.Integracion})
+	}
+	out.Line("· esqueleto %s listo · %d tareas de relleno · integración: %s", id, len(bs), valorO(res.Integracion, "sin prueba de punta a punta"))
+	return nil
+}
+
+func valorO(s, def string) string {
+	if strings.TrimSpace(s) == "" {
+		return def
+	}
+	return s
+}
+
+// guardarLogEsqueleto deja el prompt y la salida del arquitecto junto a
+// los intentos de la tarea: sin eso un esqueleto fallido no se depura.
+func guardarLogEsqueleto(root, id string, vuelta int, prompt string, res executor.Result) {
+	dir := filepath.Join(loop.RunsDir(root), id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	contenido := fmt.Sprintf("=== esqueleto %d · %d tokens de entrada · %d de salida · $%.3f\n--- prompt\n%s\n--- respuesta\n%s\n--- stderr\n%s\n",
+		vuelta+1, res.Tokens.Input, res.Tokens.Output, res.Tokens.CostUSD, prompt, res.Text, res.Stderr)
+	_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("esqueleto-%d.log", vuelta+1)), []byte(contenido), 0o644)
+}

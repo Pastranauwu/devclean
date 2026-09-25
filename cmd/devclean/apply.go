@@ -63,7 +63,13 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 	if err != nil {
 		return spec.Spec{}, fmt.Errorf("error al leer %s: %w", filePath, err)
 	}
+	return aplicarSpec(root, s, filepath.Base(filePath), runImmediately, dryRun)
+}
 
+// aplicarSpec completa, valida y escribe los contratos de un spec ya
+// cargado. origen es el nombre con que se lo muestra al humano.
+func aplicarSpec(root string, s spec.Spec, origen string, runImmediately, dryRun bool) (spec.Spec, error) {
+	filePath := origen
 	if n := contarSinContrato(s.Tasks); n > 0 || (len(s.Tasks) == 0 && len(s.Requirements) > 0) {
 		if dryRun {
 			// en seco no se gastan tokens: se marca lo que completará la IA

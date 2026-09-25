@@ -98,8 +98,34 @@ func ValidatePlan(s Spec, tasks []task.Task, previas ...task.Task) []Issue {
 	for id := range byID {
 		visit(id)
 	}
+	// dos tareas encadenadas por depende_de corren en fila: la segunda
+	// arranca sobre lo que dejó la primera, así que compartir archivos no
+	// choca. El esqueleto crea los stubs que después rellena cada tarea.
+	encadenadas := func(a, b string) bool {
+		vistos := map[string]bool{}
+		var alcanza func(string) bool
+		alcanza = func(id string) bool {
+			if id == b {
+				return true
+			}
+			if vistos[id] {
+				return false
+			}
+			vistos[id] = true
+			for _, d := range byID[id].DependeDe {
+				if alcanza(d) {
+					return true
+				}
+			}
+			return false
+		}
+		return alcanza(a)
+	}
 	for i := 0; i < len(tasks); i++ {
 		for j := i + 1; j < len(tasks); j++ {
+			if encadenadas(tasks[i].ID, tasks[j].ID) || encadenadas(tasks[j].ID, tasks[i].ID) {
+				continue
+			}
 			for _, a := range tasks[i].TocarSolo {
 				for _, b := range tasks[j].TocarSolo {
 					if globsOverlap(a, b) {

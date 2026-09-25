@@ -304,7 +304,7 @@ func Parse(texto string) ([]Borrador, error) {
 	}
 	var bs []Borrador
 	var arquitectura string
-	dec := json.NewDecoder(strings.NewReader(escaparControles(t[ini:])))
+	dec := json.NewDecoder(strings.NewReader(EscaparControles(t[ini:])))
 	if t[ini] == '{' {
 		var documento struct {
 			Arquitectura string     `json:"arquitectura"`
@@ -340,10 +340,10 @@ func Parse(texto string) ([]Borrador, error) {
 	return bs, nil
 }
 
-// escaparControles escapa saltos de línea y tabuladores crudos dentro de
+// EscaparControles escapa saltos de línea y tabuladores crudos dentro de
 // strings JSON. Los modelos escriben "arquitectura" con párrafos reales
 // en vez de \n, y el decoder rechazaba un plan de 49k tokens entero.
-func escaparControles(s string) string {
+func EscaparControles(s string) string {
 	var b strings.Builder
 	enString, escape := false, false
 	for _, r := range s {
