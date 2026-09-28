@@ -196,17 +196,32 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 		// expone/usa en prosa no hay nada que comparar a mano
 		s.Tasks = append(s.Tasks, task.Task{
 			Version: task.Version, ID: idsRelleno[i], Titulo: b.Titulo, Porque: b.Porque,
-			ListoCuando: b.ListoCuando, TocarSolo: b.TocarSolo, NoTocar: b.NoTocar,
+			ListoCuando: conVerificar(res.Verificar, b.ListoCuando), TocarSolo: b.TocarSolo, NoTocar: b.NoTocar,
 			DependeDe: append([]string{id}, b.DependeDe...), Peso: b.Peso, Agente: b.Agente,
 			Skills: b.Skills, Notas: b.Como + "\n\n" + notaRelleno,
 			LimiteIntentos: intentos, LimiteLineas: s.Limites.Lineas,
 		})
+	}
+	if res.Verificar != "" {
+		s.Acceptance = append(s.Acceptance, spec.Acceptance{Criterion: "build y typecheck del proyecto integrado", Command: res.Verificar})
 	}
 	if res.Integracion != "" {
 		s.Acceptance = append(s.Acceptance, spec.Acceptance{Criterion: "flujo de punta a punta del esqueleto", Command: res.Integracion})
 	}
 	out.Line("· esqueleto %s listo · %d tareas de relleno · integración: %s", id, len(bs), valorO(res.Integracion, "sin prueba de punta a punta"))
 	return nil
+}
+
+// conVerificar antepone el build/typecheck del esqueleto al listo_cuando
+// de una tarea de relleno. La prueba sola no basta: en closet vitest
+// pasaba las 29 tareas y la integración, y `npm run build` (tsc) tenía 7
+// errores de tipos que nadie corrió. Con esto el agente los ve y los
+// arregla en su intento, no el humano al levantar la app.
+func conVerificar(verificar, cmd string) string {
+	if strings.TrimSpace(verificar) == "" || strings.TrimSpace(cmd) == "" {
+		return cmd
+	}
+	return verificar + " && (" + cmd + ")"
 }
 
 func valorO(s, def string) string {

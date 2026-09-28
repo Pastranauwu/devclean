@@ -145,6 +145,11 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 	}
 	if feature, err := spec.LoadFeatureState(root); err == nil {
 		opciones.Acceptance = feature.AcceptanceCommands()
+		// sin título, el del feature: el de la primera tarea es el
+		// esqueleto ("esqueleto · Closet virtual…")
+		if opciones.Titulo == "" {
+			opciones.Titulo = feature.Feature
+		}
 	}
 	if cfg.TimeoutPruebas > 0 {
 		opciones.Timeout = time.Duration(cfg.TimeoutPruebas) * time.Second

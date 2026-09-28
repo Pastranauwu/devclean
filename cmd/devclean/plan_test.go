@@ -282,3 +282,15 @@ func TestDependenciasNumericasSonIdsSiExisten(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+// closet: vitest verde y tsc con 7 errores. El relleno tiene que pasar
+// también el build, y el código de salida sigue siendo el de la prueba
+// aunque traiga ";" o "||"
+func TestConVerificarAnteponeElBuild(t *testing.T) {
+	if got := conVerificar("bash scripts/verify.sh", "cd frontend && npx vitest run a.test.ts"); got != "bash scripts/verify.sh && (cd frontend && npx vitest run a.test.ts)" {
+		t.Fatalf("%q", got)
+	}
+	if got := conVerificar("", "go test ./x"); got != "go test ./x" {
+		t.Fatalf("sin verificar: %q", got)
+	}
+}
