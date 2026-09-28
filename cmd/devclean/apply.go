@@ -80,6 +80,9 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 	}
 	if ok && porRequirements {
 		if prev.Igual(intencion) {
+			if !dryRun {
+				_ = spec.SaveIntencion(root, intencion) // repo que venía de feature.json
+			}
 			out.Line("· %s sin cambios desde el último plan · sigo con las tareas pendientes (borra .devclean/%s para replanear)", filepath.Base(filePath), spec.IntencionFile)
 			return s, nil
 		}
