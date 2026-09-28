@@ -1,13 +1,16 @@
-// Package esqueleto es la fase en que el modelo grande deja el proyecto
-// listo para rellenar: estructura, ARCHITECTURE.md, tipos e interfaces
-// como código real, un stub por módulo con su contrato en comentarios y
-// las pruebas que lo juzgan. Después cada tarea es "haz pasar esta
-// prueba tocando solo este archivo", trabajo para un modelo barato.
+// Package esqueleto es la fase en que el modelo grande deja el plano del
+// proyecto en código: estructura, ARCHITECTURE.md, tipos e interfaces
+// declarados y un stub por clase o función con su firma y su contrato
+// (a quién llama, casos de ejemplo). No escribe lógica ni pruebas: eso
+// lo hacen los agentes baratos, cada uno su archivo y su prueba.
 //
 // Reemplaza al plan en prosa: las firmas que antes viajaban como texto
 // en expone/usa y había que comparar a mano (firmaCanonica, examinador
-// ciego, nivel semántico) ahora las valida el compilador, y el oráculo
-// lo escribe el modelo caro una vez en vez del barato en cada tarea.
+// ciego, nivel semántico) ahora las valida el compilador.
+//
+// En closet el arquitecto escribió además 4.3k líneas de pruebas, 1.2k
+// de cableado real e implementaciones de referencia: 292k tokens y
+// $6.90, el 70% de la corrida. El plano cuesta una fracción de eso.
 package esqueleto
 
 import (
@@ -18,13 +21,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/Pastranauwu/devclean/internal/config"
-	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
@@ -79,29 +80,32 @@ func Prompt(p Pedido, c plan.Contexto) string {
 		b.WriteString("\nYa existe " + Documento + ". Evoluciónalo: agrega lo nuevo, ajusta lo que cambia y no reescribas lo que ya funciona. Las tareas son solo para lo nuevo o lo que cambia.\n")
 	}
 	b.WriteString(`
-ESCRIBE EN EL REPOSITORIO (tienes herramientas para crear archivos y correr comandos)
-1. Estructura y stack: carpetas, manifiestos (package.json, pyproject.toml, go.mod, ...), configuración de build y del runner de pruebas, y .gitignore. Instala las dependencias y deja el build funcionando.
-2. ` + Documento + ` en la raíz: estilo de arquitectura (modular, hexagonal o en capas según lo pida el problema, no por moda), cada módulo con su responsabilidad y su archivo, qué módulo puede depender de cuál, flujo de datos, tipos compartidos y cómo correr las pruebas de cada módulo. Es la fuente de verdad que leen todos los agentes y que el próximo cambio evoluciona.
-3. Tipos compartidos, interfaces y puertos como código REAL y completo. Eso no se reparte: lo escribes tú.
-4. Cada módulo a repartir como STUB: todas sus funciones, clases y métodos públicos con su firma exacta (tipos de entrada y de salida) y un comentario de contrato encima (qué hace, entradas, salida, errores, casos límite y los pasos sugeridos). El cuerpo solo lanza un error con el texto exacto "` + Marca + `".
-5. Las pruebas de cada módulo, completas: cubren el contrato de cada stub y los requerimientos que le tocan. Hoy fallan porque el stub lanza; pasan cuando alguien lo implementa bien. Las dependencias de otros módulos entran por parámetro o constructor y en la prueba se reemplazan por fakes, para que cada módulo se implemente y se pruebe solo sin esperar a los demás. Ninguna prueba toca la red ni servicios reales.
-6. Una prueba de integración de punta a punta del flujo principal con los módulos reales y el cableado (main, app, rutas) ya escrito por ti.
+TU ENTREGA ES UN PLANO EN CÓDIGO, NO UNA IMPLEMENTACIÓN
+No escribes lógica ni pruebas: cada línea que escribas la paga el modelo caro, y esa es la parte que hacen los agentes baratos. Tu trabajo es que encajen sin verse: dónde va cada cosa, qué clases y métodos existen, qué recibe y devuelve cada uno, quién llama a quién.
+
+1. Estructura y stack: carpetas, manifiestos (package.json, pyproject.toml, go.mod, ...), configuración de build y del runner de pruebas, y .gitignore. Instala las dependencias.
+2. ` + Documento + ` en la raíz: estilo (modular, hexagonal o en capas según el problema, no por moda), cada módulo con su archivo y su responsabilidad, qué módulo puede depender de cuál, flujo de datos del caso principal, y cómo se prueba cada módulo. Es la fuente de verdad que leen todos los agentes y que el próximo cambio evoluciona.
+3. Tipos compartidos, entidades, interfaces y puertos: solo DECLARACIONES (campos, firmas de métodos). Nada de cuerpos con lógica.
+4. Todo lo demás es STUB, también el cableado (main, rutas, contenedor, App): cada clase, función y método público con su firma exacta (tipos de entrada y salida) y un comentario de contrato encima con
+   - qué hace, entradas, salida y errores;
+   - a quién llama (módulo y método) y quién lo usa;
+   - "Casos:" de 2 a 5 ejemplos concretos de entrada → salida o error, que el agente convertirá en su prueba.
+   El cuerpo solo lanza un error con el texto exacto "` + Marca + `".
+5. Nada más. No escribas pruebas, implementaciones de referencia, datos de ejemplo ni código fuera del repositorio. No corras nada salvo lo necesario para que "verificar" pase.
 
 CÓMO REPARTIR
-- Una tarea por archivo de implementación (o por dos o tres archivos muy acoplados). Cuanto más chicas e independientes, más agentes en paralelo y más barato.
-- Lo trivial (cableado, configuración, tipos, reexportaciones) lo escribes tú ahora: repartirlo cuesta más que hacerlo.
-- El agente que rellena es un modelo barato: no rediseña ni elige librerías. Todo lo que necesite decidir tiene que estar en el comentario del stub.
-- El agente no puede tocar pruebas ni archivos fuera de su tarea: las firmas que dejes son definitivas.
-- "depende_de" solo cuando la prueba de un módulo necesita de verdad la implementación real de otro; con fakes casi nunca hace falta.
+- Una tarea por archivo stub (o por dos o tres muy acoplados). Cuanto más chicas e independientes, más agentes en paralelo y más barato.
+- Cada tarea escribe su propia prueba a partir de los "Casos:" de su contrato: "listo_cuando" corre ese archivo de prueba (que hoy no existe) y "tocar_solo" incluye el stub y ese archivo de prueba.
+- El agente es un modelo barato: no rediseña ni elige librerías. Lo que necesite decidir tiene que estar en el contrato.
+- Las dependencias entre módulos entran por parámetro o constructor (puertos), para que cada módulo se pruebe con fakes sin esperar a los demás. "depende_de" solo cuando un módulo necesita de verdad la implementación real de otro.
+- Una tarea final escribe la prueba de punta a punta del flujo principal: depende de todas y su "listo_cuando" es el comando de "integracion".
 
-ANTES DE RESPONDER VERIFÍCALO TÚ
-- El comando de "verificar" pasa.
-- Cada "listo_cuando" corre SOLO la prueba de su módulo y FALLA por "` + Marca + `", no por imports, sintaxis ni archivos que faltan.
+ANTES DE RESPONDER: el comando de "verificar" pasa con los stubs (compila, typecheck o importa todo). Nada más.
 
 RESPONDE AL FINAL SOLO CON ESTE JSON
 {
   "verificar": "comando que compila o hace typecheck de todo el proyecto y hoy pasa (ej. \"npx tsc --noEmit\", \"go vet ./...\", \"python -m compileall -q src\")",
-  "integracion": "comando que corre la prueba de punta a punta",
+  "integracion": "comando que corre la prueba de punta a punta (la escribe la tarea final)",
   "pruebas": "comando que corre TODA la suite del proyecto (todas las carpetas y lenguajes)",
   "arquitectura": "resumen de 5 a 15 líneas; lo completo vive en ` + Documento + `",
   "tareas": [
@@ -109,16 +113,16 @@ RESPONDE AL FINAL SOLO CON ESTE JSON
       "titulo": "frase corta en minúscula",
       "porque": "qué requerimiento cubre",
       "listo_cuando": "comando que corre solo la prueba de este módulo",
-      "tocar_solo": ["archivos de implementación de la tarea, nunca pruebas"],
+      "tocar_solo": ["el stub de la tarea", "su archivo de prueba"],
       "depende_de": [],
       "peso": "liviana | media | pesada",
-      "como": "qué implementar y dónde está su contrato"
+      "como": "qué archivo rellenar y qué casos probar"
     }
   ]
 }
 `)
 	if p.PrimerID != "" {
-		fmt.Fprintf(&b, "Tus tareas reciben ids correlativos desde %s en el orden del array: úsalos en \"depende_de\".\n", p.PrimerID)
+		fmt.Fprintf(&b, "Tus tareas reciben ids correlativos desde %s en el orden del array: en \"depende_de\" escribe esos ids completos (\"%s\"), no números sueltos.\n", p.PrimerID, p.PrimerID)
 	}
 	return b.String()
 }
@@ -173,13 +177,9 @@ func Parse(texto string) (Resultado, error) {
 	return r, nil
 }
 
-// cargaRE reconoce una prueba que no llegó a ejecutarse porque el código
-// no carga: import roto, sintaxis, tipo inexistente. Un esqueleto así
-// deja a cada agente barato peleando con un error que no es suyo.
-var cargaRE = regexp.MustCompile(`(?i)error collecting|ImportError|ModuleNotFoundError|SyntaxError|IndentationError|Cannot find module|Failed to resolve import|Failed to load url|error TS\d+|\bundefined: |cannot find package|no required module provides|could not import|build failed|\[setup failed\]`)
-
-// Problemas verifica el esqueleto en dir sin ningún modelo. Vacío es
-// listo para repartir.
+// Problemas verifica el plano en dir sin ningún modelo. Vacío es listo
+// para repartir. No exige pruebas: las escribe cada tarea a partir de
+// los casos de su contrato.
 func Problemas(ctx context.Context, dir string, r Resultado, timeout time.Duration, env []string) []string {
 	var out []string
 	if _, err := os.Stat(filepath.Join(dir, Documento)); err != nil {
@@ -188,54 +188,69 @@ func Problemas(ctx context.Context, dir string, r Resultado, timeout time.Durati
 	if strings.TrimSpace(r.Verificar) == "" {
 		out = append(out, "falta \"verificar\": el comando que compila o hace typecheck del proyecto")
 	} else if salida, code := correr(ctx, dir, r.Verificar, timeout, env); code == nil || *code != 0 {
-		out = append(out, fmt.Sprintf("\"verificar\" (%s) no pasa: %s", r.Verificar, cola(salida)))
+		out = append(out, fmt.Sprintf("\"verificar\" (%s) no pasa con los stubs: %s", r.Verificar, cola(salida)))
 	}
 	if len(r.Tareas) == 0 {
 		out = append(out, "no hay tareas: si todo está hecho no hacía falta un esqueleto")
 	}
 	archivos := versionables(ctx, dir)
+	integracion := false
 	for i, t := range r.Tareas {
 		nombre := fmt.Sprintf("tarea %d (%s)", i+1, t.Titulo)
+		if strings.TrimSpace(t.ListoCuando) == "" {
+			out = append(out, nombre+": sin listo_cuando")
+		}
+		if strings.TrimSpace(t.ListoCuando) == strings.TrimSpace(r.Integracion) {
+			integracion = true
+		}
 		if len(t.TocarSolo) == 0 {
 			out = append(out, nombre+": tocar_solo vacío")
-		}
-		// que la prueba exista lo dice fallaBien: si falta, el runner
-		// avisa que no corrió nada
-		for _, p := range task.ArchivosDePrueba(t.ListoCuando) {
-			p = strings.TrimPrefix(p, "./")
-			if config.MatchesAny(t.TocarSolo, p) || algunoEn(t.TocarSolo, p) {
-				out = append(out, fmt.Sprintf("%s: tocar_solo incluye su propia prueba %s; las pruebas son tuyas, no del agente", nombre, p))
-			}
+			continue
 		}
 		for _, f := range t.TocarSolo {
-			if !strings.ContainsAny(f, "*?[") && !algunoCoincide([]string{f}, archivos) {
+			if !strings.ContainsAny(f, "*?[") && !task.EsArchivoDePrueba(f) && !algunoCoincide([]string{f}, archivos) {
 				out = append(out, fmt.Sprintf("%s: %s no existe; el stub lo creas tú", nombre, f))
 			}
 		}
-		out = append(out, fallaBien(ctx, dir, nombre, t.ListoCuando, timeout, env)...)
+		out = append(out, contrato(dir, nombre, t.TocarSolo, archivos)...)
 	}
-	if strings.TrimSpace(r.Integracion) != "" {
-		out = append(out, fallaBien(ctx, dir, "integracion", r.Integracion, timeout, env)...)
+	if strings.TrimSpace(r.Integracion) != "" && !integracion {
+		out = append(out, "ninguna tarea tiene como listo_cuando el comando de \"integracion\": falta la tarea final que escribe la prueba de punta a punta")
 	}
 	return out
 }
 
-// fallaBien exige que el comando corra la prueba y falle en ella: que
-// pase no verifica nada, y que no cargue no es culpa del que rellena.
-func fallaBien(ctx context.Context, dir, nombre, cmd string, timeout time.Duration, env []string) []string {
-	if strings.TrimSpace(cmd) == "" {
-		return []string{nombre + ": sin comando de prueba"}
+// contrato exige que la tarea tenga al menos un stub sin implementar y
+// que traiga casos: la marca prueba que el arquitecto no escribió la
+// lógica, y los casos son de donde el agente saca su prueba. La tarea
+// final de integración solo escribe pruebas y no los necesita.
+func contrato(dir, nombre string, tocar, archivos []string) []string {
+	var stubs []string
+	for _, f := range archivos {
+		if config.MatchesAny(tocar, f) && !task.EsArchivoDePrueba(f) {
+			stubs = append(stubs, f)
+		}
 	}
-	salida, code := correr(ctx, dir, cmd, timeout, env)
-	switch {
-	case code != nil && *code == 0:
-		return []string{fmt.Sprintf("%s: %s ya pasa con el stub; la prueba no juzga nada", nombre, cmd)}
-	case loop.PruebaNoCorrio(cmd, code, salida):
-		return []string{fmt.Sprintf("%s: %s no llega a correr ninguna prueba: %s", nombre, cmd, cola(salida))}
-	case cargaRE.MatchString(salida):
-		return []string{fmt.Sprintf("%s: %s falla porque el código no carga, no por el stub: %s", nombre, cmd, cola(salida))}
+	if len(stubs) == 0 {
+		return nil
 	}
-	return nil
+	marca, casos := false, false
+	for _, f := range stubs {
+		b, err := os.ReadFile(filepath.Join(dir, f))
+		if err != nil {
+			continue
+		}
+		marca = marca || strings.Contains(string(b), Marca)
+		casos = casos || strings.Contains(string(b), "Casos:")
+	}
+	var out []string
+	if !marca {
+		out = append(out, fmt.Sprintf("%s: %s no tiene ningún stub con \"%s\"; o ya está implementado (no te toca) o sobra la tarea", nombre, strings.Join(stubs, ", "), Marca))
+	}
+	if !casos {
+		out = append(out, fmt.Sprintf("%s: el contrato de %s no trae \"Casos:\"; sin ejemplos el agente no sabe qué probar", nombre, strings.Join(stubs, ", ")))
+	}
+	return out
 }
 
 func correr(ctx context.Context, dir, cmdStr string, timeout time.Duration, env []string) (string, *int) {
@@ -278,15 +293,6 @@ func versionables(ctx context.Context, dir string) []string {
 func algunoCoincide(patrones, archivos []string) bool {
 	for _, f := range archivos {
 		if config.MatchesAny(patrones, f) {
-			return true
-		}
-	}
-	return false
-}
-
-func algunoEn(lista []string, p string) bool {
-	for _, x := range lista {
-		if strings.TrimPrefix(x, "./") == p || strings.HasSuffix(x, "/"+p) || strings.HasSuffix(p, "/"+x) {
 			return true
 		}
 	}

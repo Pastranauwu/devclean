@@ -23,9 +23,9 @@ func escribir(t *testing.T, dir, rel, contenido string) {
 	}
 }
 
-// un esqueleto de python con un stub, su prueba y una prueba rota a
-// propósito por cada forma en que un esqueleto sale mal
-func esqueletoPython(t *testing.T) string {
+// un plano de python: tipos declarados, un stub con contrato y casos, y
+// uno que el arquitecto implementó cuando no le tocaba
+func planoPython(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("sin python3")
@@ -36,11 +36,9 @@ func esqueletoPython(t *testing.T) string {
 	}
 	escribir(t, dir, Documento, "# arquitectura\n")
 	escribir(t, dir, "calc/__init__.py", "")
-	escribir(t, dir, "calc/suma.py", "def suma(a: int, b: int) -> int:\n    \"\"\"Suma a y b.\"\"\"\n    raise NotImplementedError(\""+Marca+"\")\n")
-	escribir(t, dir, "tests/__init__.py", "")
-	escribir(t, dir, "tests/test_suma.py", "import unittest\nfrom calc.suma import suma\n\nclass T(unittest.TestCase):\n    def test_suma(self):\n        self.assertEqual(suma(2, 3), 5)\n")
-	escribir(t, dir, "tests/test_roto.py", "import unittest\nfrom calc.resta import resta\n\nclass T(unittest.TestCase):\n    def test_resta(self):\n        self.assertEqual(resta(3, 2), 1)\n")
-	escribir(t, dir, "tests/test_vacuo.py", "import unittest\n\nclass T(unittest.TestCase):\n    def test_nada(self):\n        pass\n")
+	escribir(t, dir, "calc/suma.py", "def suma(a: int, b: int) -> int:\n    \"\"\"Suma a y b.\n\n    Casos: suma(2, 3) -> 5; suma(-1, 1) -> 0\n    \"\"\"\n    raise NotImplementedError(\""+Marca+"\")\n")
+	escribir(t, dir, "calc/resta.py", "def resta(a: int, b: int) -> int:\n    return a - b\n")
+	escribir(t, dir, "calc/mult.py", "def mult(a: int, b: int) -> int:\n    raise NotImplementedError(\""+Marca+"\")\n")
 	return dir
 }
 
@@ -48,34 +46,39 @@ func tarea(titulo, listo string, tocar ...string) plan.Borrador {
 	return plan.Borrador{Titulo: titulo, ListoCuando: listo, TocarSolo: tocar}
 }
 
-func TestProblemasAceptaUnEsqueletoQueFallaPorElStub(t *testing.T) {
-	dir := esqueletoPython(t)
+func TestProblemasAceptaUnPlanoConStubsYCasos(t *testing.T) {
+	dir := planoPython(t)
 	r := Resultado{
-		Verificar: "python3 -m compileall -q calc",
-		Tareas:    []plan.Borrador{tarea("suma", "python3 -m unittest tests/test_suma.py", "calc/suma.py")},
+		Verificar:   "python3 -m compileall -q calc",
+		Integracion: "python3 -m unittest tests/test_e2e.py",
+		Tareas: []plan.Borrador{
+			tarea("suma", "python3 -m unittest tests/test_suma.py", "calc/suma.py", "tests/test_suma.py"),
+			tarea("punta a punta", "python3 -m unittest tests/test_e2e.py", "tests/test_e2e.py"),
+		},
 	}
 	if ps := Problemas(context.Background(), dir, r, time.Minute, nil); len(ps) > 0 {
-		t.Fatalf("esqueleto bueno rechazado: %v", ps)
+		t.Fatalf("plano bueno rechazado: %v", ps)
 	}
 }
 
-func TestProblemasDetectaCadaFormaDeEsqueletoMalo(t *testing.T) {
-	dir := esqueletoPython(t)
+func TestProblemasDetectaCadaFormaDePlanoMalo(t *testing.T) {
+	dir := planoPython(t)
 	r := Resultado{
-		Verificar: "python3 -c 'raise SystemExit(1)'",
+		Verificar:   "python3 -c 'raise SystemExit(1)'",
+		Integracion: "python3 -m unittest tests/test_e2e.py",
 		Tareas: []plan.Borrador{
-			tarea("import roto", "python3 -m unittest tests/test_roto.py", "calc/resta.py"),
-			tarea("ya pasa", "python3 -m unittest tests/test_vacuo.py", "calc/suma.py"),
-			tarea("se toca su prueba", "python3 -m unittest tests/test_suma.py", "calc/suma.py", "tests/test_suma.py"),
+			tarea("no existe", "python3 -m unittest tests/test_div.py", "calc/div.py", "tests/test_div.py"),
+			tarea("ya implementada", "python3 -m unittest tests/test_resta.py", "calc/resta.py", "tests/test_resta.py"),
+			tarea("sin casos", "python3 -m unittest tests/test_mult.py", "calc/mult.py", "tests/test_mult.py"),
 		},
 	}
 	todo := strings.Join(Problemas(context.Background(), dir, r, time.Minute, nil), "\n")
 	for _, quiero := range []string{
 		"\"verificar\"",
-		"calc/resta.py no existe",
-		"no carga",
-		"ya pasa con el stub",
-		"incluye su propia prueba",
+		"calc/div.py no existe",
+		"calc/resta.py no tiene ningún stub",
+		"no trae \"Casos:\"",
+		"falta la tarea final",
 	} {
 		if !strings.Contains(todo, quiero) {
 			t.Errorf("falta %q en:\n%s", quiero, todo)

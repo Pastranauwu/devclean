@@ -31,8 +31,9 @@ const correccionesEsqueleto = 2
 const timeoutArquitecto = 45 * time.Minute
 
 // notaRelleno va en las notas de cada tarea de relleno: el agente barato
-// no necesita más que saber qué reemplazar y dónde está el contrato.
-const notaRelleno = "Rellena los cuerpos que lanzan \"" + esqueleto.Marca + "\" en tus archivos. No cambies firmas, nombres ni exportaciones: otros módulos y las pruebas ya dependen de ellas. El contrato de cada función está en su comentario y en " + esqueleto.Documento + "; las pruebas ya existen y no puedes tocarlas."
+// no necesita más que saber qué reemplazar, dónde está el contrato y que
+// la prueba sale de sus casos.
+const notaRelleno = "Primero escribe la prueba del archivo que corre listo_cuando con los \"Casos:\" del contrato de cada stub (y los casos límite que el contrato nombre); las dependencias de otros módulos van con fakes. Después rellena los cuerpos que lanzan \"" + esqueleto.Marca + "\". No cambies firmas, nombres ni exportaciones: otros módulos ya dependen de ellas. El contrato está en el comentario de cada stub y en " + esqueleto.Documento + "."
 
 // planearEsqueleto es el camino de requirements: el modelo grande
 // escribe el esqueleto en el cuarto de la primera tarea, devclean lo
@@ -48,7 +49,7 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	if err != nil {
 		return err
 	}
-	pctx, zonas, patrones, err := contextoPlan(root, cfg)
+	pctx, zonas, _, err := contextoPlan(root, cfg)
 	if err != nil {
 		return err
 	}
@@ -105,6 +106,7 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 					Model:    modelo,
 					Timeout:  timeout,
 					Env:      room.Entorno(r.Path),
+					Effort:   "medium",
 					Avance:   avance,
 				})
 				guardarLogEsqueleto(root, id, vuelta, prompt, out)
@@ -169,7 +171,8 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	}
 
 	bs := res.Tareas
-	sanearAlcance(bs, zonas, patrones, pctx.Ocupados)
+	// sin patrones de prueba: con el plano, cada tarea escribe su prueba
+	sanearAlcance(bs, zonas, []string{}, pctx.Ocupados)
 	idsRelleno, err := idsCorrelativos(config.TasksDir(root), len(bs)+1)
 	if err != nil {
 		return err

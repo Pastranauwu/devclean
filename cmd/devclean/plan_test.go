@@ -266,3 +266,19 @@ func TestPlanGuardadoReusaMismoPrompt(t *testing.T) {
 		t.Errorf("llamadas al modelo = %d, quiero 2", n)
 	}
 }
+
+// el esqueleto de gastos escribió depende_de: [2, 5] con un plan que
+// numera desde T-002: son ids, y leídos como posición armaban un ciclo
+func TestDependenciasNumericasSonIdsSiExisten(t *testing.T) {
+	ids := []string{"T-002", "T-003", "T-004", "T-005"}
+	got := dependenciasDelModelo([]string{"2", "5", "T-003"}, ids, nil)
+	if strings.Join(got, ",") != "T-002,T-005,T-003" {
+		t.Fatalf("%v", got)
+	}
+	// sin id que coincida, sigue siendo posición (plan que numera desde 1
+	// cuando ya hay tareas previas)
+	got = dependenciasDelModelo([]string{"1"}, []string{"T-019", "T-020"}, nil)
+	if got[0] != "T-019" {
+		t.Fatalf("%v", got)
+	}
+}
