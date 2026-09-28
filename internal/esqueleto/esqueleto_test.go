@@ -56,7 +56,7 @@ func TestProblemasAceptaUnPlanoConStubsYCasos(t *testing.T) {
 			tarea("punta a punta", "python3 -m unittest tests/test_e2e.py", "tests/test_e2e.py"),
 		},
 	}
-	if ps := Problemas(context.Background(), dir, r, time.Minute, nil); len(ps) > 0 {
+	if ps := Problemas(context.Background(), Verificacion{Dir: dir, Timeout: time.Minute}, r); len(ps) > 0 {
 		t.Fatalf("plano bueno rechazado: %v", ps)
 	}
 }
@@ -72,11 +72,11 @@ func TestProblemasDetectaCadaFormaDePlanoMalo(t *testing.T) {
 			tarea("sin casos", "python3 -m unittest tests/test_mult.py", "calc/mult.py", "tests/test_mult.py"),
 		},
 	}
-	todo := strings.Join(Problemas(context.Background(), dir, r, time.Minute, nil), "\n")
+	todo := strings.Join(Problemas(context.Background(), Verificacion{Dir: dir, Timeout: time.Minute}, r), "\n")
 	for _, quiero := range []string{
 		"\"verificar\"",
 		"calc/div.py no existe",
-		"calc/resta.py no tiene ningún stub",
+		"calc/resta.py es nuevo y no tiene ningún stub",
 		"no trae \"Casos:\"",
 		"falta la tarea final",
 	} {
@@ -85,7 +85,7 @@ func TestProblemasDetectaCadaFormaDePlanoMalo(t *testing.T) {
 		}
 	}
 	os.Remove(filepath.Join(dir, Documento))
-	if ps := Problemas(context.Background(), dir, r, time.Minute, nil); !strings.Contains(strings.Join(ps, "\n"), Documento) {
+	if ps := Problemas(context.Background(), Verificacion{Dir: dir, Timeout: time.Minute}, r); !strings.Contains(strings.Join(ps, "\n"), Documento) {
 		t.Errorf("sin %s no se quejó: %v", Documento, ps)
 	}
 }
@@ -100,5 +100,35 @@ func TestParseLeeVerificarEIntegracion(t *testing.T) {
 	}
 	if !strings.Contains(r.Tareas[0].Como, "hexagonal") {
 		t.Errorf("la arquitectura no llegó a las notas: %q", r.Tareas[0].Como)
+	}
+}
+
+// cambiar código que ya funciona no exige stub: el contrato va en "como"
+func TestProblemasAceptaCambiosACodigoExistente(t *testing.T) {
+	dir := planoPython(t)
+	for _, c := range [][]string{{"add", "calc/resta.py"}, {"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, c...)...).CombinedOutput(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+	}
+	cambio := tarea("resta con negativos", "python3 -m unittest tests/test_resta_neg.py", "calc/resta.py", "tests/test_resta_neg.py")
+	cambio.Como = "resta acepta y devuelve negativos. Casos: resta(1, 3) -> -2"
+	r := Resultado{Verificar: "python3 -m compileall -q calc", Tareas: []plan.Borrador{cambio}}
+	v := Verificacion{Dir: dir, Base: "HEAD", Timeout: time.Minute}
+	if ps := Problemas(context.Background(), v, r); len(ps) > 0 {
+		t.Fatalf("un cambio con casos fue rechazado: %v", ps)
+	}
+	r.Tareas[0].Como = "resta acepta negativos"
+	if ps := strings.Join(Problemas(context.Background(), v, r), "\n"); !strings.Contains(ps, "ya existe") {
+		t.Errorf("un cambio sin casos pasó: %q", ps)
+	}
+}
+
+func TestProblemasExigeComposeYDockerignore(t *testing.T) {
+	dir := planoPython(t)
+	r := Resultado{Verificar: "true", Tareas: []plan.Borrador{tarea("suma", "true", "calc/suma.py")}}
+	todo := strings.Join(Problemas(context.Background(), Verificacion{Dir: dir, Docker: true, Timeout: time.Minute}, r), "\n")
+	if !strings.Contains(todo, "compose.yaml") || !strings.Contains(todo, ".dockerignore") {
+		t.Errorf("sin compose ni .dockerignore no se quejó: %q", todo)
 	}
 }

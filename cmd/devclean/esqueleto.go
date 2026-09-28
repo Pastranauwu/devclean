@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -29,6 +30,19 @@ const correccionesEsqueleto = 2
 // invocación más larga de la corrida (el plan en prosa de closet ya
 // tardó 19 minutos sin escribir un archivo).
 const timeoutArquitecto = 45 * time.Minute
+
+// notaCambio va en las tareas que cambian código que ya funciona: no hay
+// stub que rellenar y lo que ya existe no se puede romper.
+const notaCambio = "Cambias código que ya funciona. Primero escribe la prueba del comportamiento nuevo en el archivo que corre listo_cuando, con los \"Casos:\" de arriba; después haz el cambio. No cambies firmas, nombres ni exportaciones que otros módulos usan salvo que el contrato lo pida, y las pruebas que ya existen tienen que seguir pasando. El contexto está en " + esqueleto.Documento + "."
+
+// notaPara elige la nota según lo que toca la tarea: rellenar un stub o
+// cambiar código existente.
+func notaPara(ctx context.Context, dir string, tocar []string) string {
+	if esqueleto.ConStub(ctx, dir, tocar) {
+		return notaRelleno
+	}
+	return notaCambio
+}
 
 // notaRelleno va en las notas de cada tarea de relleno: el agente barato
 // no necesita más que saber qué reemplazar, dónde está el contrato y que
@@ -71,7 +85,10 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	if err != nil {
 		previo = ""
 	}
-	original := esqueleto.Prompt(esqueleto.Pedido{Texto: pedido, Previo: previo, PrimerID: ids[1]}, pctx)
+	// docker por defecto: el humano lo apaga en sus reglas ("sin docker")
+	// cuando lo que se construye no se despliega (una librería, un CLI)
+	sinDocker := strings.Contains(strings.ToLower(pedido), "sin docker")
+	original := esqueleto.Prompt(esqueleto.Pedido{Texto: pedido, Previo: previo, PrimerID: ids[1], SinDocker: sinDocker}, pctx)
 
 	modelo := config.ModeloRol(cfg, "planificador")
 	timeout := timeoutArquitecto
@@ -133,7 +150,9 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 		if err != nil {
 			problemas = append(problemas, err.Error())
 		} else {
-			problemas = append(problemas, esqueleto.Problemas(ctx, r.Path, res, pruebaTimeout, room.Entorno(r.Path))...)
+			problemas = append(problemas, esqueleto.Problemas(ctx, esqueleto.Verificacion{
+				Dir: r.Path, Base: r.Commit, Docker: !sinDocker, Timeout: pruebaTimeout, Env: room.Entorno(r.Path),
+			}, res)...)
 		}
 		if len(problemas) == 0 {
 			break
@@ -198,12 +217,22 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 			Version: task.Version, ID: idsRelleno[i], Titulo: b.Titulo, Porque: b.Porque,
 			ListoCuando: conVerificar(res.Verificar, b.ListoCuando), TocarSolo: b.TocarSolo, NoTocar: b.NoTocar,
 			DependeDe: append([]string{id}, b.DependeDe...), Peso: b.Peso, Agente: b.Agente,
-			Skills: b.Skills, Notas: b.Como + "\n\n" + notaRelleno,
+			Skills: b.Skills, Notas: b.Como + "\n\n" + notaPara(ctx, r.Path, b.TocarSolo),
 			LimiteIntentos: intentos, LimiteLineas: s.Limites.Lineas,
 		})
 	}
 	if res.Verificar != "" {
 		s.Acceptance = append(s.Acceptance, spec.Acceptance{Criterion: "build y typecheck del proyecto integrado", Command: res.Verificar})
+	}
+	// las imágenes se construyen sobre lo integrado: ahí aparece lo que
+	// solo falla dentro del contenedor (una dependencia que no existe, un
+	// archivo que .dockerignore deja fuera)
+	if !sinDocker {
+		if _, err := exec.LookPath("docker"); err == nil {
+			s.Acceptance = append(s.Acceptance, spec.Acceptance{Criterion: "las imágenes de docker compose construyen", Command: "docker compose build"})
+		} else {
+			out.Line("· docker no está instalado · la entrega no va a construir las imágenes del compose")
+		}
 	}
 	if res.Integracion != "" {
 		s.Acceptance = append(s.Acceptance, spec.Acceptance{Criterion: "flujo de punta a punta del esqueleto", Command: res.Integracion})

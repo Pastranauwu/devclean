@@ -61,6 +61,9 @@ type Pedido struct {
 	Previo string
 	// PrimerID es el id de la primera tarea de relleno.
 	PrimerID string
+	// SinDocker apaga la exigencia de compose: el humano lo pidió en sus
+	// reglas (una librería o un CLI no se despliegan).
+	SinDocker bool
 }
 
 // Prompt arma la instrucción del arquitecto. Lo fijo va primero para que
@@ -80,21 +83,34 @@ func Prompt(p Pedido, c plan.Contexto) string {
 		b.WriteString("\nYa existe " + Documento + ". Evoluciónalo: agrega lo nuevo, ajusta lo que cambia y no reescribas lo que ya funciona. Las tareas son solo para lo nuevo o lo que cambia.\n")
 	}
 	b.WriteString(`
+SI EL REPOSITORIO YA TIENE CÓDIGO
+- Lo que ya funciona NO se convierte en stub. Respeta el stack, las librerías, el sistema de diseño y las convenciones que ya hay; no migres nada que el pedido no pida.
+- Un cambio a código existente es una tarea sin stub: en "como" va qué cambiar, dónde y "Casos:" del comportamiento nuevo (entrada → salida o lo que se ve en pantalla). Si el cambio agrega funciones, métodos o componentes nuevos, esos sí van como stub con su contrato.
+- El "listo_cuando" de un cambio corre una prueba NUEVA del comportamiento nuevo (un archivo que hoy no existe): las pruebas que ya existen pasan hoy y no sirven de oráculo. Esas pruebas tienen que seguir pasando.
+`)
+	b.WriteString(`
 TU ENTREGA ES UN PLANO EN CÓDIGO, NO UNA IMPLEMENTACIÓN
 No escribes lógica ni pruebas: cada línea que escribas la paga el modelo caro, y esa es la parte que hacen los agentes baratos. Tu trabajo es que encajen sin verse: dónde va cada cosa, qué clases y métodos existen, qué recibe y devuelve cada uno, quién llama a quién.
 
 1. Estructura y stack: carpetas, manifiestos (package.json, pyproject.toml, go.mod, ...), configuración de build y del runner de pruebas, y .gitignore. Instala las dependencias.
-2. ` + Documento + ` en la raíz: estilo (modular, hexagonal o en capas según el problema, no por moda), cada módulo con su archivo y su responsabilidad, qué módulo puede depender de cuál, flujo de datos del caso principal, y cómo se prueba cada módulo. Es la fuente de verdad que leen todos los agentes y que el próximo cambio evoluciona.
+   Interfaz web: usa el sistema de diseño y los componentes que el proyecto ya tenga. Solo si no hay ninguno y las reglas no piden otra cosa: Tailwind CSS y la librería de componentes estándar de su framework (p. ej. shadcn/ui en React), configuradas con su CLI sin preguntas (--yes/--defaults), y los componentes base que la app va a usar agregados con ese CLI: son código generado, no los escribas tú. El tema (colores, radios, tipografía) vive en un solo lugar.
+2. ` + Documento + ` en la raíz: estilo (modular, hexagonal o en capas según el problema, no por moda), cada módulo con su archivo y su responsabilidad, qué módulo puede depender de cuál, flujo de datos del caso principal, y cómo se prueba cada módulo. Si hay interfaz web, una sección de UI: el sistema de diseño (dónde viven el tema y los componentes), la plantilla de página (layout, encabezado, estados cargando/vacío/error) y qué componente se usa para qué. Es la fuente de verdad que leen todos los agentes y que el próximo cambio evoluciona.
 3. Tipos compartidos, entidades, interfaces y puertos: solo DECLARACIONES (campos, firmas de métodos). Nada de cuerpos con lógica.
-4. Todo lo demás es STUB, también el cableado (main, rutas, contenedor, App): cada clase, función y método público con su firma exacta (tipos de entrada y salida) y un comentario de contrato encima con
+4. Todo lo NUEVO es STUB, también el cableado nuevo (main, rutas, contenedor, App): cada clase, función y método público con su firma exacta (tipos de entrada y salida) y un comentario de contrato encima con
    - qué hace, entradas, salida y errores;
    - a quién llama (módulo y método) y quién lo usa;
    - "Casos:" de 2 a 5 ejemplos concretos de entrada → salida o error, que el agente convertirá en su prueba.
    El cuerpo solo lanza un error con el texto exacto "` + Marca + `".
 5. Nada más. No escribas pruebas, implementaciones de referencia, datos de ejemplo ni código fuera del repositorio. No corras nada salvo lo necesario para que "verificar" pase.
+`)
+	if !p.SinDocker {
+		b.WriteString(`6. Despliegue con Docker (es configuración: la escribes tú, completa). Un Dockerfile por servicio (multi-etapa, imagen final sin herramientas de desarrollo), un compose.yaml en la raíz que levanta todo con "docker compose up --build" (servicios, base de datos si hay, volúmenes para los datos, puertos, variables desde .env) y un .env.example, y un .dockerignore que deje fuera dependencias, builds locales, .git y .env. El README empieza por ese comando. Si ya existen, evoluciónalos. "docker compose config" tiene que pasar.
+`)
+	}
+	b.WriteString(`
 
 CÓMO REPARTIR
-- Una tarea por archivo stub (o por dos o tres muy acoplados). Cuanto más chicas e independientes, más agentes en paralelo y más barato.
+- Una tarea por archivo stub o por cambio a un archivo existente (o por dos o tres muy acoplados). Cuanto más chicas e independientes, más agentes en paralelo y más barato.
 - Cada tarea escribe su propia prueba a partir de los "Casos:" de su contrato: "listo_cuando" corre ese archivo de prueba (que hoy no existe) y "tocar_solo" incluye el stub y ese archivo de prueba.
 - El agente es un modelo barato: no rediseña ni elige librerías. Lo que necesite decidir tiene que estar en el contrato.
 - Las dependencias entre módulos entran por parámetro o constructor (puertos), para que cada módulo se pruebe con fakes sin esperar a los demás. "depende_de" solo cuando un módulo necesita de verdad la implementación real de otro.
@@ -113,10 +129,10 @@ RESPONDE AL FINAL SOLO CON ESTE JSON
       "titulo": "frase corta en minúscula",
       "porque": "qué requerimiento cubre",
       "listo_cuando": "comando que corre solo la prueba de este módulo",
-      "tocar_solo": ["el stub de la tarea", "su archivo de prueba"],
+      "tocar_solo": ["el stub o el archivo que cambia", "su archivo de prueba"],
       "depende_de": [],
       "peso": "liviana | media | pesada",
-      "como": "qué archivo rellenar y qué casos probar"
+      "como": "qué archivo rellenar o qué cambiar, y sus Casos: si es un cambio a código existente"
     }
   ]
 }
@@ -177,23 +193,40 @@ func Parse(texto string) (Resultado, error) {
 	return r, nil
 }
 
-// Problemas verifica el plano en dir sin ningún modelo. Vacío es listo
-// para repartir. No exige pruebas: las escribe cada tarea a partir de
-// los casos de su contrato.
-func Problemas(ctx context.Context, dir string, r Resultado, timeout time.Duration, env []string) []string {
+// Verificacion es dónde y cómo revisar lo que dejó el arquitecto.
+type Verificacion struct {
+	Dir string
+	// Base es el commit con que arrancó el cuarto. Lo que ya existía ahí
+	// es código que funciona: se cambia, no se convierte en stub. Vacío
+	// = todo es nuevo.
+	Base    string
+	Docker  bool // exigir compose.yaml y .dockerignore
+	Timeout time.Duration
+	Env     []string
+}
+
+// Problemas verifica el plano sin ningún modelo. Vacío es listo para
+// repartir. No exige pruebas: las escribe cada tarea a partir de los
+// casos de su contrato.
+func Problemas(ctx context.Context, v Verificacion, r Resultado) []string {
+	dir := v.Dir
 	var out []string
 	if _, err := os.Stat(filepath.Join(dir, Documento)); err != nil {
 		out = append(out, "falta "+Documento+" en la raíz")
 	}
 	if strings.TrimSpace(r.Verificar) == "" {
 		out = append(out, "falta \"verificar\": el comando que compila o hace typecheck del proyecto")
-	} else if salida, code := correr(ctx, dir, r.Verificar, timeout, env); code == nil || *code != 0 {
+	} else if salida, code := correr(ctx, dir, r.Verificar, v.Timeout, v.Env); code == nil || *code != 0 {
 		out = append(out, fmt.Sprintf("\"verificar\" (%s) no pasa con los stubs: %s", r.Verificar, cola(salida)))
+	}
+	if v.Docker {
+		out = append(out, docker(ctx, dir, v.Timeout, v.Env)...)
 	}
 	if len(r.Tareas) == 0 {
 		out = append(out, "no hay tareas: si todo está hecho no hacía falta un esqueleto")
 	}
 	archivos := versionables(ctx, dir)
+	previos := enCommit(ctx, dir, v.Base)
 	integracion := false
 	for i, t := range r.Tareas {
 		nombre := fmt.Sprintf("tarea %d (%s)", i+1, t.Titulo)
@@ -212,7 +245,7 @@ func Problemas(ctx context.Context, dir string, r Resultado, timeout time.Durati
 				out = append(out, fmt.Sprintf("%s: %s no existe; el stub lo creas tú", nombre, f))
 			}
 		}
-		out = append(out, contrato(dir, nombre, t.TocarSolo, archivos)...)
+		out = append(out, contrato(dir, nombre, t, archivos, previos)...)
 	}
 	if strings.TrimSpace(r.Integracion) != "" && !integracion {
 		out = append(out, "ninguna tarea tiene como listo_cuando el comando de \"integracion\": falta la tarea final que escribe la prueba de punta a punta")
@@ -220,37 +253,106 @@ func Problemas(ctx context.Context, dir string, r Resultado, timeout time.Durati
 	return out
 }
 
-// contrato exige que la tarea tenga al menos un stub sin implementar y
-// que traiga casos: la marca prueba que el arquitecto no escribió la
-// lógica, y los casos son de donde el agente saca su prueba. La tarea
-// final de integración solo escribe pruebas y no los necesita.
-func contrato(dir, nombre string, tocar, archivos []string) []string {
-	var stubs []string
+// contrato exige que cada tarea diga qué hacer y cómo probarlo. En un
+// archivo nuevo, un stub con la marca (prueba que el arquitecto no
+// escribió la lógica) y "Casos:" en su comentario. En un archivo que ya
+// existía, el código funciona y no se convierte en stub: el contrato del
+// cambio va en "como", con sus casos. Antes se exigía la marca siempre y
+// ningún cambio a código existente pasaba la verificación. La tarea
+// final de integración solo escribe pruebas y no necesita nada.
+func contrato(dir, nombre string, t plan.Borrador, archivos []string, previos map[string]bool) []string {
+	var nuevos, existentes []string
 	for _, f := range archivos {
-		if config.MatchesAny(tocar, f) && !task.EsArchivoDePrueba(f) {
-			stubs = append(stubs, f)
-		}
-	}
-	if len(stubs) == 0 {
-		return nil
-	}
-	marca, casos := false, false
-	for _, f := range stubs {
-		b, err := os.ReadFile(filepath.Join(dir, f))
-		if err != nil {
+		if !config.MatchesAny(t.TocarSolo, f) || task.EsArchivoDePrueba(f) {
 			continue
 		}
-		marca = marca || strings.Contains(string(b), Marca)
-		casos = casos || strings.Contains(string(b), "Casos:")
+		if previos[f] {
+			existentes = append(existentes, f)
+		} else {
+			nuevos = append(nuevos, f)
+		}
 	}
 	var out []string
-	if !marca {
-		out = append(out, fmt.Sprintf("%s: %s no tiene ningún stub con \"%s\"; o ya está implementado (no te toca) o sobra la tarea", nombre, strings.Join(stubs, ", "), Marca))
-	}
-	if !casos {
-		out = append(out, fmt.Sprintf("%s: el contrato de %s no trae \"Casos:\"; sin ejemplos el agente no sabe qué probar", nombre, strings.Join(stubs, ", ")))
+	if len(nuevos) > 0 {
+		marca, casos := false, false
+		for _, f := range nuevos {
+			b, err := os.ReadFile(filepath.Join(dir, f))
+			if err != nil {
+				continue
+			}
+			marca = marca || strings.Contains(string(b), Marca)
+			casos = casos || strings.Contains(string(b), "Casos:")
+		}
+		if !marca {
+			out = append(out, fmt.Sprintf("%s: %s es nuevo y no tiene ningún stub con \"%s\"; lo nuevo lo implementa el agente, no tú", nombre, strings.Join(nuevos, ", "), Marca))
+		}
+		if !casos {
+			out = append(out, fmt.Sprintf("%s: el contrato de %s no trae \"Casos:\"; sin ejemplos el agente no sabe qué probar", nombre, strings.Join(nuevos, ", ")))
+		}
+	} else if len(existentes) > 0 && !strings.Contains(t.Como, "Casos:") {
+		out = append(out, fmt.Sprintf("%s: cambia %s, que ya existe, y su \"como\" no trae \"Casos:\" del comportamiento nuevo", nombre, strings.Join(existentes, ", ")))
 	}
 	return out
+}
+
+// Composes son los nombres que acepta docker compose.
+var Composes = []string{"compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"}
+
+// docker exige lo necesario para levantar el proyecto con un comando:
+// compose y .dockerignore (sin él, node_modules y .venv viajan al
+// contexto de build). Si docker está instalado, además valida el compose.
+func docker(ctx context.Context, dir string, timeout time.Duration, env []string) []string {
+	compose := ""
+	for _, n := range Composes {
+		if _, err := os.Stat(filepath.Join(dir, n)); err == nil {
+			compose = n
+			break
+		}
+	}
+	var out []string
+	if compose == "" {
+		out = append(out, "falta compose.yaml en la raíz: el proyecto se levanta con \"docker compose up --build\"")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".dockerignore")); err != nil {
+		out = append(out, "falta .dockerignore: sin él las dependencias y builds locales entran al contexto de docker")
+	}
+	if compose != "" {
+		if _, err := exec.LookPath("docker"); err == nil {
+			if salida, code := correr(ctx, dir, "docker compose config -q", timeout, env); code == nil || *code != 0 {
+				out = append(out, "\"docker compose config\" no pasa: "+cola(salida))
+			}
+		}
+	}
+	return out
+}
+
+// enCommit lista los archivos versionados en base; nada si base es vacío.
+func enCommit(ctx context.Context, dir, base string) map[string]bool {
+	out := map[string]bool{}
+	if base == "" {
+		return out
+	}
+	cmd := exec.CommandContext(ctx, "git", "ls-tree", "-r", "--name-only", base)
+	cmd.Dir = dir
+	b, _ := cmd.Output()
+	for _, f := range strings.Fields(string(b)) {
+		out[f] = true
+	}
+	return out
+}
+
+// ConStub reporta si alguno de los archivos de tocar (no de prueba)
+// tiene la marca: decide si la tarea rellena un stub o cambia código.
+func ConStub(ctx context.Context, dir string, tocar []string) bool {
+	for _, f := range versionables(ctx, dir) {
+		if !config.MatchesAny(tocar, f) || task.EsArchivoDePrueba(f) {
+			continue
+		}
+		if b, err := os.ReadFile(filepath.Join(dir, f)); err == nil && strings.Contains(string(b), Marca) {
+			return true
+		}
+	}
+	return false
 }
 
 func correr(ctx context.Context, dir, cmdStr string, timeout time.Duration, env []string) (string, *int) {

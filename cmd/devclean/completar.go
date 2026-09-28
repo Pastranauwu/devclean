@@ -110,7 +110,10 @@ func planearRequirements(root string, s *spec.Spec) error {
 		}
 	}
 	if len(retirados) > 0 {
-		pedido.WriteString("Retirados del spec (quítalos del código y de " + esqueleto.Documento + "):\n")
+		// comparar por texto no distingue quitar de reescribir: un
+		// requerimiento con otra redacción llega aquí y como nuevo. Decir
+		// "quítalos" hacía borrar funcionalidad que el humano solo redactó
+		pedido.WriteString("Ya no aparecen con este texto en el spec (pueden haberse quitado o reescrito abajo). Quita del código y de " + esqueleto.Documento + " solo lo que ningún requerimiento vigente siga pidiendo:\n")
 		for _, r := range retirados {
 			fmt.Fprintf(&pedido, "- %s\n", r)
 		}
