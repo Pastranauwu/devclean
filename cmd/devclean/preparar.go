@@ -155,17 +155,10 @@ func prepararEntornoConCLI(cwd string, in io.Reader, entregar bool, cliPreferido
 	}
 	// 6. modelos: ids que el CLI no reconoce mueren en cada intento
 	if catalogo, err := catalogoDe(ex); err == nil && len(catalogo) > 0 {
-		var declarados []string
-		for _, peso := range config.Pesos {
-			declarados = append(declarados, cfg.Modelos[peso])
-		}
-		if malos := config.ModelosValidos(declarados, catalogo); len(malos) > 0 || len(cfg.Modelos) == 0 {
-			if len(malos) > 0 {
-				out.Line("· modelos que %s no reconoce: %s · se reasignan del catálogo", ex.Name(), strings.Join(malos, ", "))
-			}
-			cfg.Modelos, guardar = config.ElegirModelos(catalogo), true
-			for _, peso := range config.Pesos {
-				out.Line("· modelo %s: %s", peso, cfg.Modelos[peso])
+		if cambiados := revisarModelos(&cfg, ex, catalogo); len(cambiados) > 0 {
+			guardar = true
+			for _, c := range cambiados {
+				out.Line("· %s", c)
 			}
 		}
 	}
@@ -276,6 +269,45 @@ func prepararEntrega(root string) error {
 		return errors.New("--ship necesita gh para abrir el PR en origin · instálalo (https://cli.github.com) o corre sin --ship")
 	}
 	return nil
+}
+
+// revisarModelos reemplaza solo los modelos de `modelos:` que su CLI no
+// reconoce, cada uno contra el catálogo del CLI que de verdad lo corre
+// (ejecutorPara): con modelos mezclados, un id de opencode no está en el
+// catálogo de claude y no por eso es inválido. Antes se validaba todo
+// contra el CLI de `cli:` y un solo modelo desconocido reasignaba los
+// tres: una config con sonnet como pesada amanecía con opus.
+func revisarModelos(cfg *config.Config, ex executor.Executor, catalogo []string) []string {
+	elegidos := config.ElegirModelos(catalogo)
+	if len(cfg.Modelos) == 0 {
+		cfg.Modelos = elegidos
+		var out []string
+		for _, peso := range config.Pesos {
+			out = append(out, fmt.Sprintf("modelo %s: %s", peso, elegidos[peso]))
+		}
+		return out
+	}
+	catalogos := map[string][]string{ex.Name(): catalogo}
+	var out []string
+	for _, peso := range config.Pesos {
+		m := cfg.Modelos[peso]
+		if m == "" {
+			continue
+		}
+		exM := ejecutorPara(ex, m)
+		cat, ok := catalogos[exM.Name()]
+		if !ok {
+			cat, _ = catalogoDe(exM)
+			catalogos[exM.Name()] = cat
+		}
+		// sin catálogo no hay con qué decir que es inválido
+		if len(cat) == 0 || len(config.ModelosValidos([]string{m}, cat)) == 0 {
+			continue
+		}
+		cfg.Modelos[peso] = elegidos[peso]
+		out = append(out, fmt.Sprintf("modelo %s: %s no existe en %s · se usa %s", peso, m, exM.Name(), elegidos[peso]))
+	}
+	return out
 }
 
 func catalogoDe(ex executor.Executor) ([]string, error) {

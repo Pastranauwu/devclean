@@ -111,6 +111,7 @@ func run(ctx context.Context, req Request, name string, args ...string) (string,
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = req.RoomPath
 	cmd.Env = append(os.Environ(), req.Env...)
+	cmd.SysProcAttr = morirConPadre()
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
