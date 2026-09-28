@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -77,5 +78,32 @@ func TestCompletarSumaLoQueFalta(t *testing.T) {
 	got, cambio := cfg.Completar(Pantallas{Levantar: "b", Script: "s"})
 	if !cambio || got.Levantar != "a" || got.Script != "s" {
 		t.Fatalf("%+v %v", got, cambio)
+	}
+}
+
+// closet: el script abría /agregar y caía en un 404. Sus capturas no se
+// le muestran al revisor, y el error sirve para que el arquitecto lo arregle
+func TestScriptQueFallaNoEntregaCapturasYSeReporta(t *testing.T) {
+	if Navegador() == "" {
+		t.Skip("sin navegador headless")
+	}
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("sin python3")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<h1>hola</h1>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := Pantallas{
+		Levantar: "exec python3 -m http.server $PORT --bind 127.0.0.1", URL: "http://127.0.0.1:$PORT", Rutas: []string{"/"},
+		Script: `printf png > "$CAPTURAS/01-roto.png"; echo "TimeoutError: no encontré Elegir de la galería"; exit 1`,
+	}
+	fotos, err := Tomar(context.Background(), dir, p, puertoLibre(t), nil, filepath.Join(dir, "a"))
+	if err != nil || len(fotos) != 2 {
+		t.Fatalf("quiero solo las 2 de la ruta: %v %v", fotos, err)
+	}
+	err = ProbarFlujos(context.Background(), dir, p, puertoLibre(t), nil, filepath.Join(dir, "b"))
+	if err == nil || !strings.Contains(err.Error(), "Elegir de la galería") {
+		t.Fatalf("el error del script no llegó: %v", err)
 	}
 }

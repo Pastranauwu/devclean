@@ -165,6 +165,14 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 			if p, _ := cfg.Pantallas.Completar(res.Pantallas); !p.Vacia() && p.Script == "" && tocaUI(res.Tareas) {
 				problemas = append(problemas, "hay tareas de interfaz y falta \"pantallas.script\": escribe un script que recorra con un navegador los flujos que cambian (p. ej. elegir una foto y ver el formulario) y guarde un PNG por paso en $CAPTURAS; sin él la revisión visual no ve esas pantallas")
 			}
+			// un script roto le muestra al revisor una página de error y le
+			// hace rechazar tareas que no lo son; se prueba antes de repartir
+			if p, _ := cfg.Pantallas.Completar(res.Pantallas); len(problemas) == 0 && p.Script != "" && !p.Vacia() && capturas.Navegador() != "" {
+				dir := filepath.Join(loop.RunsDir(root), id, fmt.Sprintf("flujos-prueba-%d", vuelta))
+				if err := capturas.ProbarFlujos(ctx, r.Path, p, r.Puerto, room.Entorno(r.Path), dir); err != nil {
+					problemas = append(problemas, "\"pantallas.script\" no funciona contra la app levantada (revisa rutas, selectores y que el navegador que usa esté instalado): "+err.Error())
+				}
+			}
 			if c := cicloDelPlan(root, res.Tareas); c != nil {
 				problemas = append(problemas, "dependencia circular en depende_de: "+strings.Join(c, " → ")+" · quita una de esas dependencias")
 			}

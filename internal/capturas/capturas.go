@@ -110,16 +110,35 @@ func Instalar(ctx context.Context) error {
 
 // Tomar levanta la app en dir con PORT=puerto, espera a que responda y
 // captura cada ruta en outDir. La app se apaga al terminar, falle o no.
+// Si el script de flujos falla, sus capturas se descartan: una página
+// rota a mitad de flujo le haría rechazar al revisor algo que no es de
+// la tarea (closet: el script abría /agregar y caía en un 404).
 func Tomar(ctx context.Context, dir string, p Pantallas, puerto int, env []string, outDir string) ([]string, error) {
+	fotos, _, err := tomar(ctx, dir, p, puerto, env, outDir, true)
+	return fotos, err
+}
+
+// ProbarFlujos levanta la app y corre solo la semilla y el script de
+// flujos: el error del script, con la cola de su salida, es lo que el
+// arquitecto necesita para corregirlo antes de repartir tareas.
+func ProbarFlujos(ctx context.Context, dir string, p Pantallas, puerto int, env []string, outDir string) error {
+	_, errScript, err := tomar(ctx, dir, p, puerto, env, outDir, false)
+	if err != nil {
+		return err
+	}
+	return errScript
+}
+
+func tomar(ctx context.Context, dir string, p Pantallas, puerto int, env []string, outDir string, rutas bool) ([]string, error, error) {
 	if p.Vacia() {
-		return nil, errors.New("sin pantallas declaradas")
+		return nil, nil, errors.New("sin pantallas declaradas")
 	}
 	nav := Navegador()
 	if nav == "" {
-		return nil, errors.New("sin navegador headless · corre npx playwright install chromium-headless-shell")
+		return nil, nil, errors.New("sin navegador headless · corre npx playwright install chromium-headless-shell")
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	base := strings.ReplaceAll(p.URL, "$PORT", strconv.Itoa(puerto))
 	app := exec.Command("sh", "-c", p.Levantar)
@@ -130,18 +149,18 @@ func Tomar(ctx context.Context, dir string, p Pantallas, puerto int, env []strin
 	app.Env = append(append(os.Environ(), env...), "PORT="+strconv.Itoa(puerto))
 	registro, err := os.Create(filepath.Join(outDir, "app.log"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer registro.Close()
 	app.Stdout, app.Stderr = registro, registro
 	enGrupo(app)
 	if err := app.Start(); err != nil {
-		return nil, fmt.Errorf("no se pudo levantar la app · %w", err)
+		return nil, nil, fmt.Errorf("no se pudo levantar la app · %w", err)
 	}
 	defer apagar(app)
 
 	if err := esperar(ctx, base, Espera); err != nil {
-		return nil, fmt.Errorf("la app no respondió en %s · %s · detalle en %s", base, err, registro.Name())
+		return nil, nil, fmt.Errorf("la app no respondió en %s · %s · detalle en %s", base, err, registro.Name())
 	}
 	envApp := append(append([]string{}, app.Env...), "BASE_URL="+base)
 	// la semilla falla en abierto: sin datos se captura igual, vacío
@@ -150,28 +169,39 @@ func Tomar(ctx context.Context, dir string, p Pantallas, puerto int, env []strin
 	}
 	var fotos []string
 	for i, ruta := range p.Rutas {
+		if !rutas {
+			break
+		}
 		for _, t := range Tamanios {
 			foto := filepath.Join(outDir, fmt.Sprintf("%02d-%s-%s.png", i+1, nombre(ruta), t.Nombre))
 			if err := capturar(ctx, nav, unir(base, ruta), foto, t.Ancho, t.Alto); err != nil {
-				return fotos, fmt.Errorf("captura de %s · %w", ruta, err)
+				return fotos, nil, fmt.Errorf("captura de %s · %w", ruta, err)
 			}
 			fotos = append(fotos, foto)
 		}
 	}
+	var errScript error
 	if strings.TrimSpace(p.Script) != "" {
 		flujos := filepath.Join(outDir, "flujos")
 		if err := os.MkdirAll(flujos, 0o755); err != nil {
-			return fotos, err
+			return fotos, nil, err
 		}
-		if err := auxiliar(ctx, dir, p.Script, append(envApp, "CAPTURAS="+flujos), registro, 5*time.Minute); err != nil {
-			fmt.Fprintf(registro, "\nel script de flujos falló: %v\n", err)
+		salida, err := os.Create(filepath.Join(outDir, "flujos.log"))
+		if err != nil {
+			return fotos, nil, err
 		}
-		// lo que haya dejado, aunque haya fallado a la mitad
-		extra, _ := filepath.Glob(filepath.Join(flujos, "*.png"))
-		sort.Strings(extra)
-		fotos = append(fotos, extra...)
+		err = auxiliar(ctx, dir, p.Script, append(envApp, "CAPTURAS="+flujos), salida, 5*time.Minute)
+		salida.Close()
+		if err != nil {
+			texto, _ := os.ReadFile(salida.Name())
+			errScript = fmt.Errorf("el script de flujos falló (%v): %s", err, ultimasN(string(texto), 12))
+		} else {
+			extra, _ := filepath.Glob(filepath.Join(flujos, "*.png"))
+			sort.Strings(extra)
+			fotos = append(fotos, extra...)
+		}
 	}
-	return fotos, nil
+	return fotos, errScript, nil
 }
 
 // auxiliar corre la semilla o el script de flujos con la app levantada.
@@ -246,6 +276,14 @@ func nombre(ruta string) string {
 		return "inicio"
 	}
 	return n
+}
+
+func ultimasN(s string, n int) string {
+	l := strings.Split(strings.TrimSpace(s), "\n")
+	if len(l) > n {
+		l = l[len(l)-n:]
+	}
+	return strings.Join(l, "\n")
 }
 
 func ultimas(s string) string {
