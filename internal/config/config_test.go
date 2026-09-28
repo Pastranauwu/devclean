@@ -561,3 +561,23 @@ func TestObtenerAgente(t *testing.T) {
 		t.Error("todos frontend no está presente")
 	}
 }
+
+func TestAgentesPagados(t *testing.T) {
+	cfg, err := Parse([]byte("agentes_pagados: 5\n"))
+	if err != nil || cfg.AgentesPagados != 5 {
+		t.Fatalf("%v %d", err, cfg.AgentesPagados)
+	}
+	if _, err := Parse([]byte("agentes_pagados: 0\n")); err == nil {
+		t.Error("0 debió rechazarse")
+	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".devclean"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Save(root); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Load(root); err != nil || got.AgentesPagados != 5 {
+		t.Errorf("no sobrevive al guardar: %v %d", err, got.AgentesPagados)
+	}
+}

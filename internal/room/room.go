@@ -241,13 +241,15 @@ func InstalarDependencias(ctx context.Context, path string) error {
 	for _, dir := range dirsManifiesto(path) {
 		rel, _ := filepath.Rel(path, dir)
 		if exists(filepath.Join(dir, "package.json")) && !bajoNode(path, dir) {
-			if out, err := run(ctx, dir, "npm", "install"); err != nil {
-				return fmt.Errorf("npm install falló en %s · %s", rel, tail(out))
+			if err := instalar(ctx, dir, rel, gestorNode(dir), "install"); err != nil {
+				return err
 			}
 		}
-		if exists(filepath.Join(dir, "go.mod")) {
-			if out, err := run(ctx, dir, "go", "mod", "download"); err != nil {
-				return fmt.Errorf("go mod download falló en %s · %s", rel, tail(out))
+		for _, m := range manifiestos {
+			if exists(filepath.Join(dir, m.archivo)) {
+				if err := instalar(ctx, dir, rel, m.args[0], m.args[1:]...); err != nil {
+					return err
+				}
 			}
 		}
 		if exists(filepath.Join(dir, "pyproject.toml")) || exists(filepath.Join(dir, "requirements.txt")) {
@@ -257,6 +259,49 @@ func InstalarDependencias(ctx context.Context, path string) error {
 		}
 	}
 	return nil
+}
+
+// manifiestos son los stacks que se instalan con un solo comando del
+// toolchain. Python va aparte (venv) y node también (gestor por lockfile).
+var manifiestos = []struct {
+	archivo string
+	args    []string
+}{
+	{"go.mod", []string{"go", "mod", "download"}},
+	{"Cargo.toml", []string{"cargo", "fetch"}},
+	{"Gemfile", []string{"bundle", "install"}},
+	{"composer.json", []string{"composer", "install", "--no-interaction"}},
+}
+
+// gestorNode elige el gestor por el lockfile: npm install sobre un repo
+// de pnpm o yarn ignora su lockfile y resuelve otras versiones.
+func gestorNode(dir string) string {
+	switch {
+	case exists(filepath.Join(dir, "pnpm-lock.yaml")):
+		return "pnpm"
+	case exists(filepath.Join(dir, "yarn.lock")):
+		return "yarn"
+	case exists(filepath.Join(dir, "bun.lockb")), exists(filepath.Join(dir, "bun.lock")):
+		return "bun"
+	}
+	return "npm"
+}
+
+func instalar(ctx context.Context, dir, rel, prog string, args ...string) error {
+	if _, err := exec.LookPath(prog); err != nil {
+		return fmt.Errorf("%s no está instalado y %s lo necesita · instálalo o borra el manifiesto", prog, valorRel(rel))
+	}
+	if out, err := run(ctx, dir, prog, args...); err != nil {
+		return fmt.Errorf("%s %s falló en %s · %s", prog, strings.Join(args, " "), valorRel(rel), tail(out))
+	}
+	return nil
+}
+
+func valorRel(rel string) string {
+	if rel == "." || rel == "" {
+		return "la raíz"
+	}
+	return rel
 }
 
 // Entorno devuelve el PATH con los bin de cada .venv del cuarto

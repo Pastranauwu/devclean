@@ -337,6 +337,9 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 			workers, pagados := agentes, agentes
 			if workers < 1 {
 				workers, pagados = autoAgentes(len(asignadas)), topePagados
+				if cfg.AgentesPagados > 0 {
+					pagados = cfg.AgentesPagados
+				}
 			}
 			r := correr(ctx, root, cfg, ex, modelo, constitucion, base, asignadas, workers, pagados, presupuesto, ventanasReg, emit)
 			results = append(results, r...)
@@ -617,8 +620,7 @@ func autoAgentes(tareas int) int {
 // --agentes: todas gastan la misma ventana de 5 h, y en paralelo solo la
 // vacían antes (el snake perdió 3 de 18 intentos por 429).
 //
-// ponytail: tope fijo; hacerlo configurable o leer la sonda de uso si
-// 3 resulta corto o largo para algún plan.
+// Se cambia con `agentes_pagados:` en config.yml.
 const topePagados = 3
 
 // correr lanza las tareas con `agentes` trabajadores en paralelo, y de
@@ -860,10 +862,11 @@ func ejecutorPara(ex executor.Executor, modelo string) executor.Executor {
 	return ex
 }
 
-// gratis reconoce los modelos sin costo de opencode ("…-free"): no
-// gastan cuota, así que no entran al tope de agentes pagados.
+// gratis reconoce los modelos sin costo por su id: opencode los nombra
+// "…-free" y OpenRouter "…:free". No gastan cuota, así que no entran al
+// tope de agentes pagados.
 func gratis(modelo string) bool {
-	return strings.HasSuffix(modelo, "-free")
+	return strings.HasSuffix(modelo, "-free") || strings.HasSuffix(modelo, ":free")
 }
 
 // revisorEnBucle adapta internal/revisor al loop: corre sobre un intento
@@ -994,6 +997,7 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 			Constitucion:   constitucion,
 			Planificador:   generadorPlan{ex: ex, modelo: config.ModeloRol(cfg, "planificador"), root: root, effort: "medium"},
 			Ejecutor:       agenteExecutor{exTarea},
+			EjecutorPara:   func(m string) loop.Agent { return agenteExecutor{ejecutorPara(exTarea, m)} },
 			ModeloEjecutor: modeloTarea,
 			Task:           t,
 			Root:           root,

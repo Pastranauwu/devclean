@@ -72,10 +72,13 @@ func autoSubagentes(tareas int) int {
 
 // Agent descompone una tarea recursiva y ejecuta sus subtareas.
 type Agent struct {
-	Cfg            config.Config
-	Constitucion   string
-	Planificador   plan.Generador // rol planificador (modelo caro): descompone y supervisa
-	Ejecutor       loop.Agent     // agente hoja (modelo barato) para subtareas no recursivas
+	Cfg          config.Config
+	Constitucion string
+	Planificador plan.Generador // rol planificador (modelo caro): descompone y supervisa
+	Ejecutor     loop.Agent     // agente hoja (modelo barato) para subtareas no recursivas
+	// EjecutorPara, si está, da el agente hoja que sabe correr un modelo:
+	// con modelos: mezclando CLIs, la hoja escalada puede ser de otro CLI.
+	EjecutorPara   func(modelo string) loop.Agent
 	ModeloEjecutor string
 	Task           task.Task // la tarea recursiva que este Agent resuelve
 	Profundidad    int       // 0 = raíz
@@ -293,10 +296,7 @@ func (a Agent) resolverSubtarea(ctx context.Context, req loop.Request, sub task.
 		return resultadoSub{sub: sub, verde: true, modelo: modelo, tk: tk}
 	}
 
-	// hoja roja: solo merece escalar de modelo si de verdad dejó trabajo.
-	// ponytail: escala con el mismo CLI (a.Ejecutor); si liviana es un
-	// modelo de opencode y media uno de claude, la hoja escalada falla.
-	// Pasar ejecutorPara aquí cuando la recursión se use con modelos mixtos.
+	// hoja roja: solo merece escalar de modelo si de verdad dejó trabajo
 	if m := a.Cfg.ModeloEscalado(sub.Peso, modelo); m != "" && !outcome.NoEscalar && huboTrabajo(rootPara(a, req), sub.ID) {
 		outcome, agentErr, tk = a.correrSubtarea(ctx, req, r, sub, m)
 		modelo = m
@@ -459,12 +459,16 @@ func (a Agent) modeloInicial(sub task.Task) string {
 // profundidad disponible) o corre plana con el agente hoja, y la ejecuta.
 // modelo es el id a usar en este intento — el de su peso o el escalado.
 func (a Agent) correrSubtarea(ctx context.Context, req loop.Request, r room.Room, sub task.Task, modelo string) (loop.Outcome, error, loop.Tokens) {
-	agente := a.Ejecutor
+	hoja := a.Ejecutor
+	if a.EjecutorPara != nil {
+		hoja = a.EjecutorPara(modelo)
+	}
+	agente := hoja
 	if sub.Recursivo && a.Profundidad+1 < a.Cfg.RecursionMax {
 		agente = Agent{
 			Cfg: a.Cfg, Constitucion: a.Constitucion,
 			Planificador: a.Planificador,
-			Ejecutor:     a.Ejecutor, ModeloEjecutor: modelo,
+			Ejecutor:     hoja, EjecutorPara: a.EjecutorPara, ModeloEjecutor: modelo,
 			Task: sub, Profundidad: a.Profundidad + 1,
 			Root: a.Root, RaizID: a.RaizID,
 			Presupuesto: a.Presupuesto, Ventanas: a.Ventanas,
@@ -492,7 +496,7 @@ func (a Agent) correrSubtarea(ctx context.Context, req loop.Request, r room.Room
 		PruebaTimeout:  pruebaTimeout,
 		Presupuesto:    a.Presupuesto,
 		Ventanas:       a.Ventanas,
-		Proveedor:      a.Ejecutor.Name(),
+		Proveedor:      hoja.Name(),
 	})
 	if err != nil {
 		return loop.Outcome{}, err, loop.Tokens{}

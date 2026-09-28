@@ -340,8 +340,8 @@ func TestVedaNoAplicaALaTareaDeIntegracion(t *testing.T) {
 	}
 }
 
-// Las skills del contrato mandan sobre las del rol: una tarea frontend
-// que el planificador marcó sin skills no recibe frontend-design, y la
+// Las skills del contrato mandan sobre las del rol: una tarea backend
+// que el planificador marcó sin skills no recibe create-a-backend, y la
 // que no declara nada sigue con las de su rol.
 func TestSkillsDelContratoMandanSobreElRol(t *testing.T) {
 	cfg := config.Config{}
@@ -349,12 +349,12 @@ func TestSkillsDelContratoMandanSobreElRol(t *testing.T) {
 		skills []string
 		quiero []string
 	}{
-		{nil, []string{"frontend-design"}},
+		{nil, []string{"create-a-backend"}},
 		{[]string{}, nil},
 		{[]string{"clean-code"}, []string{"clean-code"}},
 	}
 	for _, c := range casos {
-		_, _, _, got := resolverAgenteTarea(cfg, nil, "", task.Task{ID: "T-001", Agente: "frontend", Skills: c.skills})
+		_, _, _, got := resolverAgenteTarea(cfg, nil, "", task.Task{ID: "T-001", Agente: "backend", Skills: c.skills})
 		if strings.Join(got, ",") != strings.Join(c.quiero, ",") {
 			t.Errorf("skills %v → %v, quiero %v", c.skills, got, c.quiero)
 		}

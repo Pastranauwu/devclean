@@ -92,3 +92,16 @@ func TestPromptSinMarcasConservaLasNotas(t *testing.T) {
 		t.Errorf("prompt:\n%s", p)
 	}
 }
+
+// la guía de UI entra por los archivos que toca la tarea, no por su rol:
+// las tareas del esqueleto no traen agente
+func TestPromptConGuiaDeUISoloSiTocaInterfaz(t *testing.T) {
+	ui := task.Task{ID: "T-002", Titulo: "página del closet", ListoCuando: "npx vitest run", TocarSolo: []string{"frontend/src/pages/ClosetPage.tsx"}}
+	if !strings.Contains(promptPara(ui, nil, "", nil, "", "", false), "Interfaz:") {
+		t.Error("una tarea de .tsx no recibió la guía de UI")
+	}
+	api := task.Task{ID: "T-003", Titulo: "paleta", ListoCuando: "pytest", TocarSolo: []string{"backend/app/palette.py"}}
+	if strings.Contains(promptPara(api, nil, "", nil, "", "", false), "Interfaz:") {
+		t.Error("una tarea de backend recibió la guía de UI")
+	}
+}

@@ -46,7 +46,6 @@ func (s Source) arg() string {
 func DefaultSources() []Source {
 	return []Source{
 		{Nombre: "clean-code", Repo: "https://github.com/sickn33/agentic-awesome-skills"},
-		{Nombre: "frontend-design", Repo: "https://github.com/anthropics/skills"},
 		{Nombre: "create-a-backend", Repo: "https://github.com/vercel/vercel-plugin"},
 		{Nombre: "test-driven-development", Repo: "https://github.com/obra/superpowers"},
 	}
@@ -74,11 +73,39 @@ Código limpio:
 - Errores explícitos: no los tragues ni devuelvas valores mágicos.
 - Comentarios solo para el porqué; ni código comentado ni prints de depuración.`
 
-// FrontendSkillName, BackendSkillName y PMSkillName son el paquete de
-// cada rol cuando el contrato no declara skills.
-func FrontendSkillName() string { return "frontend-design" }
-func BackendSkillName() string  { return "create-a-backend" }
-func PMSkillName() string       { return "test-driven-development" }
+// UI es lo que recibe toda tarea que toca archivos de interfaz (TocaUI),
+// venga del esqueleto o del plan, en cualquier stack. Reemplaza a
+// frontend-design: 9.4 KB en cada intento que pedían un diseño
+// "distintivo" y huir de lo estándar, lo contrario de una interfaz clara
+// hecha con las piezas que el proyecto ya tiene.
+const UI = `Interfaz:
+- Usa el sistema de diseño del proyecto (lo describe ARCHITECTURE.md o se ve en el código): sus componentes, sus tokens de tema y su forma de estilar. No agregues otra librería de UI ni mezcles estilos: nada de CSS suelto, estilos en línea o colores fijos si el proyecto tiene tokens.
+- Reusa los componentes que ya existen antes de escribir uno. Si la librería del proyecto trae un CLI para agregar componentes, úsalo en vez de escribirlos a mano.
+- Cada pantalla sigue la plantilla del proyecto (layout, encabezado, contenido) y cubre sus estados: cargando, vacío (mensaje y acción) y error (mensaje y reintentar).
+- Mobile-first: una columna en pantallas chicas que se abre en las grandes; objetivos táctiles de 44px o más.
+- Formularios: etiqueta visible en cada campo, el error junto al campo, el botón principal deshabilitado mientras envía.
+- Accesible: HTML semántico (button, nav, main, títulos en orden), texto alternativo en imágenes, foco visible, nada que se entienda solo por color.
+- Una acción principal por pantalla; la jerarquía con tamaño, peso y espacio, no con colores extra.`
+
+// extensionesUI son los archivos que dibujan interfaz.
+var extensionesUI = []string{".tsx", ".jsx", ".vue", ".svelte", ".astro", ".html", ".css", ".scss", ".erb", ".blade.php", ".twig", ".jinja", ".j2", ".hbs", ".razor", ".cshtml"}
+
+// TocaUI reporta si alguna ruta o glob de tocar_solo es de interfaz.
+func TocaUI(tocarSolo []string) bool {
+	for _, p := range tocarSolo {
+		for _, ext := range extensionesUI {
+			if strings.HasSuffix(p, ext) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// BackendSkillName y PMSkillName son el paquete de cada rol cuando el
+// contrato no declara skills.
+func BackendSkillName() string { return "create-a-backend" }
+func PMSkillName() string      { return "test-driven-development" }
 
 // Dir es el directorio canónico donde el CLI `skills` instala el
 // contenido (`.agents/skills/<nombre>/SKILL.md`), siempre a raíz del

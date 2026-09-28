@@ -742,6 +742,9 @@ func promptPara(t task.Task, interfaces []string, constitucion string, etiquetas
 	if skillsContenido != "" {
 		fmt.Fprintf(&b, "Skills de esta tarea — sigue sus instrucciones:\n%s\n\n", skillsContenido)
 	}
+	if skills.TocaUI(t.TocarSolo) {
+		fmt.Fprintf(&b, "%s\n\n", skills.UI)
+	}
 	fmt.Fprintf(&b, "Tarea %s: %s\n", t.ID, t.Titulo)
 	if t.Porque != "" {
 		fmt.Fprintf(&b, "Por qué: %s\n", t.Porque)

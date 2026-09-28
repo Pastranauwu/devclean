@@ -315,3 +315,18 @@ func TestExtraQueNoInstalaNoTumbaLaInstalacion(t *testing.T) {
 		t.Fatalf("un extra imposible tumbó la instalación: %v", err)
 	}
 }
+
+// npm install sobre un repo de pnpm ignora su lockfile
+func TestGestorNodePorLockfile(t *testing.T) {
+	for lock, quiero := range map[string]string{"pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn", "bun.lock": "bun", "": "npm"} {
+		dir := t.TempDir()
+		if lock != "" {
+			if err := os.WriteFile(filepath.Join(dir, lock), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := gestorNode(dir); got != quiero {
+			t.Errorf("%q → %s, quiero %s", lock, got, quiero)
+		}
+	}
+}

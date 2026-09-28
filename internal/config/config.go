@@ -40,6 +40,9 @@ type Config struct {
 	// "se agotaron los intentos" sin que el agente llegara a terminar.
 	TimeoutAgente  int `json:"timeout_agente,omitempty"`  // segundos por invocación del agente
 	TimeoutPruebas int `json:"timeout_pruebas,omitempty"` // segundos por corrida de listo_cuando/pruebas
+	// AgentesPagados es cuántas tareas con modelo de pago corren a la vez
+	// cuando no se pasa --agentes. 0 = el default de run (3).
+	AgentesPagados int `json:"agentes_pagados,omitempty"`
 	// RecursionMax es la profundidad máxima de recursión (internal/recurse):
 	// 0 (default) = desactivada, una tarea `recursivo: true` corre plana.
 	// Cada nivel abre cuartos anidados dentro del cuarto actual — subirlo
@@ -208,6 +211,9 @@ func (c Config) Save(root string) error {
 	}
 	if c.TimeoutPruebas > 0 {
 		fmt.Fprintf(&b, "timeout_pruebas: %d\n", c.TimeoutPruebas)
+	}
+	if c.AgentesPagados > 0 {
+		fmt.Fprintf(&b, "agentes_pagados: %d\n", c.AgentesPagados)
 	}
 	if c.RecursionMax > 0 {
 		fmt.Fprintf(&b, "recursion_max: %d\n", c.RecursionMax)
@@ -460,6 +466,12 @@ func Parse(data []byte) (Config, error) {
 				return cfg, fmt.Errorf("config.yml: línea %d · timeout_esclusa inválido: %s · segundos, mínimo 1", p.Line, p.Value)
 			}
 			cfg.TimeoutEsclusa = seg
+		case "agentes_pagados":
+			n, err := kv.ParseInt(p.Value)
+			if err != nil || n < 1 {
+				return cfg, fmt.Errorf("config.yml: línea %d · agentes_pagados inválido: %s · mínimo 1", p.Line, p.Value)
+			}
+			cfg.AgentesPagados = n
 		case "timeout_agente":
 			seg, err := kv.ParseInt(p.Value)
 			if err != nil || seg < 1 {
@@ -790,11 +802,10 @@ func DefaultAgentes(cli string) map[string]Agente {
 			SkillPackages: []string{skills.BackendSkillName()},
 		},
 		"frontend": {
-			Provider:      provider,
-			Modelo:        modeloDelCLI,
-			KeyEnv:        keyEnv,
-			Skills:        []string{"frontend", "ui", "ux", "components", "css", "state"},
-			SkillPackages: []string{skills.FrontendSkillName()},
+			Provider: provider,
+			Modelo:   modeloDelCLI,
+			KeyEnv:   keyEnv,
+			Skills:   []string{"frontend", "ui", "ux", "components", "css", "state"},
 		},
 		"architect": {
 			Provider: provider,
