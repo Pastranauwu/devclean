@@ -5,6 +5,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/room"
+	"github.com/Pastranauwu/devclean/internal/task"
 )
 
 // con esqueleto la suite sigue roja hasta rellenar todos los módulos:
@@ -27,5 +31,29 @@ func TestSuiteYaFallabaMiraLaBaseYVuelveALaRama(t *testing.T) {
 	}
 	if suiteYaFallaba(context.Background(), r.Path, base, "true", time.Minute) {
 		t.Fatal("una suite verde en la base no justifica relajar la esclusa")
+	}
+}
+
+// closet: la suite fallaba en la rama de T-048 por un timeout que main ya
+// había corregido. En la entrega conjunta basta su listo_cuando; suelta,
+// la tarea sigue exigiendo la suite
+func TestBisectableEnEntregaConjuntaSeConformaConListoCuando(t *testing.T) {
+	dir := t.TempDir()
+	o := Opciones{
+		Room:    room.Room{Path: dir},
+		Task:    task.Task{ListoCuando: "true"},
+		Config:  config.Config{Pruebas: "false"},
+		Timeout: time.Minute,
+	}
+	if _, ok := bisectable(context.Background(), o); ok {
+		t.Fatal("suelta, una suite roja tiene que frenar")
+	}
+	o.SuiteAlIntegrar = true
+	if detalle, ok := bisectable(context.Background(), o); !ok {
+		t.Fatalf("en la entrega conjunta debió bastar el listo_cuando: %s", detalle)
+	}
+	o.Task.ListoCuando = "false"
+	if _, ok := bisectable(context.Background(), o); ok {
+		t.Fatal("con el listo_cuando rojo tiene que frenar igual")
 	}
 }

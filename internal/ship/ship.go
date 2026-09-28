@@ -52,6 +52,12 @@ type Opciones struct {
 	Timeout  time.Duration // timeout del paso bisectable
 	DryRun   bool          // corre todo menos abrir el PR
 	Progreso func(Paso)    // llamado tras cada paso, para el TUI; nil = silencio
+	// SuiteAlIntegrar es la entrega conjunta: la suite completa la corre
+	// el paso integradas sobre todo junto y la base actual. En la rama de
+	// la tarea, que arrancó de una base vieja, un rojo puede ser algo que
+	// la base ya arregló después (closet: un timeout corregido en main
+	// frenaba a T-048), así que ahí basta su listo_cuando.
+	SuiteAlIntegrar bool
 }
 
 // Run executes the nine steps in order and returns the gate result.
@@ -161,15 +167,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	}
 
 	// 7. bisectable — el commit compila y pasa las pruebas
-	detalle, ok := verificarBisectable(ctx, o.Room.Path, o.Config.Pruebas, o.Timeout)
-	if !ok && suiteYaFallaba(ctx, o.Room.Path, o.Base, o.Config.Pruebas, o.Timeout) {
-		// con esqueleto, la suite del proyecto sigue roja hasta que se
-		// rellenan todos los módulos: exigirla verde en cada tarea frena
-		// a todas. Se exige su listo_cuando; la suite completa la exige
-		// la integración (paso integradas).
-		detalle, ok = verificarBisectable(ctx, o.Room.Path, o.Task.ListoCuando, o.Timeout)
-		detalle = "la suite ya fallaba al empezar la tarea · " + detalle + " · la suite completa se exige al integrar"
-	}
+	detalle, ok := bisectable(ctx, o)
 	if !ok {
 		apuntar(Paso{"bisectable", false, detalle})
 		return res
@@ -226,4 +224,25 @@ func (r Resultado) PrimerMotivo() string {
 		}
 	}
 	return ""
+}
+
+// bisectable exige la suite del proyecto sobre el commit de la tarea, y
+// se conforma con su listo_cuando cuando la suite roja no es de ella: en
+// la entrega conjunta (SuiteAlIntegrar) o si ya fallaba al empezar la
+// tarea (con esqueleto, la suite sigue roja hasta rellenar todo). En los
+// dos casos la suite completa la exige el paso integradas.
+func bisectable(ctx context.Context, o Opciones) (string, bool) {
+	detalle, ok := verificarBisectable(ctx, o.Room.Path, o.Config.Pruebas, o.Timeout)
+	if ok {
+		return detalle, true
+	}
+	switch {
+	case o.SuiteAlIntegrar:
+		detalle, ok = verificarBisectable(ctx, o.Room.Path, o.Task.ListoCuando, o.Timeout)
+		return "la suite no pasa en la rama de la tarea · " + detalle + " · la suite completa se exige al integrar, sobre la base actual", ok
+	case suiteYaFallaba(ctx, o.Room.Path, o.Base, o.Config.Pruebas, o.Timeout):
+		detalle, ok = verificarBisectable(ctx, o.Room.Path, o.Task.ListoCuando, o.Timeout)
+		return "la suite ya fallaba al empezar la tarea · " + detalle + " · la suite completa se exige al integrar", ok
+	}
+	return detalle, false
 }

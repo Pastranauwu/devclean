@@ -136,6 +136,8 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 			Base:    baseTarea,
 			Timeout: o.Timeout,
 			DryRun:  true, // el PR lo abre la entrega, no cada tarea
+			// la suite completa la corre integradas, sobre la base actual
+			SuiteAlIntegrar: true,
 		})
 		e.Tareas = append(e.Tareas, r)
 		if !r.Aprobado {
