@@ -591,6 +591,8 @@ func TestPantallasSobrevivenAlGuardar(t *testing.T) {
 	cfg.Pantallas.Levantar = "cd frontend && npx vite --port $PORT --host 127.0.0.1"
 	cfg.Pantallas.URL = "http://127.0.0.1:$PORT"
 	cfg.Pantallas.Rutas = []string{"/", "/#/agregar"}
+	cfg.Pantallas.Semilla = "python3 scripts/semilla.py"
+	cfg.Pantallas.Script = "node scripts/capturas.mjs"
 	if err := cfg.Save(root); err != nil {
 		t.Fatal(err)
 	}
@@ -598,7 +600,7 @@ func TestPantallasSobrevivenAlGuardar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Pantallas.Levantar != cfg.Pantallas.Levantar || got.Pantallas.URL != cfg.Pantallas.URL || len(got.Pantallas.Rutas) != 2 || got.Pantallas.Rutas[1] != "/#/agregar" {
+	if got.Pantallas.Levantar != cfg.Pantallas.Levantar || got.Pantallas.URL != cfg.Pantallas.URL || len(got.Pantallas.Rutas) != 2 || got.Pantallas.Rutas[1] != "/#/agregar" || got.Pantallas.Semilla != cfg.Pantallas.Semilla || got.Pantallas.Script != cfg.Pantallas.Script {
 		t.Fatalf("%+v", got.Pantallas)
 	}
 }

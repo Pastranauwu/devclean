@@ -207,13 +207,18 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	if err != nil {
 		return fmt.Errorf("no se pudo listar lo que creó el esqueleto · %s", strings.TrimSpace(creados))
 	}
-	// cómo levantar la interfaz: la usan el revisor visual y la entrega
-	if cfg.Pantallas.Vacia() && !res.Pantallas.Vacia() {
-		cfg.Pantallas = res.Pantallas
+	// cómo levantar y recorrer la interfaz: lo usan el revisor visual y
+	// la entrega. Lo declarado en config manda; lo nuevo se suma
+	if p, cambio := cfg.Pantallas.Completar(res.Pantallas); cambio {
+		cfg.Pantallas = p
 		if err := cfg.Save(root); err != nil {
 			return err
 		}
-		out.Line("· pantallas del proyecto · %s · %d rutas", res.Pantallas.Levantar, len(res.Pantallas.Rutas))
+		flujos := ""
+		if p.Script != "" {
+			flujos = " · con script de flujos"
+		}
+		out.Line("· pantallas del proyecto · %s · %d rutas%s", p.Levantar, len(p.Rutas), flujos)
 	}
 	// la suite que la esclusa de salida y la integración van a exigir
 	if strings.TrimSpace(cfg.Pruebas) == "" && res.Pruebas != "" {

@@ -205,6 +205,12 @@ func (c Config) Save(root string) error {
 		fmt.Fprintf(&b, "pantallas_levantar: %s\n", kv.Quote(c.Pantallas.Levantar))
 		fmt.Fprintf(&b, "pantallas_url: %s\n", kv.Quote(c.Pantallas.URL))
 		fmt.Fprintf(&b, "pantallas_rutas: %s\n", kv.MarshalList(c.Pantallas.Rutas))
+		if c.Pantallas.Semilla != "" {
+			fmt.Fprintf(&b, "pantallas_semilla: %s\n", kv.Quote(c.Pantallas.Semilla))
+		}
+		if c.Pantallas.Script != "" {
+			fmt.Fprintf(&b, "pantallas_script: %s\n", kv.Quote(c.Pantallas.Script))
+		}
 	}
 	if c.Cli != "" {
 		fmt.Fprintf(&b, "cli: %s\n", c.Cli)
@@ -466,6 +472,10 @@ func Parse(data []byte) (Config, error) {
 			cfg.ZonasProhibidas = list
 		case "pantallas_levantar":
 			cfg.Pantallas.Levantar = kv.Unquote(p.Value)
+		case "pantallas_semilla":
+			cfg.Pantallas.Semilla = kv.Unquote(p.Value)
+		case "pantallas_script":
+			cfg.Pantallas.Script = kv.Unquote(p.Value)
 		case "pantallas_url":
 			cfg.Pantallas.URL = kv.Unquote(p.Value)
 		case "pantallas_rutas":

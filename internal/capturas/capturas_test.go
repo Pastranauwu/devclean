@@ -41,13 +41,26 @@ func TestTomarLevantaCapturaYApaga(t *testing.T) {
 		t.Fatal(err)
 	}
 	puerto := puertoLibre(t)
-	p := Pantallas{Levantar: "exec python3 -m http.server $PORT --bind 127.0.0.1", URL: "http://127.0.0.1:$PORT", Rutas: []string{"/"}}
+	p := Pantallas{
+		Levantar: "exec python3 -m http.server $PORT --bind 127.0.0.1", URL: "http://127.0.0.1:$PORT", Rutas: []string{"/"},
+		Semilla: `echo "$BASE_URL" > semilla.txt`,
+		Script:  `printf png > "$CAPTURAS/10-flujo.png"`,
+	}
 	fotos, err := Tomar(context.Background(), dir, p, puerto, nil, filepath.Join(dir, "fotos"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info, err := os.Stat(fotos[0]); err != nil || info.Size() == 0 {
-		t.Fatalf("captura vacía: %v", err)
+	// una ruta en celular y escritorio, más lo que dejó el script
+	if len(fotos) != 3 || filepath.Base(fotos[2]) != "10-flujo.png" {
+		t.Fatalf("fotos = %v", fotos)
+	}
+	for _, f := range fotos[:2] {
+		if info, err := os.Stat(f); err != nil || info.Size() == 0 {
+			t.Fatalf("captura vacía %s: %v", f, err)
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "semilla.txt")); err != nil || len(b) == 0 {
+		t.Fatalf("la semilla no corrió con la app levantada: %v", err)
 	}
 	// la app quedó apagada: el puerto se puede volver a tomar
 	l, err := net.Listen("tcp", "127.0.0.1:"+itoa(puerto))
@@ -58,3 +71,11 @@ func TestTomarLevantaCapturaYApaga(t *testing.T) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+func TestCompletarSumaLoQueFalta(t *testing.T) {
+	cfg := Pantallas{Levantar: "a", URL: "u", Rutas: []string{"/"}}
+	got, cambio := cfg.Completar(Pantallas{Levantar: "b", Script: "s"})
+	if !cambio || got.Levantar != "a" || got.Script != "s" {
+		t.Fatalf("%+v %v", got, cambio)
+	}
+}

@@ -129,7 +129,8 @@ No escribes lógica ni pruebas: cada línea que escribas la paga el modelo caro,
 	b.WriteString(`
 
 CÓMO REPARTIR
-- Una tarea por archivo stub o por cambio a un archivo existente (o por dos o tres muy acoplados). Cuanto más chicas e independientes, más agentes en paralelo y más barato.
+- Una tarea por archivo stub o por cambio a un archivo existente (o por dos o tres muy acoplados).
+- Excepción: un pedido VISUAL (diseño, estilo, experiencia de uso) no se reparte en tareas chicas. Es UNA tarea de diseño con "peso": "pesada", dueña de todos los archivos de interfaz que cambian (tema, componentes y pantallas en su "tocar_solo"), porque un diseño coherente no sale de parches de agentes que no ven la pantalla completa. En "como" describe el diseño concreto: paleta, tipografía, espaciado, cómo se ve cada pantalla y cada estado. Las tareas funcionales que toquen esos archivos dependen de ella. Cuanto más chicas e independientes, más agentes en paralelo y más barato.
 - Cada tarea escribe su propia prueba a partir de los "Casos:" de su contrato: "listo_cuando" corre ese archivo de prueba (que hoy no existe) y "tocar_solo" incluye el stub y ese archivo de prueba.
 - El agente es un modelo barato: no rediseña ni elige librerías. Lo que necesite decidir tiene que estar en el contrato.
 - Las dependencias entre módulos entran por parámetro o constructor (puertos), para que cada módulo se pruebe con fakes sin esperar a los demás. "depende_de" solo cuando un módulo necesita de verdad la implementación real de otro.
@@ -143,7 +144,7 @@ RESPONDE AL FINAL SOLO CON ESTE JSON
   "integracion": "comando que corre la prueba de punta a punta (la escribe la tarea final)",
   "pruebas": "comando que corre TODA la suite del proyecto (todas las carpetas y lenguajes)",
   "arquitectura": "resumen de 5 a 15 líneas; lo completo vive en ` + Documento + `",
-  "pantallas": {"levantar": "comando que sirve la app completa en el puerto $PORT, con build si hace falta (omite todo el campo si no hay interfaz web)", "url": "http://localhost:$PORT", "rutas": ["/", "cada pantalla principal, con su ruta tal como se abre en el navegador"]},
+  "pantallas": {"levantar": "comando que sirve la app completa en el puerto $PORT, con build si hace falta (omite todo el campo si no hay interfaz web)", "url": "http://localhost:$PORT", "rutas": ["/", "cada pantalla principal, con su ruta tal como se abre en el navegador"], "semilla": "comando que carga datos de ejemplo con la app levantada en $PORT, para que las capturas no muestren solo estados vacíos (opcional)", "script": "comando que recorre con un navegador los flujos que no tienen ruta (elegir una foto, llenar un formulario, generar un resultado) y guarda un PNG por paso en $CAPTURAS; recibe $BASE_URL. Escríbelo tú (p. ej. Playwright) si hay pantallas que solo aparecen tras interactuar (opcional)"},
   "tareas": [
     {
       "titulo": "frase corta en minúscula",

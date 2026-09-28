@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -29,14 +30,45 @@ type Pantallas struct {
 	URL string `json:"url"`
 	// Rutas son las pantallas principales: "/", "/#/agregar".
 	Rutas []string `json:"rutas"`
+	// Semilla carga datos de ejemplo con la app ya levantada ($PORT):
+	// sin ella solo se ven estados vacíos. Opcional.
+	Semilla string `json:"semilla,omitempty"`
+	// Script recorre flujos con un navegador (elegir una foto, llenar un
+	// formulario) y deja PNG en $CAPTURAS; recibe también $BASE_URL. Las
+	// pantallas que solo aparecen tras interactuar no tienen ruta. Opcional.
+	Script string `json:"script,omitempty"`
+}
+
+// Completar llena lo que p no declara con lo de otra: la config manda,
+// pero una semilla o un script nuevos del arquitecto se suman.
+func (p Pantallas) Completar(o Pantallas) (Pantallas, bool) {
+	cambio := false
+	llenar := func(dst *string, v string) {
+		if strings.TrimSpace(*dst) == "" && strings.TrimSpace(v) != "" {
+			*dst, cambio = v, true
+		}
+	}
+	llenar(&p.Levantar, o.Levantar)
+	llenar(&p.URL, o.URL)
+	llenar(&p.Semilla, o.Semilla)
+	llenar(&p.Script, o.Script)
+	if len(p.Rutas) == 0 && len(o.Rutas) > 0 {
+		p.Rutas, cambio = o.Rutas, true
+	}
+	return p, cambio
 }
 
 func (p Pantallas) Vacia() bool {
 	return strings.TrimSpace(p.Levantar) == "" || strings.TrimSpace(p.URL) == "" || len(p.Rutas) == 0
 }
 
-// Ancho y Alto son la pantalla de un celular (iPhone 14/15).
-const Ancho, Alto = 390, 844
+// Tamanios son las pantallas en que se captura cada ruta: un celular
+// (iPhone 14/15) y un escritorio. Una interfaz mobile-first también se
+// abre en la compu, y ahí se ve distinto.
+var Tamanios = []struct {
+	Nombre      string
+	Ancho, Alto int
+}{{"celular", 390, 844}, {"escritorio", 1280, 800}}
 
 // Espera es cuánto se le da a la app para responder: puede incluir un
 // build de producción.
@@ -111,15 +143,47 @@ func Tomar(ctx context.Context, dir string, p Pantallas, puerto int, env []strin
 	if err := esperar(ctx, base, Espera); err != nil {
 		return nil, fmt.Errorf("la app no respondió en %s · %s · detalle en %s", base, err, registro.Name())
 	}
+	envApp := append(append([]string{}, app.Env...), "BASE_URL="+base)
+	// la semilla falla en abierto: sin datos se captura igual, vacío
+	if strings.TrimSpace(p.Semilla) != "" {
+		_ = auxiliar(ctx, dir, p.Semilla, envApp, registro, 2*time.Minute)
+	}
 	var fotos []string
 	for i, ruta := range p.Rutas {
-		foto := filepath.Join(outDir, fmt.Sprintf("%02d-%s.png", i+1, nombre(ruta)))
-		if err := capturar(ctx, nav, unir(base, ruta), foto); err != nil {
-			return fotos, fmt.Errorf("captura de %s · %w", ruta, err)
+		for _, t := range Tamanios {
+			foto := filepath.Join(outDir, fmt.Sprintf("%02d-%s-%s.png", i+1, nombre(ruta), t.Nombre))
+			if err := capturar(ctx, nav, unir(base, ruta), foto, t.Ancho, t.Alto); err != nil {
+				return fotos, fmt.Errorf("captura de %s · %w", ruta, err)
+			}
+			fotos = append(fotos, foto)
 		}
-		fotos = append(fotos, foto)
+	}
+	if strings.TrimSpace(p.Script) != "" {
+		flujos := filepath.Join(outDir, "flujos")
+		if err := os.MkdirAll(flujos, 0o755); err != nil {
+			return fotos, err
+		}
+		if err := auxiliar(ctx, dir, p.Script, append(envApp, "CAPTURAS="+flujos), registro, 5*time.Minute); err != nil {
+			fmt.Fprintf(registro, "\nel script de flujos falló: %v\n", err)
+		}
+		// lo que haya dejado, aunque haya fallado a la mitad
+		extra, _ := filepath.Glob(filepath.Join(flujos, "*.png"))
+		sort.Strings(extra)
+		fotos = append(fotos, extra...)
 	}
 	return fotos, nil
+}
+
+// auxiliar corre la semilla o el script de flujos con la app levantada.
+func auxiliar(ctx context.Context, dir, cmd string, env []string, log *os.File, tope time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, tope)
+	defer cancel()
+	c := exec.CommandContext(ctx, "sh", "-c", cmd)
+	if runtime.GOOS == "windows" {
+		c = exec.CommandContext(ctx, "cmd", "/c", cmd)
+	}
+	c.Dir, c.Env, c.Stdout, c.Stderr = dir, env, log, log
+	return c.Run()
 }
 
 func esperar(ctx context.Context, url string, tope time.Duration) error {
@@ -141,7 +205,7 @@ func esperar(ctx context.Context, url string, tope time.Duration) error {
 	return errors.New("se acabó la espera")
 }
 
-func capturar(ctx context.Context, nav, url, foto string) error {
+func capturar(ctx context.Context, nav, url, foto string, ancho, alto int) error {
 	perfil, err := os.MkdirTemp("", "devclean-nav-")
 	if err != nil {
 		return err
@@ -150,7 +214,7 @@ func capturar(ctx context.Context, nav, url, foto string) error {
 	args := []string{
 		"--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
 		"--user-data-dir=" + perfil,
-		fmt.Sprintf("--window-size=%d,%d", Ancho, Alto),
+		fmt.Sprintf("--window-size=%d,%d", ancho, alto),
 		"--virtual-time-budget=6000",
 		"--screenshot=" + foto, url,
 	}
