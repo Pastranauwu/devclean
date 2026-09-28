@@ -148,6 +148,7 @@ RESPONDE AL FINAL SOLO CON ESTE JSON
     {
       "titulo": "frase corta en minúscula",
       "porque": "qué requerimiento cubre",
+      "cubre": ["los ids de requerimiento que implementa, tal como vienen en el pedido: \"R-a1b2c3\""],
       "listo_cuando": "comando que corre solo la prueba de este módulo",
       "tocar_solo": ["el stub o el archivo que cambia", "su archivo de prueba"],
       "depende_de": [],

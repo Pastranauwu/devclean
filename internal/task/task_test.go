@@ -339,3 +339,11 @@ func TestSkillsIdaYVuelta(t *testing.T) {
 		}
 	}
 }
+
+func TestCubreSobreviveAlGuardar(t *testing.T) {
+	tk := Task{Version: Version, ID: "T-001", Titulo: "x", ListoCuando: "true", TocarSolo: []string{"a"}, Cubre: []string{"R-a1b2c3", "fondo"}, LimiteIntentos: 3}
+	got, err := Parse([]byte(tk.Marshal()))
+	if err != nil || len(got.Cubre) != 2 || got.Cubre[1] != "fondo" {
+		t.Fatalf("%+v %v", got.Cubre, err)
+	}
+}

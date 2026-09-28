@@ -86,7 +86,7 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 			out.Line("· %s sin cambios desde el último plan · sigo con las tareas pendientes (borra .devclean/%s para replanear)", filepath.Base(filePath), spec.IntencionFile)
 			return s, nil
 		}
-		s.Previos = prev.Requirements
+		s.Previos, s.PreviosIDs = prev.Requirements, prev.TodosLosIDs()
 	}
 	s, err = aplicarSpec(root, s, filepath.Base(filePath), runImmediately, dryRun)
 	if err == nil && porRequirements && !dryRun {

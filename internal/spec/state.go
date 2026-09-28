@@ -50,20 +50,29 @@ const IntencionFile = "intencion.json"
 type Intencion struct {
 	Feature      string       `json:"feature"`
 	Requirements []string     `json:"requirements,omitempty"`
+	IDs          []string     `json:"requirement_ids,omitempty"`
 	Reglas       []string     `json:"reglas,omitempty"`
 	Acceptance   []Acceptance `json:"acceptance,omitempty"`
 	Constraints  Constraints  `json:"constraints,omitempty"`
 }
 
 func IntencionDe(s Spec) Intencion {
-	return Intencion{Feature: s.Feature, Requirements: s.Requirements, Reglas: s.Reglas, Acceptance: s.Acceptance, Constraints: s.Constraints}
+	return Intencion{Feature: s.Feature, Requirements: s.Requirements, IDs: s.IDs(), Reglas: s.Reglas, Acceptance: s.Acceptance, Constraints: s.Constraints}
 }
 
-// Igual compara dos intenciones por contenido.
+// Igual compara dos intenciones por contenido. Los ids se completan
+// antes: una intención guardada antes de que existieran no cuenta como
+// cambio (replanearía todo el spec al actualizar devclean).
 func (i Intencion) Igual(o Intencion) bool {
+	i.IDs, o.IDs = i.TodosLosIDs(), o.TodosLosIDs()
 	a, _ := json.Marshal(i)
 	b, _ := json.Marshal(o)
 	return string(a) == string(b)
+}
+
+// TodosLosIDs devuelve un id por requerimiento, calculando los que falten.
+func (i Intencion) TodosLosIDs() []string {
+	return Spec{Requirements: i.Requirements, RequirementIDs: i.IDs}.IDs()
 }
 
 func SaveIntencion(root string, i Intencion) error {

@@ -58,6 +58,11 @@ type Task struct {
 	// agente, como antes del campo; [] = ninguna.
 	Skills []string `json:"skills,omitempty"`
 
+	// Cubre son los ids de los requerimientos del spec que esta tarea
+	// implementa. Cuando uno cambia o se quita, devclean le dice al
+	// arquitecto qué tareas y archivos lo implementaron.
+	Cubre []string `json:"cubre,omitempty"`
+
 	// Recursivo marca una tarea como demasiado grande para un solo
 	// intento de agente: en vez de escribir código directo, el bucle la
 	// reparte en subtareas reales (mismo contrato, mismo listo_cuando
@@ -230,6 +235,8 @@ func Parse(data []byte) (Task, error) {
 			t.Peso = kv.Unquote(p.Value)
 		case "agente":
 			t.Agente = kv.Unquote(p.Value)
+		case "cubre":
+			t.Cubre, err = kv.ParseList(p.Value)
 		case "skills":
 			if t.Skills, err = kv.ParseList(p.Value); t.Skills == nil && err == nil {
 				t.Skills = []string{} // declarada vacía: ninguna, no las del rol
@@ -342,6 +349,9 @@ func (t Task) Marshal() []byte {
 	}
 	if t.Skills != nil {
 		fmt.Fprintf(&b, "skills: %s\n", kv.MarshalList(t.Skills))
+	}
+	if len(t.Cubre) > 0 {
+		fmt.Fprintf(&b, "cubre: %s\n", kv.MarshalList(t.Cubre))
 	}
 	if t.Recursivo {
 		fmt.Fprintf(&b, "recursivo: true\n")

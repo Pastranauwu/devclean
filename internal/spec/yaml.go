@@ -45,7 +45,7 @@ func Parse(data []byte) (Spec, error) {
 		case "reglas", "rules":
 			s.Reglas, err = flattenStrings(val)
 		case "requirements", "requisitos":
-			s.Requirements, err = flattenStrings(val)
+			s.Requirements, s.RequirementIDs, err = flattenConIDs(val)
 		case "acceptance", "aceptacion":
 			s.Acceptance, err = decodeAcceptance(val)
 		case "constraints", "restricciones":
@@ -102,12 +102,22 @@ func Parse(data []byte) (Spec, error) {
 // llegaba al planificador como "eso vive en la terminal"—, así que se
 // vuelve a unir.
 func flattenStrings(n *yaml.Node) ([]string, error) {
-	var out []string
+	out, _, err := flattenConIDs(n)
+	return out, err
+}
+
+// flattenConIDs es flattenStrings que además reconoce un requerimiento
+// con id explícito ("- id: fondo" + "texto: ..."): ese id sobrevive a
+// que el humano reescriba el texto. Sin id, el lugar queda vacío y
+// Spec.IDs lo calcula del texto.
+func flattenConIDs(n *yaml.Node) ([]string, []string, error) {
+	var out, ids []string
 	var walk func(*yaml.Node, bool) error
 	walk = func(x *yaml.Node, enSecuencia bool) error {
 		switch x.Kind {
 		case yaml.ScalarNode:
 			out = append(out, x.Value)
+			ids = append(ids, "")
 		case yaml.SequenceNode:
 			for _, c := range x.Content {
 				if err := walk(c, true); err != nil {
@@ -115,6 +125,13 @@ func flattenStrings(n *yaml.Node) ([]string, error) {
 				}
 			}
 		case yaml.MappingNode:
+			if enSecuencia {
+				if id, texto, ok := conID(x); ok {
+					out = append(out, texto)
+					ids = append(ids, id)
+					return nil
+				}
+			}
 			for i := 1; i < len(x.Content); i += 2 {
 				clave, valor := x.Content[i-1], x.Content[i]
 				if enSecuencia && valor.Kind == yaml.ScalarNode {
@@ -123,6 +140,7 @@ func flattenStrings(n *yaml.Node) ([]string, error) {
 						texto += ": " + valor.Value
 					}
 					out = append(out, texto)
+					ids = append(ids, "")
 					continue
 				}
 				if err := walk(valor, false); err != nil {
@@ -134,7 +152,21 @@ func flattenStrings(n *yaml.Node) ([]string, error) {
 		}
 		return nil
 	}
-	return out, walk(n, false)
+	err := walk(n, false)
+	return out, ids, err
+}
+
+// conID lee un requerimiento {id, texto}; "text" también vale.
+func conID(x *yaml.Node) (id, texto string, ok bool) {
+	for i := 1; i < len(x.Content); i += 2 {
+		switch x.Content[i-1].Value {
+		case "id":
+			id = strings.TrimSpace(x.Content[i].Value)
+		case "texto", "text":
+			texto = strings.TrimSpace(x.Content[i].Value)
+		}
+	}
+	return id, texto, id != "" && texto != ""
 }
 
 func decodeAcceptance(n *yaml.Node) ([]Acceptance, error) {

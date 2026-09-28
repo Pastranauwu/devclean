@@ -5,6 +5,8 @@
 package spec
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,14 +50,18 @@ type Spec struct {
 	Reglas  []string `json:"reglas,omitempty"`
 	// Requirements y Acceptance son la interfaz humana. Tasks es el IR:
 	// puede venir escrito por un usuario avanzado o ser generado.
-	Requirements []string     `json:"requirements,omitempty"`
-	Acceptance   []Acceptance `json:"acceptance,omitempty"`
-	Constraints  Constraints  `json:"constraints,omitempty"`
-	Tasks        []task.Task  `json:"tasks"`
+	Requirements []string `json:"requirements,omitempty"`
+	// RequirementIDs va alineado con Requirements: el id explícito del
+	// spec o vacío. Usa IDs(), que completa los vacíos.
+	RequirementIDs []string     `json:"requirement_ids,omitempty"`
+	Acceptance     []Acceptance `json:"acceptance,omitempty"`
+	Constraints    Constraints  `json:"constraints,omitempty"`
+	Tasks          []task.Task  `json:"tasks"`
 	// Previos son los requirements ya planeados en una corrida anterior
 	// del mismo spec (IntencionFile). Los llena runApply; nunca vienen
 	// del YAML.
-	Previos []string `json:"-" yaml:"-"`
+	Previos    []string `json:"-" yaml:"-"`
+	PreviosIDs []string `json:"-" yaml:"-"`
 }
 
 type Acceptance struct {
@@ -354,4 +360,25 @@ func Marshal(s Spec) []byte {
 		}
 	}
 	return []byte(b.String())
+}
+
+// IDRequerimiento es el id de un requerimiento sin id explícito: R- y el
+// principio del sha1 de su texto normalizado. Estable mientras el texto
+// no cambie; para sobrevivir a una reescritura, el spec declara id.
+func IDRequerimiento(texto string) string {
+	h := sha1.Sum([]byte(strings.Join(strings.Fields(strings.ToLower(texto)), " ")))
+	return "R-" + hex.EncodeToString(h[:])[:6]
+}
+
+// IDs devuelve el id de cada requerimiento, alineado con Requirements.
+func (s Spec) IDs() []string {
+	out := make([]string, len(s.Requirements))
+	for i, r := range s.Requirements {
+		if i < len(s.RequirementIDs) && s.RequirementIDs[i] != "" {
+			out[i] = s.RequirementIDs[i]
+		} else {
+			out[i] = IDRequerimiento(r)
+		}
+	}
+	return out
 }

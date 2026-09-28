@@ -102,28 +102,37 @@ func completarSpec(root string, s *spec.Spec) error {
 func planearRequirements(root string, s *spec.Spec) error {
 	var pedido strings.Builder
 	fmt.Fprintf(&pedido, "Feature: %s\n", s.Feature)
-	nuevos, hechos, retirados := deltaRequirements(s.Previos, s.Requirements)
-	if len(hechos) > 0 {
+	d := deltaRequirements(reqsDe(s.Previos, s.PreviosIDs), reqsDe(s.Requirements, s.IDs()))
+	tareas, _ := task.List(config.TasksDir(root))
+	if len(d.hechos) > 0 {
 		pedido.WriteString("Ya implementados en un cambio anterior (están en el código y en " + esqueleto.Documento + "; no generes tareas para ellos salvo que lo nuevo los cambie):\n")
-		for _, r := range hechos {
-			fmt.Fprintf(&pedido, "- %s\n", r)
+		for _, r := range d.hechos {
+			fmt.Fprintf(&pedido, "- [%s] %s\n", r.ID, r.Texto)
 		}
 	}
-	if len(retirados) > 0 {
-		// comparar por texto no distingue quitar de reescribir: un
-		// requerimiento con otra redacción llega aquí y como nuevo. Decir
-		// "quítalos" hacía borrar funcionalidad que el humano solo redactó
-		pedido.WriteString("Ya no aparecen con este texto en el spec (pueden haberse quitado o reescrito abajo). Quita del código y de " + esqueleto.Documento + " solo lo que ningún requerimiento vigente siga pidiendo:\n")
-		for _, r := range retirados {
-			fmt.Fprintf(&pedido, "- %s\n", r)
+	if len(d.cambiados) > 0 {
+		pedido.WriteString("Cambiaron (mismo id, texto nuevo): ajusta lo que ya existe, no lo dupliques:\n")
+		for _, c := range d.cambiados {
+			fmt.Fprintf(&pedido, "- [%s] antes: %s\n  ahora: %s\n", c.ahora.ID, c.antes.Texto, c.ahora.Texto)
+			pedido.WriteString(cubiertoPor(tareas, c.ahora.ID))
 		}
 	}
-	if len(nuevos) > 0 {
-		pedido.WriteString("Requerimientos obligatorios:\n")
-		for i, r := range nuevos {
-			fmt.Fprintf(&pedido, "R%d. %s\n", i+1, r)
+	if len(d.retirados) > 0 {
+		// un id sin declarar sale del texto: reescribir la redacción llega
+		// aquí y como nuevo. Decir "quítalos" hacía borrar funcionalidad
+		// que el humano solo redactó
+		pedido.WriteString("Ya no están en el spec (pueden haberse reescrito abajo con otro texto). Quita del código y de " + esqueleto.Documento + " solo lo que ningún requerimiento vigente siga pidiendo:\n")
+		for _, r := range d.retirados {
+			fmt.Fprintf(&pedido, "- [%s] %s\n", r.ID, r.Texto)
+			pedido.WriteString(cubiertoPor(tareas, r.ID))
 		}
-	} else {
+	}
+	if len(d.nuevos) > 0 {
+		pedido.WriteString("Requerimientos obligatorios (pon su id en \"cubre\" de cada tarea que los implemente):\n")
+		for _, r := range d.nuevos {
+			fmt.Fprintf(&pedido, "[%s] %s\n", r.ID, r.Texto)
+		}
+	} else if len(d.cambiados) == 0 {
 		pedido.WriteString("Los requerimientos no cambiaron: cambiaron las reglas, la aceptación o las restricciones. Ajusta solo lo que eso exige.\n")
 	}
 	if len(s.Reglas) > 0 {
@@ -145,29 +154,69 @@ func planearRequirements(root string, s *spec.Spec) error {
 	return planearEsqueleto(root, s, pedido.String())
 }
 
-// deltaRequirements separa el spec actual contra el último planeado:
-// nuevos (o reescritos), los que ya estaban y los que se quitaron. Sin
-// plan previo, todo es nuevo.
-func deltaRequirements(previos, actuales []string) (nuevos, hechos, retirados []string) {
-	antes := map[string]bool{}
+// req es un requerimiento con su id.
+type req struct{ ID, Texto string }
+
+func reqsDe(textos, ids []string) []req {
+	ids = spec.Spec{Requirements: textos, RequirementIDs: ids}.IDs()
+	out := make([]req, len(textos))
+	for i, t := range textos {
+		out[i] = req{ID: ids[i], Texto: t}
+	}
+	return out
+}
+
+type cambio struct{ antes, ahora req }
+
+type delta struct {
+	nuevos, hechos, retirados []req
+	cambiados                 []cambio
+}
+
+// deltaRequirements separa el spec actual contra el último planeado, por
+// id: nuevos, los que ya estaban igual, los que cambiaron de texto con
+// el mismo id (id explícito en el spec) y los que se quitaron. Sin plan
+// previo, todo es nuevo.
+func deltaRequirements(previos, actuales []req) delta {
+	var d delta
+	antes := map[string]req{}
 	for _, r := range previos {
-		antes[r] = true
+		antes[r.ID] = r
 	}
 	ahora := map[string]bool{}
 	for _, r := range actuales {
-		ahora[r] = true
-		if antes[r] {
-			hechos = append(hechos, r)
-		} else {
-			nuevos = append(nuevos, r)
+		ahora[r.ID] = true
+		p, ok := antes[r.ID]
+		switch {
+		case !ok:
+			d.nuevos = append(d.nuevos, r)
+		case p.Texto != r.Texto:
+			d.cambiados = append(d.cambiados, cambio{antes: p, ahora: r})
+		default:
+			d.hechos = append(d.hechos, r)
 		}
 	}
 	for _, r := range previos {
-		if !ahora[r] {
-			retirados = append(retirados, r)
+		if !ahora[r.ID] {
+			d.retirados = append(d.retirados, r)
 		}
 	}
-	return nuevos, hechos, retirados
+	return d
+}
+
+// cubiertoPor dice qué tareas implementaron un requerimiento y qué
+// archivos tocaron: es por donde el arquitecto empieza a cambiarlo o
+// quitarlo, sin adivinar en todo el repo.
+func cubiertoPor(tareas []task.Task, id string) string {
+	var b strings.Builder
+	for _, t := range tareas {
+		for _, c := range t.Cubre {
+			if c == id {
+				fmt.Fprintf(&b, "  lo implementó %s «%s» en %s\n", t.ID, t.Titulo, strings.Join(t.TocarSolo, ", "))
+			}
+		}
+	}
+	return b.String()
 }
 
 // completarTarea rellena los campos vacíos de t con los del borrador.

@@ -263,7 +263,7 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 			Version: task.Version, ID: idsRelleno[i], Titulo: b.Titulo, Porque: b.Porque,
 			ListoCuando: conVerificar(res.Verificar, b.ListoCuando), TocarSolo: b.TocarSolo, NoTocar: b.NoTocar,
 			DependeDe: append(append([]string(nil), deEsqueleto...), b.DependeDe...), Peso: b.Peso, Agente: b.Agente,
-			Skills: b.Skills, Notas: b.Como + "\n\n" + notaPara(ctx, r.Path, b.TocarSolo),
+			Skills: b.Skills, Cubre: b.Cubre, Notas: b.Como + "\n\n" + notaPara(ctx, r.Path, b.TocarSolo),
 			LimiteIntentos: intentos, LimiteLineas: s.Limites.Lineas,
 		})
 	}

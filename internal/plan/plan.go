@@ -35,6 +35,8 @@ type Borrador struct {
 	// Skills son las del catálogo que la tarea necesita: nil si el modelo
 	// no lo dijo (quedan las del rol), [] si dijo que ninguna.
 	Skills []string `json:"skills"`
+	// Cubre son los ids de requerimiento que implementa la tarea.
+	Cubre []string `json:"cubre"`
 	// LimiteLineas se lee por compatibilidad con planes anteriores.
 	// Solo la configuración humana determina el tope efectivo.
 	LimiteLineas int `json:"limite_lineas"`

@@ -8,21 +8,39 @@ import (
 	"testing"
 
 	"github.com/Pastranauwu/devclean/internal/spec"
+	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/ui"
 )
 
 func TestDeltaRequirements(t *testing.T) {
-	nuevos, hechos, retirados := deltaRequirements(
-		[]string{"login", "exportar csv", "reporte pdf"},
-		[]string{"login", "exportar csv con filtros", "reporte pdf"},
+	d := deltaRequirements(
+		reqsDe([]string{"login", "exportar csv", "reporte pdf", "fondo gris"}, []string{"", "", "", "fondo"}),
+		reqsDe([]string{"login", "exportar csv con filtros", "reporte pdf", "fondo azul violeta"}, []string{"", "", "", "fondo"}),
 	)
-	if strings.Join(nuevos, "|") != "exportar csv con filtros" ||
-		strings.Join(hechos, "|") != "login|reporte pdf" ||
-		strings.Join(retirados, "|") != "exportar csv" {
-		t.Fatalf("nuevos=%v hechos=%v retirados=%v", nuevos, hechos, retirados)
+	textos := func(rs []req) string {
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.Texto)
+		}
+		return strings.Join(out, "|")
 	}
-	if n, _, _ := deltaRequirements(nil, []string{"a"}); len(n) != 1 {
-		t.Fatalf("sin plan previo todo es nuevo: %v", n)
+	if textos(d.nuevos) != "exportar csv con filtros" || textos(d.hechos) != "login|reporte pdf" || textos(d.retirados) != "exportar csv" {
+		t.Fatalf("%+v", d)
+	}
+	// con id explícito, reescribir no es quitar + agregar: es un cambio
+	if len(d.cambiados) != 1 || d.cambiados[0].antes.Texto != "fondo gris" || d.cambiados[0].ahora.Texto != "fondo azul violeta" {
+		t.Fatalf("cambiados = %+v", d.cambiados)
+	}
+	if d := deltaRequirements(nil, reqsDe([]string{"a"}, nil)); len(d.nuevos) != 1 {
+		t.Fatalf("sin plan previo todo es nuevo: %+v", d)
+	}
+}
+
+// al cambiar un requerimiento, el arquitecto recibe qué lo implementó
+func TestCubiertoPor(t *testing.T) {
+	tareas := []task.Task{{ID: "T-012", Titulo: "fondo", TocarSolo: []string{"src/styles.css"}, Cubre: []string{"fondo"}}, {ID: "T-013", Cubre: []string{"otro"}}}
+	if got := cubiertoPor(tareas, "fondo"); !strings.Contains(got, "T-012") || !strings.Contains(got, "src/styles.css") || strings.Contains(got, "T-013") {
+		t.Fatalf("%q", got)
 	}
 }
 

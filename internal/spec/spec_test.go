@@ -620,3 +620,21 @@ func TestValidatePlanPermiteCompartirConDependencia(t *testing.T) {
 		}
 	}
 }
+
+func TestIDsDeRequerimientos(t *testing.T) {
+	s, err := Parse([]byte("feature: x\nrequirements:\n  - Fondo con degradado\n  - id: nav\n    texto: Barra flotante\n  functional_extra: nada\n"))
+	if err == nil {
+		t.Fatalf("una lista con un mapeo suelto no es válida: %+v", s)
+	}
+	s, err = Parse([]byte("feature: x\nrequirements:\n  - Fondo con degradado\n  - id: nav\n    texto: Barra flotante\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := s.IDs()
+	if len(s.Requirements) != 2 || s.Requirements[1] != "Barra flotante" || ids[1] != "nav" {
+		t.Fatalf("%v %v", s.Requirements, ids)
+	}
+	if ids[0] != IDRequerimiento("fondo  con degradado ") || ids[0][:2] != "R-" {
+		t.Fatalf("el id del texto no es estable: %q", ids[0])
+	}
+}

@@ -135,8 +135,16 @@ func ValidatePlan(s Spec, tasks []task.Task, previas ...task.Task) []Issue {
 			}
 		}
 	}
-	for _, r := range s.Requirements {
-		if !covered(r, tasks) {
+	// cubre es exacto; las palabras en común, solo una pista
+	cubiertos := map[string]bool{}
+	for _, t := range tasks {
+		for _, c := range t.Cubre {
+			cubiertos[c] = true
+		}
+	}
+	ids := s.IDs()
+	for i, r := range s.Requirements {
+		if !cubiertos[ids[i]] && !covered(r, tasks) {
 			out = append(out, Issue{"warning", "requirement_coverage", "ninguna tarea declara cobertura reconocible para: " + r})
 		}
 	}
