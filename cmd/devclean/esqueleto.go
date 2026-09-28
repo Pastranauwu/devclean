@@ -161,6 +161,19 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 			if c := cicloDelPlan(root, res.Tareas); c != nil {
 				problemas = append(problemas, "dependencia circular en depende_de: "+strings.Join(c, " → ")+" · quita una de esas dependencias")
 			}
+			// "no hay nada que cambiar" contra un pedido lo confirma quien
+			// solo mira la pantalla. En closet el arquitecto vio los inputs
+			// de archivo sin estilo, dijo que las capturas estaban viejas y
+			// le creyó al código dos veces seguidas
+			if len(problemas) == 0 && len(res.Tareas) == 0 && len(antes) > 0 {
+				if rv, ok := revisorVisualPara(root, cfg, ex).(revisorVisualEnBucle); ok {
+					cumple, cambios, tk := rv.juzgar(ctx, r.Path, antes, pedido)
+					reg.Registrar(rv.ex.Name(), tk.Gasto())
+					if !cumple {
+						problemas = append(problemas, "dijiste que no hay nada que cambiar, pero una revisión de las capturas actuales (son del código de ahora) dice que no cumple el pedido:\n"+cambios)
+					}
+				}
+			}
 		}
 		if len(problemas) == 0 {
 			break

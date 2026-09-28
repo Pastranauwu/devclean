@@ -49,13 +49,26 @@ func revisorVisualPara(root string, cfg config.Config, ex executor.Executor) loo
 func (r revisorVisualEnBucle) Revisar(ctx context.Context, cuarto room.Room, t task.Task, intento int) (bool, string, loop.Tokens) {
 	dir := filepath.Join(loop.RunsDir(r.root), t.ID, fmt.Sprintf("visual-%d", intento))
 	fotos := tomarCapturas(ctx, cuarto.Path, r.pantallas, cuarto.Puerto, dir)
+	pide := t.Titulo
+	if t.Porque != "" {
+		pide += "\nPor qué: " + t.Porque
+	}
+	if n := plan.SepararNotas(t.Notas).Tarea; n != "" {
+		pide += "\n" + n
+	}
+	return r.juzgar(ctx, cuarto.Path, fotos, pide)
+}
+
+// juzgar le muestra las capturas a un modelo que ve imágenes y le pide
+// un veredicto contra lo pedido. Sin capturas o sin respuesta, aprueba.
+func (r revisorVisualEnBucle) juzgar(ctx context.Context, dir string, fotos []string, pide string) (bool, string, loop.Tokens) {
 	if len(fotos) == 0 {
 		return true, "", loop.Tokens{}
 	}
 	res, err := r.ex.Run(ctx, executor.Request{
 		Rol:      executor.RolVisual,
-		RoomPath: cuarto.Path,
-		Prompt:   promptVisual(t, fotos),
+		RoomPath: dir,
+		Prompt:   promptVisual(pide, fotos),
 		Model:    r.modelo,
 		Timeout:  5 * time.Minute,
 	})
@@ -67,22 +80,16 @@ func (r revisorVisualEnBucle) Revisar(ctx context.Context, cuarto room.Room, t t
 	if !ok || cumple {
 		return true, "", tk
 	}
-	return false, strings.Join(cambios, "\n") + "\n(capturas en " + dir + ")", tk
+	return false, strings.Join(cambios, "\n") + "\n(capturas en " + filepath.Dir(fotos[0]) + ")", tk
 }
 
-func promptVisual(t task.Task, fotos []string) string {
+func promptVisual(pide string, fotos []string) string {
 	var b strings.Builder
-	b.WriteString("Eres el REVISOR VISUAL de devclean. Abre estas capturas de la app en tamaño celular con tu herramienta para leer archivos:\n")
+	b.WriteString("Eres el REVISOR VISUAL de devclean. Abre estas capturas de la app en tamaño celular con tu herramienta para leer archivos. Son de ahora, del código actual:\n")
 	for _, f := range fotos {
 		b.WriteString("- " + f + "\n")
 	}
-	fmt.Fprintf(&b, "\nTarea: %s\n", t.Titulo)
-	if t.Porque != "" {
-		fmt.Fprintf(&b, "Por qué: %s\n", t.Porque)
-	}
-	if n := plan.SepararNotas(t.Notas).Tarea; n != "" {
-		fmt.Fprintf(&b, "Lo que pide:\n%s\n", n)
-	}
+	fmt.Fprintf(&b, "\nLo que se pidió:\n%s\n", pide)
 	b.WriteString("\nCriterios de la interfaz:\n" + skills.UI + "\n")
 	b.WriteString(`
 Juzga SOLO lo que se ve en las capturas, no el código:

@@ -118,8 +118,10 @@ func aplicarSpec(root string, s spec.Spec, origen string, runImmediately, dryRun
 	if err != nil {
 		return spec.Spec{}, err
 	}
+	// sin tareas nuevas, "ninguna tarea cubre X" es cierto de todo el
+	// spec y no dice nada
 	for _, issue := range spec.ValidatePlan(s, applied) {
-		if issue.Level == "warning" {
+		if issue.Level == "warning" && len(applied) > 0 {
 			out.Line("· plan: %s", issue.Message)
 		}
 	}

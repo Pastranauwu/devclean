@@ -91,7 +91,7 @@ func Prompt(p Pedido, c plan.Contexto) string {
 		b.WriteString("\nYa existe " + Documento + ". Evoluciónalo: agrega lo nuevo, ajusta lo que cambia y no reescribas lo que ya funciona. Las tareas son solo para lo nuevo o lo que cambia.\n")
 	}
 	if len(p.Capturas) > 0 {
-		b.WriteString("\nASÍ SE VE HOY (capturas en tamaño celular; ábrelas con tu herramienta para leer archivos antes de planear)\n")
+		b.WriteString("\nASÍ SE VE HOY (capturas en tamaño celular tomadas hace un momento, de este mismo repositorio con el código actual: no están desactualizadas. Ábrelas con tu herramienta para leer archivos antes de planear)\n")
 		for _, c := range p.Capturas {
 			b.WriteString("- " + c + "\n")
 		}
