@@ -103,7 +103,7 @@ pregunta solo cuando no puede resolverlo solo.`,
 	}
 
 	cmd.Flags().StringVarP(&file, "file", "f", "", "ruta al archivo de especificación (.yml)")
-	cmd.Flags().IntVar(&agentes, "agentes", 0, "número de trabajadores en paralelo (0 = automático, hasta 8)")
+	cmd.Flags().IntVar(&agentes, "agentes", 0, "número de trabajadores en paralelo (0 = automático, hasta 16 y 3 con modelo de pago)")
 	cmd.Flags().StringVar(&modelo, "modelo", "", "fuerza un modelo para todas las tareas")
 	cmd.Flags().StringVar(&ejecutor, "ejecutor", "", "opencode o claude")
 	cmd.Flags().BoolVar(&reintentar, "reintentar", false, "vuelve a correr también las tareas detenidas")

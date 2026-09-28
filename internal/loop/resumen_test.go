@@ -64,3 +64,38 @@ func TestUltimasLineasAcota(t *testing.T) {
 		t.Error("solo espacios en blanco es nada")
 	}
 }
+
+// jest termina con marcos y el conteo: lo que sirve es Expected/Received
+func TestResumenFalloTomaLineasDeFalloSinMarcos(t *testing.T) {
+	salida := `FAIL src/suma.test.ts
+  ● suma › suma dos números
+
+    expect(received).toBe(expected)
+
+    Expected: 4
+    Received: 5
+
+      at Object.<anonymous> (src/suma.test.ts:4:22)
+      at Promise.then.completed (node_modules/jest-circus/build/utils.js:298:28)
+      at new Promise (<anonymous>)
+
+Tests:       1 failed, 1 total
+Time:        0.5 s`
+	got := resumenFallo("npx jest", nil, salida)
+	for _, quiero := range []string{"Expected: 4", "Received: 5"} {
+		if !strings.Contains(got, quiero) {
+			t.Errorf("falta %q en %q", quiero, got)
+		}
+	}
+	if strings.Contains(got, "at Object") {
+		t.Errorf("se coló un marco del stack: %q", got)
+	}
+}
+
+// en go la línea útil no dice "error": viene de t.Errorf con archivo:línea
+func TestResumenFalloGoConservaElMensaje(t *testing.T) {
+	salida := "--- FAIL: TestSuma (0.00s)\n    suma_test.go:8: Suma(2, 2) = 5, quiero 4\nFAIL\nFAIL\tej/suma\t0.01s"
+	if got := resumenFallo("go test ./...", nil, salida); !strings.Contains(got, "quiero 4") {
+		t.Errorf("perdió el mensaje de la prueba: %q", got)
+	}
+}

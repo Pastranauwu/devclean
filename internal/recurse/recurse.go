@@ -293,7 +293,10 @@ func (a Agent) resolverSubtarea(ctx context.Context, req loop.Request, sub task.
 		return resultadoSub{sub: sub, verde: true, modelo: modelo, tk: tk}
 	}
 
-	// hoja roja: solo merece escalar de modelo si de verdad dejó trabajo
+	// hoja roja: solo merece escalar de modelo si de verdad dejó trabajo.
+	// ponytail: escala con el mismo CLI (a.Ejecutor); si liviana es un
+	// modelo de opencode y media uno de claude, la hoja escalada falla.
+	// Pasar ejecutorPara aquí cuando la recursión se use con modelos mixtos.
 	if m := a.Cfg.ModeloEscalado(sub.Peso, modelo); m != "" && !outcome.NoEscalar && huboTrabajo(rootPara(a, req), sub.ID) {
 		outcome, agentErr, tk = a.correrSubtarea(ctx, req, r, sub, m)
 		modelo = m

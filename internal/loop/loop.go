@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -801,7 +802,7 @@ func promptPara(t task.Task, interfaces []string, constitucion string, etiquetas
 // intento anterior y se quedaba sin saber qué arreglar. Diciendo el
 // comando y su código de salida, al menos hay de dónde agarrarse.
 func resumenFallo(listoCuando string, code *int, salida string) string {
-	if cuerpo := ultimasLineas(salida, 6, 600); cuerpo != "" {
+	if cuerpo := ultimasLineas(sinMarcos(salida), 8, 800); cuerpo != "" {
 		return cuerpo
 	}
 	estado := "falló"
@@ -823,6 +824,22 @@ func silencioso(cmd string) bool {
 		}
 	}
 	return false
+}
+
+// marcoRE reconoce los marcos de un stack trace: en jest o Java llenan la
+// cola de la salida y empujan fuera el "Expected/Received" que el agente
+// necesita para arreglar algo.
+var marcoRE = regexp.MustCompile(`^\s*(at |File "|goroutine \d|\S+\.go:\d+ \+0x|\.\.\. \d+ more)`)
+
+// sinMarcos quita de s las líneas de stack trace.
+func sinMarcos(s string) string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if !marcoRE.MatchString(l) {
+			out = append(out, l)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // ultimasLineas devuelve las últimas n líneas no vacías de s, acotadas a

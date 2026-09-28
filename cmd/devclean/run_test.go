@@ -106,7 +106,7 @@ func TestAutoAgentes(t *testing.T) {
 		tareas int
 		want   int
 	}{
-		{0, 1}, {1, 1}, {2, 2}, {8, 8}, {12, 8}, {100, 8},
+		{0, 1}, {1, 1}, {2, 2}, {8, 8}, {12, 12}, {16, 16}, {100, 16},
 	}
 	for _, c := range casos {
 		if got := autoAgentes(c.tareas); got != c.want {

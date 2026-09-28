@@ -367,8 +367,8 @@ func TestModeloEscalado(t *testing.T) {
 	if got := cfg.ModeloEscalado("liviana", "l"); got != "m" {
 		t.Errorf("liviana escaló a %q, quiero m", got)
 	}
-	if got := cfg.ModeloEscalado("media", "m"); got != "p" {
-		t.Errorf("media escaló a %q, quiero p", got)
+	if got := cfg.ModeloEscalado("media", "m"); got != "" {
+		t.Errorf("media escaló a %q, nunca a pesada", got)
 	}
 	if got := cfg.ModeloEscalado("pesada", "p"); got != "" {
 		t.Errorf("pesada escaló a %q, quiero nada", got)

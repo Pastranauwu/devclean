@@ -57,7 +57,7 @@ func newRunCmd() *cobra.Command {
 			return runCmd(agentes, ejecutor, modelo, reintentar, fondo)
 		},
 	}
-	cmd.Flags().IntVar(&agentes, "agentes", 0, "tareas en paralelo (0 = automático, hasta 8)")
+	cmd.Flags().IntVar(&agentes, "agentes", 0, "tareas en paralelo (0 = automático, hasta 16 y 3 con modelo de pago)")
 	cmd.Flags().StringVar(&ejecutor, "ejecutor", "", "opencode o claude (por defecto, el primero disponible)")
 	cmd.Flags().StringVar(&modelo, "modelo", "", "modelo del ejecutor (por defecto, el suyo)")
 	cmd.Flags().BoolVar(&reintentar, "reintentar", false, "vuelve a correr también las tareas detenidas, reusando su cuarto")
@@ -333,11 +333,12 @@ func ejecutarOlas(ctx context.Context, root string, cfg config.Config, ex execut
 		var verdes []runResult
 		sinSaldo := false
 		if len(asignadas) > 0 {
-			workers := agentes
+			// --agentes explícito manda sobre el tope de pagados
+			workers, pagados := agentes, agentes
 			if workers < 1 {
-				workers = autoAgentes(len(asignadas))
+				workers, pagados = autoAgentes(len(asignadas)), topePagados
 			}
-			r := correr(ctx, root, cfg, ex, modelo, constitucion, base, asignadas, workers, presupuesto, ventanasReg, emit)
+			r := correr(ctx, root, cfg, ex, modelo, constitucion, base, asignadas, workers, pagados, presupuesto, ventanasReg, emit)
 			results = append(results, r...)
 			for _, rr := range r {
 				procesadas[rr.ID] = true
@@ -599,12 +600,12 @@ func tokensDe(u executor.Usage) loop.Tokens {
 }
 
 // autoAgentes resuelve el paralelismo cuando --agentes no se pasa: tantos
-// trabajadores como tareas en la oleada, topado a 8. Un tope fijo evita
-// que una oleada enorme dispare el rate limit de los proveedores; bajar de
-// 8 a 1 serializaba un plan bien partido en piezas independientes.
+// trabajadores como tareas en la oleada, topado a 16. De esos, solo
+// topePagados corren a la vez con un modelo que gasta cuota (correr); el
+// resto del cupo es para modelos gratis.
 func autoAgentes(tareas int) int {
-	if tareas > 8 {
-		return 8
+	if tareas > 16 {
+		return 16
 	}
 	if tareas < 1 {
 		return 1
@@ -612,9 +613,18 @@ func autoAgentes(tareas int) int {
 	return tareas
 }
 
-// correr lanza las tareas con `agentes` trabajadores en paralelo. onEvent,
+// topePagados es cuántas tareas con modelo de pago corren a la vez sin
+// --agentes: todas gastan la misma ventana de 5 h, y en paralelo solo la
+// vacían antes (el snake perdió 3 de 18 intentos por 429).
+//
+// ponytail: tope fijo; hacerlo configurable o leer la sonda de uso si
+// 3 resulta corto o largo para algún plan.
+const topePagados = 3
+
+// correr lanza las tareas con `agentes` trabajadores en paralelo, y de
+// ellas como mucho `pagados` con un modelo que gasta cuota. onEvent,
 // si no es nil, recibe cada transición para el tablero en vivo.
-func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion, base string, asignadas []task.Task, agentes int, presupuesto *budget.Contador, ventanasReg *ventanas.Registro, onEvent func(tui.EventoRun)) []runResult {
+func correr(ctx context.Context, root string, cfg config.Config, ex executor.Executor, modelo, constitucion, base string, asignadas []task.Task, agentes, pagados int, presupuesto *budget.Contador, ventanasReg *ventanas.Registro, onEvent func(tui.EventoRun)) []runResult {
 	// solapamiento activo entre tareas de la misma oleada
 	alertasOverlap := checkOverlapOla(root, asignadas)
 	for _, a := range alertasOverlap {
@@ -626,6 +636,20 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	results := make([]runResult, 0, len(asignadas))
+
+	// las gratis van primero: un trabajador esperando cupo pagado no
+	// debe dejar en la fila a una que no espera nada
+	esPagada := map[string]bool{}
+	for _, t := range asignadas {
+		_, m, _, _ := resolverAgenteTarea(cfg, ex, modelo, t)
+		esPagada[t.ID] = !gratis(m)
+	}
+	asignadas = append([]task.Task(nil), asignadas...)
+	sort.SliceStable(asignadas, func(i, j int) bool { return !esPagada[asignadas[i].ID] && esPagada[asignadas[j].ID] })
+	if pagados < 1 {
+		pagados = 1
+	}
+	cupo := make(chan struct{}, pagados)
 
 	for i := 0; i < agentes; i++ {
 		wg.Add(1)
@@ -647,7 +671,13 @@ func correr(ctx context.Context, root string, cfg config.Config, ex executor.Exe
 				if onEvent != nil {
 					onEvent(tui.EventoRun{ID: t.ID, Estado: "trabajando"})
 				}
+				if esPagada[t.ID] {
+					cupo <- struct{}{}
+				}
 				r := correrUno(ctx, root, cfg, ex, modelo, base, constitucion, presupuesto, ventanasReg, t)
+				if esPagada[t.ID] {
+					<-cupo
+				}
 				if r.Estado == estadoSinSaldo {
 					sinSaldo.Store(true)
 				}
@@ -805,7 +835,35 @@ func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagMod
 		paquetes = t.Skills
 	}
 
-	return ex, modelo, etiquetas, paquetes
+	return ejecutorPara(ex, modelo), modelo, etiquetas, paquetes
+}
+
+// ejecutorPara elige el CLI que sabe correr el modelo: un id con
+// proveedor ("opencode/mimo-v2.6-flash-free") solo lo corre opencode, y
+// los de Anthropic sin proveedor ("claude-sonnet-5", "haiku") solo
+// claude. Así `modelos:` mezcla los dos: livianas gratis en opencode y
+// el resto en claude. Si el CLI que hace falta no está, queda ex.
+func ejecutorPara(ex executor.Executor, modelo string) executor.Executor {
+	quiere := ""
+	switch {
+	case strings.Contains(modelo, "/"):
+		quiere = "opencode"
+	case strings.HasPrefix(modelo, "claude-"), modelo == "opus", modelo == "sonnet", modelo == "haiku":
+		quiere = "claude"
+	}
+	if quiere == "" || (ex != nil && ex.Name() == quiere) {
+		return ex
+	}
+	if e, err := elegirEjecutor(quiere); err == nil {
+		return e
+	}
+	return ex
+}
+
+// gratis reconoce los modelos sin costo de opencode ("…-free"): no
+// gastan cuota, así que no entran al tope de agentes pagados.
+func gratis(modelo string) bool {
+	return strings.HasSuffix(modelo, "-free")
 }
 
 // revisorEnBucle adapta internal/revisor al loop: corre sobre un intento
@@ -828,6 +886,9 @@ func (r revisorEnBucle) Revisar(ctx context.Context, _ string, tarea task.Task, 
 		Prompt:   prompt,
 		Model:    r.modelo,
 		Timeout:  5 * time.Minute,
+		// juzgar un diff contra su contrato no pide razonar largo: corre
+		// en cada intento verde y el pensamiento extendido es lo que pesa
+		Effort: "low",
 	})
 	tk := tokensDe(res.Tokens)
 	if err != nil {
@@ -846,7 +907,7 @@ func (r revisorEnBucle) Revisar(ctx context.Context, _ string, tarea task.Task, 
 }
 
 // revisorParaBucle arma el revisor del bucle con el modelo del rol
-// `revisor`, cayendo al pesado si no hay nada declarado. Si el CLI no
+// `revisor`, cayendo al medio si no hay nada declarado. Si el CLI no
 // está disponible, devuelve nil y el bucle corre sin revisión.
 func revisorParaBucle(root string, cfg config.Config, ex executor.Executor) loop.Revisor {
 	if ex == nil {
@@ -863,7 +924,7 @@ func revisorParaBucle(root string, cfg config.Config, ex executor.Executor) loop
 	if modelo == "" {
 		modelo = cfg.ModeloPeso("liviana")
 	}
-	return revisorEnBucle{ex: ex, modelo: modelo, root: root}
+	return revisorEnBucle{ex: ejecutorPara(ex, modelo), modelo: modelo, root: root}
 }
 
 // modeloExaminador resuelve el modelo del examinador ciego: el rol
@@ -915,7 +976,7 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 	// degradaba, y la tarea moría con "listo_cuando pasó sin ejecutar
 	// ninguna prueba" porque la veda le quita al implementador las suyas.
 	exam := examiner.Runner{Options: examiner.Options{
-		Agent:    agenteExecutor{exTarea},
+		Agent:    agenteExecutor{ejecutorPara(exTarea, modeloExaminador(cfg))},
 		Task:     t,
 		Root:     root,
 		Model:    modeloExaminador(cfg),
@@ -982,6 +1043,9 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 		if m := cfg.ModeloEscalado(t.Peso, modeloTarea); m != "" && !outcome.NoEscalar && huboTrabajoRun(root, t.ID) {
 			escalado := opts
 			escalado.Model = m
+			exEscalado := ejecutorPara(exTarea, m)
+			escalado.Agent = agenteExecutor{exEscalado}
+			escalado.Proveedor = exEscalado.Name()
 			escalado.Examinador = nil
 			escalado.OnIntento = progresoIntento(t.ID, m)
 			outcome, err = loop.Run(ctx, escalado)

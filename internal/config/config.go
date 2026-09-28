@@ -399,9 +399,13 @@ func (c Config) ModeloPara(peso string) string {
 }
 
 // ModeloEscalado devuelve el modelo del peso siguiente al dado
-// (liviana→media→pesada), o "" si no hay, si es el mismo que `actual` o
-// si no está mapeado. Es el paso del fallback: el barato falló con
-// trabajo, se sube un escalón sin tocar el contrato.
+// (liviana→media), o "" si no hay, si es el mismo que `actual` o si no
+// está mapeado. Es el paso del fallback: el barato falló con trabajo, se
+// sube un escalón sin tocar el contrato.
+//
+// Nunca escala a pesada: opus es lo que vacía la ventana de 5 h, y una
+// tarea que ni el medio resuelve casi siempre tiene el contrato mal
+// hecho, no le falta modelo. Una tarea con peso pesada sí usa opus.
 func (c Config) ModeloEscalado(peso, actual string) string {
 	if peso == "" {
 		peso = c.PesoPorDefecto()
@@ -413,7 +417,7 @@ func (c Config) ModeloEscalado(peso, actual string) string {
 			break
 		}
 	}
-	if siguiente == "" {
+	if siguiente == "" || siguiente == "pesada" {
 		return ""
 	}
 	m := c.ModeloPeso(siguiente)
