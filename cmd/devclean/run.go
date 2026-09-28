@@ -1042,7 +1042,7 @@ func tokensDeTarea(root, id string) int {
 	}
 	total := 0
 	for _, a := range as {
-		total += a.Tokens.Entrada + a.Tokens.Salida
+		total += a.Tokens.Gasto()
 	}
 	return total
 }

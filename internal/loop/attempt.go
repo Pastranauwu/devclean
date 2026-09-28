@@ -75,6 +75,13 @@ type Tokens struct {
 	CostoUSD           float64 `json:"costo_usd,omitempty"`
 }
 
+// Gasto es lo que cuenta contra el presupuesto y las ventanas: entrada y
+// salida enteras, la caché con su peso de precio (leída 0.1×, escrita
+// 1.25×). Sin la caché, un intento de claude con 789k leídos contaba 129.
+func (t Tokens) Gasto() int {
+	return t.Entrada + t.Salida + t.CacheLeida/10 + t.CacheEscrita*5/4
+}
+
 // RunsDir returns the runs directory of the repository at root.
 func RunsDir(root string) string { return filepath.Join(root, ".devclean", "runs") }
 

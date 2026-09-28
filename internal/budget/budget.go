@@ -113,7 +113,7 @@ func GastoEnDisco(root string) int {
 			continue
 		}
 		for _, a := range as {
-			total += a.Tokens.Entrada + a.Tokens.Salida
+			total += a.Tokens.Gasto()
 		}
 	}
 	return total

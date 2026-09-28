@@ -432,7 +432,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		// y, si deja un tope al límite o lo pasa, el intento siguiente no
 		// se gasta. Un intento verde siempre gana sobre el corte: el
 		// trabajo está hecho, no se descarta por haber pasado el tope.
-		n := res.Tokens.Entrada + res.Tokens.Salida
+		n := res.Tokens.Gasto()
 		if o.Ventanas != nil && o.Proveedor != "" {
 			if !o.Ventanas.Registrar(o.Proveedor, n) {
 				_ = s.Append(a)
@@ -492,7 +492,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			acumulado.Salida += tk.Salida
 			acumulado.CacheLeida += tk.CacheLeida
 			acumulado.CacheEscrita += tk.CacheEscrita
-			m := tk.Entrada + tk.Salida
+			m := tk.Gasto()
 			if o.Ventanas != nil && o.Proveedor != "" {
 				_ = o.Ventanas.Registrar(o.Proveedor, m)
 			}

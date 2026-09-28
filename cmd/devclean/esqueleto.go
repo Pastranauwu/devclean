@@ -110,7 +110,7 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 					Avance:   avance,
 				})
 				guardarLogEsqueleto(root, id, vuelta, prompt, out)
-				reg.Registrar(ex.Name(), out.Tokens.Input+out.Tokens.Output)
+				reg.Registrar(ex.Name(), tokensDe(out.Tokens).Gasto())
 				if out.Text != "" {
 					guardarRespuestaEsqueleto(root, id, original, out.Text)
 				}

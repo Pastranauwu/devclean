@@ -80,3 +80,12 @@ func TestReadAttemptsSinArchivo(t *testing.T) {
 		t.Fatalf("sin archivo debió devolver nil, dio %v", got)
 	}
 }
+
+// la caché cuenta con su peso: en T-008 un intento de 129 de entrada
+// traía 789k leídos y 42k escritos
+func TestGastoPonderaLaCache(t *testing.T) {
+	tk := Tokens{Entrada: 129, Salida: 1000, CacheLeida: 789_000, CacheEscrita: 42_000}
+	if got, want := tk.Gasto(), 129+1000+78_900+52_500; got != want {
+		t.Fatalf("Gasto = %d, quiero %d", got, want)
+	}
+}

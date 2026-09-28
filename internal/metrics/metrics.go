@@ -83,10 +83,10 @@ func Calcular(d Datos) Metricas {
 		m.RechazoEntrada = redondear(float64(invalidos)/float64(total)*100, 1)
 	}
 
-	// costo en tokens: suma de entrada y salida de todos los intentos
+	// costo en tokens: el gasto (con caché ponderada) de todos los intentos
 	for _, attempts := range d.Attempts {
 		for _, a := range attempts {
-			m.Tokens += a.Tokens.Entrada + a.Tokens.Salida
+			m.Tokens += a.Tokens.Gasto()
 		}
 	}
 
