@@ -63,7 +63,22 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 	if err != nil {
 		return spec.Spec{}, fmt.Errorf("error al leer %s: %w", filePath, err)
 	}
-	return aplicarSpec(root, s, filepath.Base(filePath), runImmediately, dryRun)
+	// solo el modo requirements: ahí el plan entero lo genera el
+	// arquitecto, y replanear un spec igual es pagarlo dos veces
+	porRequirements := len(s.Tasks) == 0 && len(s.Requirements) > 0
+	intencion := spec.IntencionDe(s)
+	if prev, ok := spec.LoadIntencion(root); ok && porRequirements {
+		if prev.Igual(intencion) {
+			out.Line("· %s sin cambios desde el último plan · sigo con las tareas pendientes (borra .devclean/%s para replanear)", filepath.Base(filePath), spec.IntencionFile)
+			return s, nil
+		}
+		s.Previos = prev.Requirements
+	}
+	s, err = aplicarSpec(root, s, filepath.Base(filePath), runImmediately, dryRun)
+	if err == nil && porRequirements && !dryRun {
+		err = spec.SaveIntencion(root, intencion)
+	}
+	return s, err
 }
 
 // aplicarSpec completa, valida y escribe los contratos de un spec ya

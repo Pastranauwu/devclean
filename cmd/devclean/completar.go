@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/esqueleto"
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/spec"
 	"github.com/Pastranauwu/devclean/internal/task"
@@ -100,9 +101,27 @@ func completarSpec(root string, s *spec.Spec) error {
 // esqueleto pueda citar a qué requisito responde cada módulo.
 func planearRequirements(root string, s *spec.Spec) error {
 	var pedido strings.Builder
-	fmt.Fprintf(&pedido, "Feature: %s\nRequerimientos obligatorios:\n", s.Feature)
-	for i, r := range s.Requirements {
-		fmt.Fprintf(&pedido, "R%d. %s\n", i+1, r)
+	fmt.Fprintf(&pedido, "Feature: %s\n", s.Feature)
+	nuevos, hechos, retirados := deltaRequirements(s.Previos, s.Requirements)
+	if len(hechos) > 0 {
+		pedido.WriteString("Ya implementados en un cambio anterior (están en el código y en " + esqueleto.Documento + "; no generes tareas para ellos salvo que lo nuevo los cambie):\n")
+		for _, r := range hechos {
+			fmt.Fprintf(&pedido, "- %s\n", r)
+		}
+	}
+	if len(retirados) > 0 {
+		pedido.WriteString("Retirados del spec (quítalos del código y de " + esqueleto.Documento + "):\n")
+		for _, r := range retirados {
+			fmt.Fprintf(&pedido, "- %s\n", r)
+		}
+	}
+	if len(nuevos) > 0 {
+		pedido.WriteString("Requerimientos obligatorios:\n")
+		for i, r := range nuevos {
+			fmt.Fprintf(&pedido, "R%d. %s\n", i+1, r)
+		}
+	} else {
+		pedido.WriteString("Los requerimientos no cambiaron: cambiaron las reglas, la aceptación o las restricciones. Ajusta solo lo que eso exige.\n")
 	}
 	if len(s.Reglas) > 0 {
 		pedido.WriteString("Reglas obligatorias:\n")
@@ -121,6 +140,31 @@ func planearRequirements(root string, s *spec.Spec) error {
 		}
 	}
 	return planearEsqueleto(root, s, pedido.String())
+}
+
+// deltaRequirements separa el spec actual contra el último planeado:
+// nuevos (o reescritos), los que ya estaban y los que se quitaron. Sin
+// plan previo, todo es nuevo.
+func deltaRequirements(previos, actuales []string) (nuevos, hechos, retirados []string) {
+	antes := map[string]bool{}
+	for _, r := range previos {
+		antes[r] = true
+	}
+	ahora := map[string]bool{}
+	for _, r := range actuales {
+		ahora[r] = true
+		if antes[r] {
+			hechos = append(hechos, r)
+		} else {
+			nuevos = append(nuevos, r)
+		}
+	}
+	for _, r := range previos {
+		if !ahora[r] {
+			retirados = append(retirados, r)
+		}
+	}
+	return nuevos, hechos, retirados
 }
 
 // completarTarea rellena los campos vacíos de t con los del borrador.

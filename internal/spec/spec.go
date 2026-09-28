@@ -52,6 +52,10 @@ type Spec struct {
 	Acceptance   []Acceptance `json:"acceptance,omitempty"`
 	Constraints  Constraints  `json:"constraints,omitempty"`
 	Tasks        []task.Task  `json:"tasks"`
+	// Previos son los requirements ya planeados en una corrida anterior
+	// del mismo spec (IntencionFile). Los llena runApply; nunca vienen
+	// del YAML.
+	Previos []string `json:"-" yaml:"-"`
 }
 
 type Acceptance struct {
