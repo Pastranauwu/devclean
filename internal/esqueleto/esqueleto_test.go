@@ -133,16 +133,22 @@ func TestProblemasExigeComposeYDockerignore(t *testing.T) {
 	}
 }
 
-// en un proyecto existente la prueba de punta a punta ya pasa: reusarla
-// deja a la tarea final rechazada por la esclusa y lo nuevo sin probar
-func TestProblemasRechazaIntegracionQueYaPasa(t *testing.T) {
+// en un proyecto existente la prueba de punta a punta ya pasa: usarla
+// como listo_cuando deja a la tarea final rechazada por la esclusa; sin
+// tarea final vale como regresión (un cambio solo visual)
+func TestIntegracionQueYaPasaEsRegresionNoTareaFinal(t *testing.T) {
 	dir := planoPython(t)
 	r := Resultado{
 		Verificar:   "python3 -m compileall -q calc",
 		Integracion: "true",
 		Tareas:      []plan.Borrador{tarea("punta a punta", "true", "tests/test_e2e.py")},
 	}
-	if ps := strings.Join(Problemas(context.Background(), Verificacion{Dir: dir, Timeout: time.Minute}, r), "\n"); !strings.Contains(ps, "ya pasa hoy") {
-		t.Errorf("una integración que ya pasa no se rechazó: %q", ps)
+	v := Verificacion{Dir: dir, Timeout: time.Minute}
+	if ps := strings.Join(Problemas(context.Background(), v, r), "\n"); !strings.Contains(ps, "ya pasa hoy") {
+		t.Errorf("una tarea final con una integración que ya pasa no se rechazó: %q", ps)
+	}
+	r.Tareas = []plan.Borrador{tarea("suma", "python3 -m unittest tests/test_suma.py", "calc/suma.py", "tests/test_suma.py")}
+	if ps := strings.Join(Problemas(context.Background(), v, r), "\n"); strings.Contains(ps, "integracion") {
+		t.Errorf("una integración que ya pasa, sin tarea final, es regresión válida: %q", ps)
 	}
 }
