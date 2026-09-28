@@ -71,7 +71,7 @@ func TestAplanar(t *testing.T) {
 	root := repoConCommit(t)
 	r := cuartoConWip(t, root)
 
-	cuenta, hash, err := aplanar(context.Background(), r.Path, "main", "exportar a CSV", "feat", "glm-5.2")
+	cuenta, hash, err := aplanar(context.Background(), r.Path, "main", "T-001", "exportar a CSV", "feat", "glm-5.2")
 	if err != nil {
 		t.Fatalf("aplanar: %v", err)
 	}
@@ -85,8 +85,8 @@ func TestAplanar(t *testing.T) {
 	if !strings.Contains(msg, "feat: exportar a CSV") {
 		t.Errorf("mensaje = %q", msg)
 	}
-	if !strings.Contains(msg, "Agent: glm-5.2") {
-		t.Errorf("sin trailer Agent: %q", msg)
+	if !strings.Contains(msg, "Agent: glm-5.2") || !strings.Contains(msg, "Tarea: T-001") {
+		t.Errorf("sin trailers Agent y Tarea: %q", msg)
 	}
 	if n := strings.TrimSpace(gitCmd(t, r.Path, "rev-list", "--count", "main..HEAD")); n != "1" {
 		t.Errorf("commits tras aplanar = %s, quiero 1", n)

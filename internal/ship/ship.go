@@ -86,7 +86,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 
 	// 2. historial — aplanar los wip en un commit limpio
 	tipo := tipoCommit(o.Task.Titulo)
-	cuenta, _, err := aplanar(ctx, o.Room.Path, target, o.Task.Titulo, tipo, o.Modelo)
+	cuenta, _, err := aplanar(ctx, o.Room.Path, target, o.Task.ID, o.Task.Titulo, tipo, o.Modelo)
 	if err != nil {
 		apuntar(Paso{"historial", false, err.Error()})
 		return res

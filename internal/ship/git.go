@@ -51,7 +51,7 @@ func unmerged(dir string) []string {
 // aplanar colapsa los commits wip de la rama en uno solo con mensaje
 // Conventional Commits y trailer `Agent:`. Devuelve cuántos wip
 // había y el hash del commit resultante.
-func aplanar(ctx context.Context, roomPath, target, titulo, tipo, modelo string) (int, string, error) {
+func aplanar(ctx context.Context, roomPath, target, id, titulo, tipo, modelo string) (int, string, error) {
 	out, err := gitRun(roomPath, "rev-list", "--count", target+"..HEAD")
 	if err != nil {
 		return 0, "", err
@@ -66,8 +66,15 @@ func aplanar(ctx context.Context, roomPath, target, titulo, tipo, modelo string)
 	}
 
 	args := append(identity(roomPath), "commit", "-m", tipo+": "+titulo)
+	var trailers []string
 	if modelo != "" {
-		args = append(args, "-m", "Agent: "+modelo)
+		trailers = append(trailers, "Agent: "+modelo)
+	}
+	if id != "" {
+		trailers = append(trailers, TrailerTarea+": "+id)
+	}
+	if len(trailers) > 0 {
+		args = append(args, "-m", strings.Join(trailers, "\n"))
 	}
 	if _, err := gitRun(roomPath, args...); err != nil {
 		return 0, "", err

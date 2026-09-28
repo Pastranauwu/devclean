@@ -85,6 +85,11 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 		return err
 	}
 
+	// lo que ya está en la base se da por entregado: se libera su cuarto
+	// y su rama, que es como el resto de devclean reconoce una tarea
+	// entregada (sembrarVerdesPrevias, run)
+	ctx := context.Background()
+	entregadas := ship.Entregadas(ctx, root, cfg.Base)
 	var listas []task.Task
 	var pendientes, detenidas []string
 	modelos := map[string]string{}
@@ -96,6 +101,13 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 		}
 		switch st.Estado {
 		case state.Lista:
+			if entregadas[t.ID] {
+				_ = room.Destroy(ctx, root, t.ID)
+				continue
+			}
+			if !room.RamaExiste(ctx, root, t.ID) {
+				continue // entregada en una corrida anterior
+			}
 			listas = append(listas, t)
 			modelos[t.ID] = ultimoModelo(root, t.ID)
 			commits[t.ID] = st.Commit
@@ -106,7 +118,7 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 		}
 	}
 	if len(listas) == 0 {
-		return errors.New("ninguna tarea está lista · corre devclean run primero")
+		return errors.New("ninguna tarea está lista sin entregar · corre devclean run primero")
 	}
 	ids := make([]string, 0, len(listas))
 	for _, t := range listas {
@@ -175,6 +187,9 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 	if dryRun {
 		out.Line("entregable · %d tareas en la rama %s · --dry-run, sin PR", len(listas), e.Rama)
 		return nil
+	}
+	if err := ship.RegistrarEntrega(root, e.Rama, ids); err != nil {
+		out.Line("· no se pudo registrar la entrega · %s · el próximo ship puede volver a incluir estas tareas", err)
 	}
 	if e.Integrado {
 		out.Line("integrado · %d tareas en %s · %s", len(listas), cfg.Base, e.PR)
