@@ -67,7 +67,18 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 	// arquitecto, y replanear un spec igual es pagarlo dos veces
 	porRequirements := len(s.Tasks) == 0 && len(s.Requirements) > 0
 	intencion := spec.IntencionDe(s)
-	if prev, ok := spec.LoadIntencion(root); ok && porRequirements {
+	prev, ok := spec.LoadIntencion(root)
+	if !ok {
+		// planeado antes de que existiera intencion.json: feature.json
+		// tiene lo que el humano declaró, más la aceptación que agregó
+		// el esqueleto, así que la aceptación no se compara. Sin esto,
+		// closet (29 tareas listas) se replaneó entero al actualizar
+		if f, err := spec.LoadFeatureState(root); err == nil && len(f.Requirements) > 0 {
+			prev, ok = spec.IntencionDe(f), true
+			prev.Acceptance = intencion.Acceptance
+		}
+	}
+	if ok && porRequirements {
 		if prev.Igual(intencion) {
 			out.Line("· %s sin cambios desde el último plan · sigo con las tareas pendientes (borra .devclean/%s para replanear)", filepath.Base(filePath), spec.IntencionFile)
 			return s, nil

@@ -58,3 +58,29 @@ func TestSpecSinCambiosNoReplanea(t *testing.T) {
 		t.Errorf("escribió %d tareas", len(es))
 	}
 }
+
+// closet se planeó antes de intencion.json: su feature.json trae los
+// mismos requirements y además la aceptación del esqueleto
+func TestSpecSinIntencionUsaFeatureJSON(t *testing.T) {
+	out = ui.New(io.Discard, false)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".devclean"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ruta := filepath.Join(root, "devclean.spec.yml")
+	yml := "feature: gastos\nrequirements:\n  - registrar un gasto\nacceptance:\n  - suite verde\n"
+	if err := os.WriteFile(ruta, []byte(yml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := spec.Load(ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Acceptance = append(s.Acceptance, spec.Acceptance{Criterion: "flujo de punta a punta del esqueleto", Command: "bash e2e.sh"})
+	if err := spec.SaveFeatureState(root, s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runApply(root, ruta, false, false); err != nil {
+		t.Fatalf("replaneó un spec ya planeado: %v", err)
+	}
+}

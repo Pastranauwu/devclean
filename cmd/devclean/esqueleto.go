@@ -122,16 +122,18 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 			return fmt.Errorf("el arquitecto no terminó · %w · lo escrito sigue en %s, vuelve a correr para que lo corrija", err, r.Path)
 		}
 		// lo que el arquitecto instaló después de crear el cuarto
-		// (package.json nuevo, pyproject) también tiene que estar
+		// (package.json nuevo, pyproject) también tiene que estar. Si no
+		// instala es un error del arquitecto (un paquete que no existe):
+		// se le devuelve para que lo corrija, no se tira lo pagado
+		var problemas []string
 		if err := room.InstalarDependencias(ctx, r.Path); err != nil {
-			return err
+			problemas = append(problemas, "las dependencias no instalan (corrige el manifiesto: quita o reemplaza lo que no existe en el registro): "+err.Error())
 		}
 		res, err = esqueleto.Parse(texto)
-		var problemas []string
 		if err != nil {
-			problemas = []string{err.Error()}
+			problemas = append(problemas, err.Error())
 		} else {
-			problemas = esqueleto.Problemas(ctx, r.Path, res, pruebaTimeout, room.Entorno(r.Path))
+			problemas = append(problemas, esqueleto.Problemas(ctx, r.Path, res, pruebaTimeout, room.Entorno(r.Path))...)
 		}
 		if len(problemas) == 0 {
 			break

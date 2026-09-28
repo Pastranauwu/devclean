@@ -299,3 +299,19 @@ func TestEnsureSinEstadoRecuperaElPuntoDePartida(t *testing.T) {
 		t.Fatalf("commit = %q, quiero %q", otra.Commit, base)
 	}
 }
+
+// closet: el arquitecto declaró un extra con un SDK que no existe en el
+// registro. Un extra es opcional: si no instala se salta
+func TestExtraQueNoInstalaNoTumbaLaInstalacion(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("sin python3")
+	}
+	dir := t.TempDir()
+	toml := "[project]\nname = \"x\"\nversion = \"0\"\ndependencies = []\n[project.optional-dependencies]\njev = [\"noexiste @ file:///no/existe/devclean\"]\n"
+	if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstalarDependencias(context.Background(), dir); err != nil {
+		t.Fatalf("un extra imposible tumbó la instalación: %v", err)
+	}
+}

@@ -300,11 +300,22 @@ func venv(ctx context.Context, dir string) error {
 	if err != nil {
 		return errors.New(tail(out))
 	}
-	deps := strings.Fields(out)
-	if len(deps) == 0 {
-		return nil
+	// primera línea: dependencias, obligatorias. Cada línea siguiente es
+	// un extra: opcional por definición, se intenta y si no instala se
+	// salta. En closet el arquitecto declaró un extra `jev` con un SDK que
+	// no está en PyPI (y lo dejó comentado): exigirlo tiraba el esqueleto.
+	grupos := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if deps := strings.Fields(grupos[0]); len(deps) > 0 {
+		if err := pipInstall(ctx, dir, py, deps...); err != nil {
+			return err
+		}
 	}
-	return pipInstall(ctx, dir, py, deps...)
+	for _, g := range grupos[1:] {
+		if extra := strings.Fields(g); len(extra) > 0 {
+			_ = pipInstall(ctx, dir, py, extra...)
+		}
+	}
+	return nil
 }
 
 // pipInstall instala en el venv de py. Un .venv creado con uv (lo hacen
@@ -328,14 +339,13 @@ func pipInstall(ctx context.Context, dir, py string, args ...string) error {
 	return nil
 }
 
-// depsPyproject imprime las dependencias y los extras de pyproject.toml,
-// una por línea y sin espacios (pip acepta "fastapi>=0.110").
+// depsPyproject imprime las dependencias de pyproject.toml en la primera
+// línea y cada extra en una línea propia, separadas por espacio y sin
+// espacios dentro (pip acepta "fastapi>=0.110").
 const depsPyproject = `import tomllib
 p = tomllib.load(open("pyproject.toml", "rb")).get("project", {})
-d = list(p.get("dependencies", []))
-for v in p.get("optional-dependencies", {}).values():
-    d.extend(v)
-print("\n".join(x.replace(" ", "") for x in d))`
+grupos = [p.get("dependencies", [])] + list(p.get("optional-dependencies", {}).values())
+print("\n".join(" ".join(x.replace(" ", "") for x in g) for g in grupos))`
 
 func binVenv() string {
 	if runtime.GOOS == "windows" {
