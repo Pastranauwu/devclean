@@ -416,3 +416,29 @@ func TestDryRunNoIntegraAunqueSePida(t *testing.T) {
 		t.Error("--dry-run no integra nada")
 	}
 }
+
+// closet: un esqueleto que solo planeó cambios a código existente quedó
+// verde sin cambios propios y frenaba la entrega con "nada que entregar"
+func TestEntregarTodasOmiteLaTareaSinCambios(t *testing.T) {
+	root := repoConCommit(t)
+	cuartoDeTarea(t, root, "T-002", "b.go")
+	if _, err := room.Create(context.Background(), root, "T-001", "main"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = room.Destroy(context.Background(), root, "T-001") })
+
+	e := EntregarTodas(context.Background(), OpcionesEntrega{
+		Root:   root,
+		Config: config.Config{Base: "main", Pruebas: "true"},
+		Base:   "main",
+		Tareas: []task.Task{tareaEntrega("T-001", "a.go"), tareaEntrega("T-002", "b.go", "T-001")},
+		DryRun: true,
+	})
+	t.Cleanup(func() { _ = limpiarEntrega(root, roomPathDe(root, "_entrega")) })
+	if !e.Aprobado {
+		t.Fatalf("entrega frenada · %s", e.PrimerMotivo())
+	}
+	if log := gitCmd(t, root, "log", "--format=%s", "main.."+RamaEntrega); strings.Count(strings.TrimSpace(log), "\n") != 0 {
+		t.Errorf("quiero solo el commit de T-002 · %q", log)
+	}
+}

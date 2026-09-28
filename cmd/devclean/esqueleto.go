@@ -223,7 +223,13 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 		}
 		out.Line("· pruebas del proyecto · %s", res.Pruebas)
 	}
-	if err := state.Save(root, state.State{ID: id, Estado: state.Lista, Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit}); err != nil {
+	// un plan de solo cambios a código existente puede no tocar nada en
+	// el esqueleto: sin cambios no hay tarea de esqueleto que entregar ni
+	// de la que depender (closet: T-055 vacío frenó la entrega)
+	vacio := strings.TrimSpace(creados) == ""
+	if vacio {
+		_ = room.Destroy(ctx, root, id)
+	} else if err := state.Save(root, state.State{ID: id, Estado: state.Lista, Rama: r.Rama, Puerto: r.Puerto, Commit: r.Commit}); err != nil {
 		return err
 	}
 
@@ -240,19 +246,23 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	if intentos < 1 {
 		intentos = task.DefaultLimiteIntentos
 	}
-	s.Tasks = append(s.Tasks, task.Task{
-		Version: task.Version, ID: id, Titulo: "esqueleto · " + s.Feature,
-		Porque:      "estructura, interfaces, stubs y pruebas que cada tarea rellena",
-		ListoCuando: res.Verificar, TocarSolo: strings.Fields(creados), Peso: "pesada",
-		Notas: res.Arquitectura, LimiteIntentos: intentos,
-	})
+	var deEsqueleto []string
+	if !vacio {
+		deEsqueleto = []string{id}
+		s.Tasks = append(s.Tasks, task.Task{
+			Version: task.Version, ID: id, Titulo: "esqueleto · " + s.Feature,
+			Porque:      "estructura, interfaces, stubs y pruebas que cada tarea rellena",
+			ListoCuando: res.Verificar, TocarSolo: strings.Fields(creados), Peso: "pesada",
+			Notas: res.Arquitectura, LimiteIntentos: intentos,
+		})
+	}
 	for i, b := range bs {
 		// las firmas viven en el código y las valida el compilador: sin
 		// expone/usa en prosa no hay nada que comparar a mano
 		s.Tasks = append(s.Tasks, task.Task{
 			Version: task.Version, ID: idsRelleno[i], Titulo: b.Titulo, Porque: b.Porque,
 			ListoCuando: conVerificar(res.Verificar, b.ListoCuando), TocarSolo: b.TocarSolo, NoTocar: b.NoTocar,
-			DependeDe: append([]string{id}, b.DependeDe...), Peso: b.Peso, Agente: b.Agente,
+			DependeDe: append(append([]string(nil), deEsqueleto...), b.DependeDe...), Peso: b.Peso, Agente: b.Agente,
 			Skills: b.Skills, Notas: b.Como + "\n\n" + notaPara(ctx, r.Path, b.TocarSolo),
 			LimiteIntentos: intentos, LimiteLineas: s.Limites.Lineas,
 		})

@@ -118,6 +118,7 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 
 	// 1. la esclusa de salida completa de cada tarea, en seco: ninguna
 	//    entra al PR si no pasa sola su propio control de calidad.
+	var conCambios []task.Task
 	for _, t := range ordenadas {
 		roomPath := roomPathDe(o.Root, t.ID)
 		// cada tarea se aplana contra su propio punto de partida, no
@@ -129,6 +130,13 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 		if baseTarea == "" {
 			baseTarea = o.Base
 		}
+		// verde sin cambios propios (un esqueleto que solo planeó cambios
+		// a código existente): no hay nada que integrar, no es un fallo
+		if _, err := gitRun(roomPath, "diff", "--quiet", baseTarea, "HEAD"); err == nil {
+			apuntar(Paso{"esclusa " + t.ID, true, "sin cambios propios · se omite"})
+			continue
+		}
+		conCambios = append(conCambios, t)
 		r := Run(ctx, Opciones{
 			Root:    o.Root,
 			Room:    room.Room{ID: t.ID, Path: roomPath, Rama: room.Branch(t.ID)},
@@ -147,6 +155,11 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 			return e
 		}
 		apuntar(Paso{"esclusa " + t.ID, true, "lista para integrar"})
+	}
+	ordenadas = conCambios
+	if len(ordenadas) == 0 {
+		apuntar(Paso{"integrar", false, "ninguna tarea tiene cambios propios · nada que entregar"})
+		return e
 	}
 
 	// 2. una rama de entrega limpia desde la base
