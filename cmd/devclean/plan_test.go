@@ -294,3 +294,21 @@ func TestConVerificarAnteponeElBuild(t *testing.T) {
 		t.Fatalf("sin verificar: %q", got)
 	}
 }
+
+// closet: la tarea final "depende de todas" se incluyó a sí misma y el
+// plan ya pagado murió en ValidatePlan con "dependencia circular"
+func TestTraducirDependenciasQuitaLaAutodependencia(t *testing.T) {
+	ids := []string{"T-056", "T-057", "T-058"}
+	bs := []plan.Borrador{{}, {DependeDe: []string{"T-056"}}, {DependeDe: []string{"T-056", "T-057", "T-058"}}}
+	traducirDependencias(bs, ids, nil)
+	if strings.Join(bs[2].DependeDe, ",") != "T-056,T-057" {
+		t.Fatalf("%v", bs[2].DependeDe)
+	}
+	if ciclo(bs, ids) != nil {
+		t.Fatal("sin la autodependencia no hay ciclo")
+	}
+	bs[0].DependeDe = []string{"T-058"}
+	if c := ciclo(bs, ids); len(c) == 0 {
+		t.Fatal("T-056 → T-058 → T-056 es un ciclo")
+	}
+}

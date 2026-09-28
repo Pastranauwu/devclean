@@ -152,3 +152,11 @@ func TestIntegracionQueYaPasaEsRegresionNoTareaFinal(t *testing.T) {
 		t.Errorf("una integración que ya pasa, sin tarea final, es regresión válida: %q", ps)
 	}
 }
+
+// "no hay nada que cambiar" es una respuesta válida del arquitecto
+func TestParseAceptaUnPlanSinTareas(t *testing.T) {
+	r, err := Parse(`{"verificar": "true", "arquitectura": "igual", "tareas": []}`)
+	if err != nil || len(r.Tareas) != 0 || r.Verificar != "true" {
+		t.Fatalf("%+v %v", r, err)
+	}
+}

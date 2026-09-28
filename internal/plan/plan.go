@@ -51,6 +51,11 @@ type Borrador struct {
 // números (`"depende_de": [1]`) o como ids completos (`["T-002"]`):
 // `depende_de` es []string en el contrato, y un JSON numérico rompía
 // toda la descomposición recursiva.
+
+// ErrSinTareas es un plan vacío. Para el planificador es un error; para
+// el arquitecto puede ser la respuesta correcta (el código ya cumple).
+var ErrSinTareas = errors.New("el modelo no propuso ninguna tarea")
+
 func (b *Borrador) UnmarshalJSON(data []byte) error {
 	type alias Borrador
 	var raw struct {
@@ -330,7 +335,7 @@ func Parse(texto string) ([]Borrador, error) {
 	}
 
 	if len(bs) == 0 {
-		return nil, errors.New("el modelo no propuso ninguna tarea")
+		return nil, ErrSinTareas
 	}
 	for i, b := range bs {
 		if strings.TrimSpace(b.Titulo) == "" || strings.TrimSpace(b.ListoCuando) == "" {

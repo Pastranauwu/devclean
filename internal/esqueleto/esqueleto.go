@@ -99,6 +99,8 @@ func Prompt(p Pedido, c plan.Contexto) string {
 	}
 	b.WriteString(`
 SI EL REPOSITORIO YA TIENE CÓDIGO
+- Las capturas mandan sobre el código: si el código dice que algo existe pero en la captura no se ve, o se ve roto o sin estilo, está mal y hay que planearlo.
+- Si de verdad no hay nada que cambiar, responde con "tareas": [] y no inventes trabajo.
 - Lo que ya funciona NO se convierte en stub. Respeta el stack, las librerías, el sistema de diseño y las convenciones que ya hay; no migres nada que el pedido no pida.
 - Un cambio a código existente es una tarea sin stub: en "como" va qué cambiar, dónde y "Casos:" del comportamiento nuevo (entrada → salida o lo que se ve en pantalla). Si el cambio agrega funciones, métodos o componentes nuevos, esos sí van como stub con su contrato.
 - El "listo_cuando" de un cambio corre una prueba NUEVA del comportamiento nuevo (un archivo que hoy no existe): las pruebas que ya existen pasan hoy y no sirven de oráculo. Esas pruebas tienen que seguir pasando.
@@ -195,7 +197,9 @@ func contexto(c plan.Contexto) string {
 // Parse lee el JSON final del arquitecto.
 func Parse(texto string) (Resultado, error) {
 	bs, err := plan.Parse(texto)
-	if err != nil {
+	// sin tareas es una respuesta válida del arquitecto: lo pedido ya
+	// está. Exigirle tareas lo hizo copiar el plan anterior (closet)
+	if err != nil && !errors.Is(err, plan.ErrSinTareas) {
 		return Resultado{}, err
 	}
 	t := strings.TrimSpace(texto)
@@ -240,9 +244,6 @@ func Problemas(ctx context.Context, v Verificacion, r Resultado) []string {
 	if v.Docker {
 		out = append(out, docker(ctx, dir, v.Timeout, v.Env)...)
 	}
-	if len(r.Tareas) == 0 {
-		out = append(out, "no hay tareas: si todo está hecho no hacía falta un esqueleto")
-	}
 	archivos := versionables(ctx, dir)
 	previos := enCommit(ctx, dir, v.Base)
 	integracion := false
@@ -272,7 +273,7 @@ func Problemas(ctx context.Context, v Verificacion, r Resultado) []string {
 	// porque la esclusa rechaza lo que ya pasa (closet: la tarea final de
 	// la UI renovada murió así). Un cambio solo visual no necesita una
 	// prueba de punta a punta nueva.
-	if strings.TrimSpace(r.Integracion) != "" {
+	if len(r.Tareas) > 0 && strings.TrimSpace(r.Integracion) != "" {
 		_, code := correr(ctx, dir, r.Integracion, v.Timeout, v.Env)
 		pasa := code != nil && *code == 0
 		switch {

@@ -16,6 +16,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/esqueleto"
 	"github.com/Pastranauwu/devclean/internal/executor"
 	"github.com/Pastranauwu/devclean/internal/loop"
+	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/spec"
 	"github.com/Pastranauwu/devclean/internal/state"
@@ -157,6 +158,9 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 			problemas = append(problemas, esqueleto.Problemas(ctx, esqueleto.Verificacion{
 				Dir: r.Path, Base: r.Commit, Docker: !sinDocker, Timeout: pruebaTimeout, Env: room.Entorno(r.Path),
 			}, res)...)
+			if c := cicloDelPlan(root, res.Tareas); c != nil {
+				problemas = append(problemas, "dependencia circular en depende_de: "+strings.Join(c, " → ")+" · quita una de esas dependencias")
+			}
 		}
 		if len(problemas) == 0 {
 			break
@@ -170,6 +174,13 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 		prompt = esqueleto.PromptCorregir(original, problemas)
 	}
 
+	if len(res.Tareas) == 0 {
+		// el arquitecto no encontró nada que cambiar: lo que haya tocado
+		// en el cuarto (ARCHITECTURE.md) no se entrega sin tareas
+		_ = room.Destroy(ctx, root, id)
+		out.Line("· el arquitecto no encontró nada que cambiar · el código ya cumple el pedido")
+		return nil
+	}
 	if salida, err := gitEn(r.Path, "add", "-A"); err != nil {
 		return fmt.Errorf("no se pudo indexar el esqueleto · %s", strings.TrimSpace(salida))
 	}
@@ -327,4 +338,20 @@ func tomarCapturas(ctx context.Context, dir string, p capturas.Pantallas, puerto
 		return nil
 	}
 	return fotos
+}
+
+// cicloDelPlan traduce las dependencias del plan a los ids que van a
+// tener sus tareas y busca un ciclo, sin tocar el plan.
+func cicloDelPlan(root string, bs []plan.Borrador) []string {
+	ids, err := idsCorrelativos(config.TasksDir(root), len(bs)+1)
+	if err != nil || len(ids) < 2 {
+		return nil
+	}
+	copia := make([]plan.Borrador, len(bs))
+	for i, b := range bs {
+		copia[i] = b
+		copia[i].DependeDe = append([]string(nil), b.DependeDe...)
+	}
+	traducirDependencias(copia, ids[1:], idsPrevios(config.TasksDir(root)))
+	return ciclo(copia, ids[1:])
 }

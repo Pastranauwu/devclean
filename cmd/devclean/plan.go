@@ -497,8 +497,59 @@ func idsCorrelativos(dir string, n int) ([]string, error) {
 // tarea, y el plan salía lleno de ciclos.
 func traducirDependencias(bs []plan.Borrador, ids []string, previas map[string]bool) {
 	for i := range bs {
-		bs[i].DependeDe = dependenciasDelModelo(bs[i].DependeDe, ids, previas)
+		deps := dependenciasDelModelo(bs[i].DependeDe, ids, previas)
+		// la tarea final "depende de todas" suele incluirse a sí misma
+		// (closet: T-064 → T-064): nunca es intencional y arma un ciclo
+		bs[i].DependeDe = deps[:0]
+		for _, d := range deps {
+			if i >= len(ids) || d != ids[i] {
+				bs[i].DependeDe = append(bs[i].DependeDe, d)
+			}
+		}
 	}
+}
+
+// ciclo devuelve una dependencia circular del plan (ya traducido a ids),
+// o nada. Se busca antes de aceptar el plan para que la corrija quien
+// lo escribió, no después, cuando ValidatePlan tira un plan pagado.
+func ciclo(bs []plan.Borrador, ids []string) []string {
+	deps := map[string][]string{}
+	for i, b := range bs {
+		if i < len(ids) {
+			deps[ids[i]] = b.DependeDe
+		}
+	}
+	estado := map[string]int{} // 1 visitando, 2 listo
+	var camino []string
+	var visitar func(string) []string
+	visitar = func(id string) []string {
+		switch estado[id] {
+		case 1:
+			for k, c := range camino {
+				if c == id {
+					return append(append([]string{}, camino[k:]...), id)
+				}
+			}
+		case 2:
+			return nil
+		}
+		estado[id] = 1
+		camino = append(camino, id)
+		for _, d := range deps[id] {
+			if c := visitar(d); c != nil {
+				return c
+			}
+		}
+		camino = camino[:len(camino)-1]
+		estado[id] = 2
+		return nil
+	}
+	for _, id := range ids {
+		if c := visitar(id); c != nil {
+			return c
+		}
+	}
+	return nil
 }
 
 // idsPrevios devuelve los ids de las tareas que ya hay en dir.
