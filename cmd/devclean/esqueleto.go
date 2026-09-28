@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pastranauwu/devclean/internal/capturas"
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/esqueleto"
 	"github.com/Pastranauwu/devclean/internal/executor"
@@ -88,7 +89,10 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	// docker por defecto: el humano lo apaga en sus reglas ("sin docker")
 	// cuando lo que se construye no se despliega (una librería, un CLI)
 	sinDocker := strings.Contains(strings.ToLower(pedido), "sin docker")
-	original := esqueleto.Prompt(esqueleto.Pedido{Texto: pedido, Previo: previo, PrimerID: ids[1], SinDocker: sinDocker}, pctx)
+	// cómo se ve hoy, si ya se sabe levantar: el arquitecto planea un
+	// cambio visual contra la pantalla, no contra el código
+	antes := tomarCapturas(ctx, r.Path, cfg.Pantallas, r.Puerto, filepath.Join(loop.RunsDir(root), id, "antes"))
+	original := esqueleto.Prompt(esqueleto.Pedido{Texto: pedido, Previo: previo, PrimerID: ids[1], SinDocker: sinDocker, Capturas: antes}, pctx)
 
 	modelo := config.ModeloRol(cfg, "planificador")
 	timeout := timeoutArquitecto
@@ -178,6 +182,14 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	creados, err := gitEn(r.Path, "diff", "--name-only", r.Commit, "HEAD")
 	if err != nil {
 		return fmt.Errorf("no se pudo listar lo que creó el esqueleto · %s", strings.TrimSpace(creados))
+	}
+	// cómo levantar la interfaz: la usan el revisor visual y la entrega
+	if cfg.Pantallas.Vacia() && !res.Pantallas.Vacia() {
+		cfg.Pantallas = res.Pantallas
+		if err := cfg.Save(root); err != nil {
+			return err
+		}
+		out.Line("· pantallas del proyecto · %s · %d rutas", res.Pantallas.Levantar, len(res.Pantallas.Rutas))
 	}
 	// la suite que la esclusa de salida y la integración van a exigir
 	if strings.TrimSpace(cfg.Pruebas) == "" && res.Pruebas != "" {
@@ -293,4 +305,26 @@ func guardarLogEsqueleto(root, id string, vuelta int, prompt string, res executo
 	contenido := fmt.Sprintf("=== esqueleto %d · %d tokens de entrada · %d de salida · $%.3f\n--- prompt\n%s\n--- respuesta\n%s\n--- stderr\n%s\n",
 		vuelta+1, res.Tokens.Input, res.Tokens.Output, res.Tokens.CostUSD, prompt, res.Text, res.Stderr)
 	_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("esqueleto-%d.log", vuelta+1)), []byte(contenido), 0o644)
+}
+
+// tomarCapturas fotografía la interfaz si el proyecto declara cómo
+// levantarla. Degrada en abierto: sin navegador (y sin poder instalarlo)
+// o si la app no levanta, avisa y sigue sin capturas.
+func tomarCapturas(ctx context.Context, dir string, p capturas.Pantallas, puerto int, outDir string) []string {
+	if p.Vacia() {
+		return nil
+	}
+	if capturas.Navegador() == "" {
+		out.Line("· instalando chrome-headless-shell para las capturas (una vez por máquina)")
+		if err := capturas.Instalar(ctx); err != nil {
+			out.Line("· sin capturas · %s", err)
+			return nil
+		}
+	}
+	fotos, err := capturas.Tomar(ctx, dir, p, puerto, room.Entorno(dir), outDir)
+	if err != nil {
+		out.Line("· sin capturas · %s", err)
+		return nil
+	}
+	return fotos
 }

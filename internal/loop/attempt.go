@@ -54,6 +54,8 @@ type Attempt struct {
 type Revision struct {
 	Aprobada bool   `json:"aprobada"`
 	Cambios  string `json:"cambios,omitempty"` // qué corregir, si no está aprobada
+	// Visual es la crítica de la revisión con capturas, si la devolvió.
+	Visual string `json:"visual,omitempty"`
 }
 
 // Tokens is the token spend of one attempt.

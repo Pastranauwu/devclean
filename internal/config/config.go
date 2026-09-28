@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Pastranauwu/devclean/internal/capturas"
 	"github.com/Pastranauwu/devclean/internal/kv"
 	"github.com/Pastranauwu/devclean/internal/skills"
 )
@@ -75,6 +76,10 @@ type Config struct {
 	// cada string es una cadena como "api → dominio → datos". Se verifica
 	// en la esclusa de salida que ningún import del diff viole el orden.
 	ReglasImport []string `json:"reglas_import,omitempty"`
+	// Pantallas dice cómo levantar la interfaz web y qué capturar. La
+	// declara el arquitecto; vacía = el proyecto no tiene web o no se
+	// sabe levantarla, y no hay capturas.
+	Pantallas capturas.Pantallas `json:"pantallas,omitempty"`
 }
 
 // Proveedor es un rol del motor de agentes: qué modelo usa y de
@@ -196,6 +201,11 @@ func (c Config) Save(root string) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "base: %s\n", c.Base)
 	fmt.Fprintf(&b, "pruebas: %s\n", c.Pruebas)
+	if !c.Pantallas.Vacia() {
+		fmt.Fprintf(&b, "pantallas_levantar: %s\n", kv.Quote(c.Pantallas.Levantar))
+		fmt.Fprintf(&b, "pantallas_url: %s\n", kv.Quote(c.Pantallas.URL))
+		fmt.Fprintf(&b, "pantallas_rutas: %s\n", kv.MarshalList(c.Pantallas.Rutas))
+	}
 	if c.Cli != "" {
 		fmt.Fprintf(&b, "cli: %s\n", c.Cli)
 	}
@@ -454,6 +464,16 @@ func Parse(data []byte) (Config, error) {
 				return cfg, fmt.Errorf("config.yml: línea %d · %s", p.Line, err)
 			}
 			cfg.ZonasProhibidas = list
+		case "pantallas_levantar":
+			cfg.Pantallas.Levantar = kv.Unquote(p.Value)
+		case "pantallas_url":
+			cfg.Pantallas.URL = kv.Unquote(p.Value)
+		case "pantallas_rutas":
+			list, err := kv.ParseList(p.Value)
+			if err != nil {
+				return cfg, fmt.Errorf("config.yml: línea %d · %s", p.Line, err)
+			}
+			cfg.Pantallas.Rutas = list
 		case "patrones_prueba":
 			list, err := kv.ParseList(p.Value)
 			if err != nil {

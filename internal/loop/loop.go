@@ -76,6 +76,17 @@ type Examinador interface {
 // decía la tarea (happy path, caso exacto del test). Un revisor que
 // pide cambios deja la tarea roja y su veredicto entra como contexto
 // del intento siguiente — es revisión temprana por tarea, no al final.
+// TopeVisual es cuántas veces la revisión visual puede devolver una
+// tarea. Después se acepta lo que haya: el gusto de un modelo no debe
+// quemar todos los intentos.
+const TopeVisual = 2
+
+// RevisorVisual levanta la interfaz del cuarto, la captura y juzga si
+// cumple lo que pide la tarea. Degrada en abierto: sin capturas aprueba.
+type RevisorVisual interface {
+	Revisar(ctx context.Context, cuarto room.Room, tarea task.Task, intento int) (aprobada bool, cambios string, tokens Tokens)
+}
+
 type Revisor interface {
 	// Revisar devuelve si la tarea puede darse por cumplida y, si no,
 	// qué corregir. El diff es el trabajo acumulado desde la base.
@@ -152,6 +163,11 @@ type Options struct {
 	// se inyecta como contexto del siguiente. Su gasto cuenta igual que
 	// el del agente (presupuesto y ventanas).
 	Revisor Revisor
+
+	// RevisorVisual, si no es nil, mira capturas de la interfaz después
+	// de que el código pasó pruebas y revisor, en las tareas que tocan
+	// archivos de interfaz. Como mucho TopeVisual críticas por tarea.
+	RevisorVisual RevisorVisual
 
 	// Presupuesto, si no es nil, recibe el gasto de cada intento. Devuelve
 	// false cuando la corrida ya quemó su tope: el bucle se detiene con el
@@ -236,6 +252,14 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	// llamada, pero el número que se registra sigue la cuenta de la tarea
 	// para que un intento nuevo no pise el intento-N.log de otro
 	previos, _ := ReadAttempts(o.Root, o.Task.ID)
+	// las críticas visuales ya recibidas cuentan contra el tope aunque se
+	// haya escalado o retomado: un modelo exigente no quema intentos
+	rechazosVisuales := 0
+	for _, p := range previos {
+		if p.Revision != nil && p.Revision.Visual != "" {
+			rechazosVisuales++
+		}
+	}
 
 	// tope por tarea, no por llamada: escalar, retomar y --reintentar
 	// vuelven a llamar a Run, y un límite de 3 terminó en 15 intentos.
@@ -481,24 +505,47 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		// intento queda rojo y su veredicto va al prompt siguiente.
 		// Degrada en abierto: un revisor que no responde no frena
 		// trabajo que ya está verde.
-		if code != nil && *code == 0 && o.Revisor != nil {
+		visual := o.RevisorVisual != nil && skills.TocaUI(o.Task.TocarSolo) && rechazosVisuales < TopeVisual
+		if code != nil && *code == 0 && (o.Revisor != nil || visual) {
 			avisar(intento, FaseRevision)
-			var diffClaro string
-			if d, err := gitRun(o.Room.Path, "diff", base+"...HEAD"); err == nil {
-				diffClaro = d
+			gastar := func(tk Tokens) {
+				acumulado.Entrada += tk.Entrada
+				acumulado.Salida += tk.Salida
+				acumulado.CacheLeida += tk.CacheLeida
+				acumulado.CacheEscrita += tk.CacheEscrita
+				m := tk.Gasto()
+				if o.Ventanas != nil && o.Proveedor != "" {
+					_ = o.Ventanas.Registrar(o.Proveedor, m)
+				}
+				if o.Presupuesto != nil {
+					_ = o.Presupuesto.Gastar(m)
+				}
 			}
-			aprobada, cambios, tk := o.Revisor.Revisar(ctx, o.Room.Path, o.Task, diffClaro, intento)
-			a.Revision = &Revision{Aprobada: aprobada, Cambios: cambios}
-			acumulado.Entrada += tk.Entrada
-			acumulado.Salida += tk.Salida
-			acumulado.CacheLeida += tk.CacheLeida
-			acumulado.CacheEscrita += tk.CacheEscrita
-			m := tk.Gasto()
-			if o.Ventanas != nil && o.Proveedor != "" {
-				_ = o.Ventanas.Registrar(o.Proveedor, m)
+			aprobada, motivo := true, ""
+			a.Revision = &Revision{Aprobada: true}
+			if o.Revisor != nil {
+				var diffClaro string
+				if d, err := gitRun(o.Room.Path, "diff", base+"...HEAD"); err == nil {
+					diffClaro = d
+				}
+				var cambios string
+				var tk Tokens
+				aprobada, cambios, tk = o.Revisor.Revisar(ctx, o.Room.Path, o.Task, diffClaro, intento)
+				a.Revision = &Revision{Aprobada: aprobada, Cambios: cambios}
+				gastar(tk)
+				motivo = "el revisor pide cambios sobre tests verdes:\n" + cambios
 			}
-			if o.Presupuesto != nil {
-				_ = o.Presupuesto.Gastar(m)
+			// el código está bien: falta que se vea. Solo lo mira quien ve
+			// capturas; las pruebas de UI no saben si un efecto se nota
+			if aprobada && visual {
+				okV, cambiosV, tk := o.RevisorVisual.Revisar(ctx, o.Room, o.Task, intento)
+				gastar(tk)
+				if !okV {
+					rechazosVisuales++
+					aprobada = false
+					a.Revision = &Revision{Aprobada: false, Visual: cambiosV}
+					motivo = "la revisión visual (capturas de tu pantalla en el celular) pide cambios:\n" + cambiosV
+				}
 			}
 			if err := s.Append(a); err != nil {
 				return Outcome{}, err
@@ -506,7 +553,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			if aprobada {
 				return Outcome{Verde: true, Intentos: intento}, nil
 			}
-			prevErr = "el revisor pide cambios sobre tests verdes:\n" + cambios
+			prevErr = motivo
 			continue
 		}
 

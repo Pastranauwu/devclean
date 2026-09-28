@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pastranauwu/devclean/internal/capturas"
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/task"
@@ -50,7 +51,10 @@ type Resultado struct {
 	// devclean no la detecta, y la esclusa de salida la necesita.
 	Pruebas      string `json:"pruebas"`
 	Arquitectura string `json:"arquitectura"`
-	Tareas       []plan.Borrador
+	// Pantallas dice cómo levantar la interfaz web y qué capturar: lo
+	// usan el revisor visual y la entrega. Vacío si no hay web.
+	Pantallas capturas.Pantallas `json:"pantallas"`
+	Tareas    []plan.Borrador
 }
 
 // Pedido es lo que el humano quiere, ya redactado.
@@ -64,6 +68,10 @@ type Pedido struct {
 	// SinDocker apaga la exigencia de compose: el humano lo pidió en sus
 	// reglas (una librería o un CLI no se despliegan).
 	SinDocker bool
+	// Capturas son fotos de cómo se ve hoy la interfaz, en tamaño
+	// celular. Un plan visual hecho sin verlas planea contra el código,
+	// no contra lo que ve el usuario.
+	Capturas []string
 }
 
 // Prompt arma la instrucción del arquitecto. Lo fijo va primero para que
@@ -82,11 +90,20 @@ func Prompt(p Pedido, c plan.Contexto) string {
 	if strings.TrimSpace(p.Previo) != "" {
 		b.WriteString("\nYa existe " + Documento + ". Evoluciónalo: agrega lo nuevo, ajusta lo que cambia y no reescribas lo que ya funciona. Las tareas son solo para lo nuevo o lo que cambia.\n")
 	}
+	if len(p.Capturas) > 0 {
+		b.WriteString("\nASÍ SE VE HOY (capturas en tamaño celular; ábrelas con tu herramienta para leer archivos antes de planear)\n")
+		for _, c := range p.Capturas {
+			b.WriteString("- " + c + "\n")
+		}
+		b.WriteString("Si el pedido toca cómo se ve, tu plan tiene que cambiar lo que ves ahí de forma que se note.\n")
+	}
 	b.WriteString(`
 SI EL REPOSITORIO YA TIENE CÓDIGO
 - Lo que ya funciona NO se convierte en stub. Respeta el stack, las librerías, el sistema de diseño y las convenciones que ya hay; no migres nada que el pedido no pida.
 - Un cambio a código existente es una tarea sin stub: en "como" va qué cambiar, dónde y "Casos:" del comportamiento nuevo (entrada → salida o lo que se ve en pantalla). Si el cambio agrega funciones, métodos o componentes nuevos, esos sí van como stub con su contrato.
 - El "listo_cuando" de un cambio corre una prueba NUEVA del comportamiento nuevo (un archivo que hoy no existe): las pruebas que ya existen pasan hoy y no sirven de oráculo. Esas pruebas tienen que seguir pasando.
+- Si el pedido es visual (rediseño, estilo, experiencia de uso), el resultado tiene que VERSE distinto, no solo cambiar clases. Las pruebas existentes que fijan clases CSS o estilos no protegen nada del usuario: reescríbelas o bórralas tú en este esqueleto para que no frenen el rediseño. No hagas cambios "aditivos" para esquivarlas.
+- Las pruebas de interfaz que pidas verifican lo que el usuario ve y hace (textos, roles, estados, navegación), no clases CSS: cómo se ve lo juzga una revisión con capturas.
 `)
 	b.WriteString(`
 TU ENTREGA ES UN PLANO EN CÓDIGO, NO UNA IMPLEMENTACIÓN
@@ -124,6 +141,7 @@ RESPONDE AL FINAL SOLO CON ESTE JSON
   "integracion": "comando que corre la prueba de punta a punta (la escribe la tarea final)",
   "pruebas": "comando que corre TODA la suite del proyecto (todas las carpetas y lenguajes)",
   "arquitectura": "resumen de 5 a 15 líneas; lo completo vive en ` + Documento + `",
+  "pantallas": {"levantar": "comando que sirve la app completa en el puerto $PORT, con build si hace falta (omite todo el campo si no hay interfaz web)", "url": "http://localhost:$PORT", "rutas": ["/", "cada pantalla principal, con su ruta tal como se abre en el navegador"]},
   "tareas": [
     {
       "titulo": "frase corta en minúscula",

@@ -56,6 +56,7 @@ var herramientasClaude = map[Rol]string{
 	RolImplementador: "Bash,Read,Edit,Write",
 	RolTexto:         "",
 	RolPlanificador:  "Read,Bash",
+	RolVisual:        "Read",
 }
 
 func (e Claude) Run(ctx context.Context, req Request) (Result, error) {

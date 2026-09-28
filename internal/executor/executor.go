@@ -60,6 +60,8 @@ const (
 	// revisor, constitución.
 	RolTexto        Rol = "texto"
 	RolPlanificador Rol = "planificador"
+	// RolVisual solo lee archivos: mira las capturas de la interfaz.
+	RolVisual Rol = "visual"
 )
 
 // Result is what one invocation produced.

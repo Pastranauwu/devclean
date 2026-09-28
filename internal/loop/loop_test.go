@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -621,5 +622,58 @@ func TestRunProtegeLaPruebaQueYaExistia(t *testing.T) {
 	as, _ := ReadAttempts(root, tk.ID)
 	if len(as) != 1 || strings.Join(as[0].RevertidosFueraDeAlcance, ",") != "src/suma.test.js" {
 		t.Fatalf("%+v", as)
+	}
+}
+
+// visualExigente nunca queda conforme: comprueba que su crítica llegue al
+// intento siguiente y que el tope corte el gusto del modelo
+type visualExigente struct{ veces int }
+
+func (v *visualExigente) Revisar(context.Context, room.Room, task.Task, int) (bool, string, Tokens) {
+	v.veces++
+	return false, "el vidrio no se nota: el fondo es plano", Tokens{Entrada: 4, Salida: 2}
+}
+
+func TestRevisionVisualDevuelveHastaElTope(t *testing.T) {
+	root := repoConCommit(t)
+	ag := &agenteFalso{nombre: "falso", tokens: Tokens{Entrada: 10, Salida: 5}}
+	var prompts []string
+	ag.hacer = func(veces int, req Request) (string, int, error) {
+		prompts = append(prompts, req.Prompt)
+		escribir(t, req.RoomPath, "src/done.txt", fmt.Sprintf("%d\n", veces))
+		return "", 0, nil
+	}
+	tk := tareaDePrueba()
+	tk.LimiteIntentos = 5
+	tk.TocarSolo = append(tk.TocarSolo, "src/Pagina.tsx")
+	opts := optsDePrueba(t, root, ag, tk)
+	v := &visualExigente{}
+	opts.RevisorVisual = v
+
+	outcome, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !outcome.Verde || outcome.Intentos != TopeVisual+1 || v.veces != TopeVisual {
+		t.Fatalf("outcome = %+v, revisiones = %d; quiero verde tras %d críticas", outcome, v.veces, TopeVisual)
+	}
+	if !strings.Contains(prompts[1], "el vidrio no se nota") {
+		t.Errorf("la crítica visual no llegó al intento siguiente:\n%s", prompts[1])
+	}
+}
+
+// una tarea que no toca interfaz no gasta revisión visual
+func TestSinInterfazNoHayRevisionVisual(t *testing.T) {
+	root := repoConCommit(t)
+	ag := &agenteFalso{nombre: "falso"}
+	ag.hacer = func(_ int, req Request) (string, int, error) {
+		escribir(t, req.RoomPath, "src/done.txt", "x\n")
+		return "", 0, nil
+	}
+	opts := optsDePrueba(t, root, ag, tareaDePrueba())
+	v := &visualExigente{}
+	opts.RevisorVisual = v
+	if outcome, err := Run(context.Background(), opts); err != nil || !outcome.Verde || v.veces != 0 {
+		t.Fatalf("outcome = %+v err = %v revisiones = %d", outcome, err, v.veces)
 	}
 }

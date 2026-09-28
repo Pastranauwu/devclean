@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pastranauwu/devclean/internal/capturas"
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/task"
@@ -226,8 +228,22 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 		apuntar(Paso{"aceptación", true, command})
 	}
 
+	// capturas del resultado integrado para el humano: el juicio estético
+	// final es suyo, y las pruebas no lo ven. Nunca frena la entrega
+	var fotos []string
+	if !o.Config.Pantallas.Vacia() && !o.DryRun {
+		dir := filepath.Join(o.Root, ".devclean", "pr", "capturas")
+		_ = os.RemoveAll(dir)
+		var err error
+		if fotos, err = capturas.Tomar(ctx, path, o.Config.Pantallas, puertoLibre(), room.Entorno(path), dir); err != nil {
+			apuntar(Paso{"capturas", true, "sin capturas · " + err.Error()})
+		} else {
+			apuntar(Paso{"capturas", true, fmt.Sprintf("%d pantallas en %s", len(fotos), dir)})
+		}
+	}
+
 	// 5. un solo PR
-	cuerpo := cuerpoEntrega(ordenadas, e.Tareas)
+	cuerpo := cuerpoEntrega(ordenadas, e.Tareas) + seccionCapturas(fotos)
 	titulo := o.Titulo
 	if titulo == "" && len(ordenadas) > 0 {
 		titulo = ordenadas[0].Titulo
@@ -584,4 +600,29 @@ func comentarPR(ctx context.Context, root, url, cuerpo string) error {
 	cmd := exec.CommandContext(ctx, gh, "pr", "comment", url, "--body", cuerpo)
 	cmd.Dir = root
 	return cmd.Run()
+}
+
+// seccionCapturas agrega las fotos al PR. Las rutas son relativas al
+// markdown de .devclean/pr: se ven en el PR local; en GitHub quedan como
+// referencia a los archivos de la máquina.
+func seccionCapturas(fotos []string) string {
+	if len(fotos) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n## Capturas (celular)\n\n")
+	for _, f := range fotos {
+		fmt.Fprintf(&b, "![%s](capturas/%s)\n", filepath.Base(f), filepath.Base(f))
+	}
+	return b.String()
+}
+
+// puertoLibre pide al sistema un puerto sin uso para levantar la app.
+func puertoLibre() int {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 18999
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
 }

@@ -18,6 +18,9 @@ var agenteOpenCode = map[Rol]string{
 	RolImplementador: "devclean-implementador",
 	RolTexto:         "devclean-texto",
 	RolPlanificador:  "devclean-planificador",
+	// ponytail: opencode no tiene un agente de solo lectura; el del
+	// planificador lee y corre comandos. Uno propio si hace falta cerrarlo.
+	RolVisual: "devclean-planificador",
 }
 
 // entornoOpenCode trae los agentes de devclean sin tocar la config del

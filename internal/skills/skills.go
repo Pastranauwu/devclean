@@ -85,7 +85,9 @@ const UI = `Interfaz:
 - Mobile-first: una columna en pantallas chicas que se abre en las grandes; objetivos táctiles de 44px o más.
 - Formularios: etiqueta visible en cada campo, el error junto al campo, el botón principal deshabilitado mientras envía.
 - Accesible: HTML semántico (button, nav, main, títulos en orden), texto alternativo en imágenes, foco visible, nada que se entienda solo por color.
-- Una acción principal por pantalla; la jerarquía con tamaño, peso y espacio, no con colores extra.`
+- Una acción principal por pantalla; la jerarquía con tamaño, peso y espacio, no con colores extra.
+- Si el contrato pide un estilo, que se note a simple vista en la pantalla: un revisor mira capturas del resultado. Un efecto que casi no se ve cuenta como no hecho.
+- Las pruebas de interfaz verifican lo que el usuario ve y hace (textos, roles, estados), no clases CSS.`
 
 // extensionesUI son los archivos que dibujan interfaz.
 var extensionesUI = []string{".tsx", ".jsx", ".vue", ".svelte", ".astro", ".html", ".css", ".scss", ".erb", ".blade.php", ".twig", ".jinja", ".j2", ".hbs", ".razor", ".cshtml"}

@@ -581,3 +581,24 @@ func TestAgentesPagados(t *testing.T) {
 		t.Errorf("no sobrevive al guardar: %v %d", err, got.AgentesPagados)
 	}
 }
+
+func TestPantallasSobrevivenAlGuardar(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".devclean"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Base: "main"}
+	cfg.Pantallas.Levantar = "cd frontend && npx vite --port $PORT --host 127.0.0.1"
+	cfg.Pantallas.URL = "http://127.0.0.1:$PORT"
+	cfg.Pantallas.Rutas = []string{"/", "/#/agregar"}
+	if err := cfg.Save(root); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Pantallas.Levantar != cfg.Pantallas.Levantar || got.Pantallas.URL != cfg.Pantallas.URL || len(got.Pantallas.Rutas) != 2 || got.Pantallas.Rutas[1] != "/#/agregar" {
+		t.Fatalf("%+v", got.Pantallas)
+	}
+}
