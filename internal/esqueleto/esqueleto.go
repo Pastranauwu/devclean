@@ -114,7 +114,7 @@ CÓMO REPARTIR
 - Cada tarea escribe su propia prueba a partir de los "Casos:" de su contrato: "listo_cuando" corre ese archivo de prueba (que hoy no existe) y "tocar_solo" incluye el stub y ese archivo de prueba.
 - El agente es un modelo barato: no rediseña ni elige librerías. Lo que necesite decidir tiene que estar en el contrato.
 - Las dependencias entre módulos entran por parámetro o constructor (puertos), para que cada módulo se pruebe con fakes sin esperar a los demás. "depende_de" solo cuando un módulo necesita de verdad la implementación real de otro.
-- Una tarea final escribe la prueba de punta a punta del flujo principal: depende de todas y su "listo_cuando" es el comando de "integracion".
+- Una tarea final escribe la prueba de punta a punta del flujo principal: depende de todas y su "listo_cuando" es el comando de "integracion". Si ya existe una prueba de punta a punta, esa pasa hoy: la tarea final escribe una NUEVA para lo que cambia y "integracion" corre la nueva.
 
 ANTES DE RESPONDER: el comando de "verificar" pasa con los stubs (compila, typecheck o importa todo). Nada más.
 
@@ -249,6 +249,14 @@ func Problemas(ctx context.Context, v Verificacion, r Resultado) []string {
 	}
 	if strings.TrimSpace(r.Integracion) != "" && !integracion {
 		out = append(out, "ninguna tarea tiene como listo_cuando el comando de \"integracion\": falta la tarea final que escribe la prueba de punta a punta")
+	}
+	// la esclusa rechaza un listo_cuando que ya pasa: si "integracion" es
+	// la prueba de punta a punta que ya existía, la tarea final muere
+	// antes de correr y nada prueba lo nuevo (closet, al renovar la UI)
+	if strings.TrimSpace(r.Integracion) != "" && integracion {
+		if _, code := correr(ctx, dir, r.Integracion, v.Timeout, v.Env); code != nil && *code == 0 {
+			out = append(out, fmt.Sprintf("\"integracion\" (%s) ya pasa hoy: es una prueba que ya existía y no prueba lo nuevo; la tarea final tiene que escribir una prueba de punta a punta nueva para lo que cambia", r.Integracion))
+		}
 	}
 	return out
 }

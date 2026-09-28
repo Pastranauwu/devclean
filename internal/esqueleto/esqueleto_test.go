@@ -132,3 +132,17 @@ func TestProblemasExigeComposeYDockerignore(t *testing.T) {
 		t.Errorf("sin compose ni .dockerignore no se quejó: %q", todo)
 	}
 }
+
+// en un proyecto existente la prueba de punta a punta ya pasa: reusarla
+// deja a la tarea final rechazada por la esclusa y lo nuevo sin probar
+func TestProblemasRechazaIntegracionQueYaPasa(t *testing.T) {
+	dir := planoPython(t)
+	r := Resultado{
+		Verificar:   "python3 -m compileall -q calc",
+		Integracion: "true",
+		Tareas:      []plan.Borrador{tarea("punta a punta", "true", "tests/test_e2e.py")},
+	}
+	if ps := strings.Join(Problemas(context.Background(), Verificacion{Dir: dir, Timeout: time.Minute}, r), "\n"); !strings.Contains(ps, "ya pasa hoy") {
+		t.Errorf("una integración que ya pasa no se rechazó: %q", ps)
+	}
+}
