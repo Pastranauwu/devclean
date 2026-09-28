@@ -18,6 +18,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/plan"
 	"github.com/Pastranauwu/devclean/internal/room"
+	"github.com/Pastranauwu/devclean/internal/skills"
 	"github.com/Pastranauwu/devclean/internal/spec"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
@@ -158,6 +159,12 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 			problemas = append(problemas, esqueleto.Problemas(ctx, esqueleto.Verificacion{
 				Dir: r.Path, Base: r.Commit, Docker: !sinDocker, Timeout: pruebaTimeout, Env: room.Entorno(r.Path),
 			}, res)...)
+			// sin script, la revisión visual solo ve cada ruta recién
+			// abierta: en closet el formulario que se cambiaba solo aparece
+			// después de elegir una foto, y nadie lo vio nunca
+			if p, _ := cfg.Pantallas.Completar(res.Pantallas); !p.Vacia() && p.Script == "" && tocaUI(res.Tareas) {
+				problemas = append(problemas, "hay tareas de interfaz y falta \"pantallas.script\": escribe un script que recorra con un navegador los flujos que cambian (p. ej. elegir una foto y ver el formulario) y guarde un PNG por paso en $CAPTURAS; sin él la revisión visual no ve esas pantallas")
+			}
 			if c := cicloDelPlan(root, res.Tareas); c != nil {
 				problemas = append(problemas, "dependencia circular en depende_de: "+strings.Join(c, " → ")+" · quita una de esas dependencias")
 			}
@@ -241,6 +248,14 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	bs := res.Tareas
 	// sin patrones de prueba: con el plano, cada tarea escribe su prueba
 	sanearAlcance(bs, zonas, []string{}, pctx.Ocupados)
+	// la interfaz la hace el modelo pesado: en closet 9 tareas de modelos
+	// baratos dieron parches sin diseño, y el arquitecto sigue marcando
+	// "media" aunque el prompt pida "pesada"
+	for i := range bs {
+		if skills.TocaUI(bs[i].TocarSolo) {
+			bs[i].Peso = "pesada"
+		}
+	}
 	idsRelleno, err := idsCorrelativos(config.TasksDir(root), len(bs)+1)
 	if err != nil {
 		return err
@@ -382,4 +397,13 @@ func cicloDelPlan(root string, bs []plan.Borrador) []string {
 	}
 	traducirDependencias(copia, ids[1:], idsPrevios(config.TasksDir(root)))
 	return ciclo(copia, ids[1:])
+}
+
+func tocaUI(bs []plan.Borrador) bool {
+	for _, b := range bs {
+		if skills.TocaUI(b.TocarSolo) {
+			return true
+		}
+	}
+	return false
 }
