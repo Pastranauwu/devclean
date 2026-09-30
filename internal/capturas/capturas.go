@@ -241,8 +241,11 @@ func capturar(ctx context.Context, nav, url, foto string, ancho, alto int) error
 		return err
 	}
 	defer os.RemoveAll(perfil)
+	// Sin sandbox: Ubuntu 24.04 veda los user namespaces por AppArmor y
+	// chrome aborta al arrancar (core dumped). Playwright hace lo mismo;
+	// solo abre la app del propio proyecto.
 	args := []string{
-		"--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
+		"--no-sandbox", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
 		"--user-data-dir=" + perfil,
 		fmt.Sprintf("--window-size=%d,%d", ancho, alto),
 		"--virtual-time-budget=6000",
