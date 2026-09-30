@@ -23,6 +23,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # el mismo navegador que tomarCapturas instala: el google-chrome
+      # del runner se cuelga con --screenshot en headless
+      - name: navegador
+        run: npx --yes playwright install chromium-headless-shell
+
       - name: test
         run: go test ./...
 
