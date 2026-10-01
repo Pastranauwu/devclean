@@ -362,7 +362,10 @@ Sirve para señalar huecos evidentes, no para demostrar corrección semántica.
 10. Ejecuta feature acceptance y entrega el PR solo si pasan las compuertas.
 
 En Go y Python, un examinador ciego puede redactar pruebas desde la frontera
-pública antes de la implementación y sellar una parte para la entrega. La
+pública antes de la implementación. En tareas nacidas del esqueleto también
+puede hacerlo para TypeScript y JavaScript desde firmas y `Casos:`; trabaja en
+un directorio separado sin acceso al código del cuarto. En ambos caminos sella
+una parte de la suite para la entrega. La
 esclusa individual revisa rebase, historial, ruido, secretos, presupuesto,
 interfaces, reglas de imports, bisectabilidad, suite oculta y handoff.
 
@@ -421,7 +424,7 @@ Planificación, diagnóstico y operación:
 | `devclean ps` | Muestra tareas y worktrees activos, estilo compose. |
 | `devclean standup` | Resume avance, bloqueos y colisiones desde artefactos, sin conversaciones entre agentes. |
 | `devclean report` | Muestra las métricas del proyecto y su tendencia. |
-| `devclean usage` | Muestra consumo por ventanas de 5h, semanal y mensual contra el presupuesto. |
+| `devclean usage` | Muestra consumo por ventanas y gasto registrado por tarea, incluido el arquitecto cuando hay logs; USD es precio de lista informado por el CLI, no el cargo de una suscripción. |
 | `devclean doctor` | Verifica Git, configuración, credenciales y ejecutores. |
 | `devclean init` | Crea `.devclean/` explícitamente; `up` también prepara lo necesario. |
 | `devclean constitution` | Genera `.devclean/constitution.md`, que se incorpora a planificación y prompts. |
@@ -610,9 +613,11 @@ devclean eleva el nivel de evidencia; no demuestra que el software sea correcto.
   `acceptance.command`: si lo declaras, la costura es tuya.
 - **`listo_cuando` debe fallar antes del cambio.** Una suite general que ya está
   verde no prueba que una tarea nueva exista.
-- **Los hidden tests solo se generan automáticamente para Go y Python**, y
-  requieren una frontera importable. `package main`, Node y Rust quedan fuera
-  del examinador automático actual.
+- **El examen automático no cubre todos los lenguajes ni tareas.** Go y Python
+  requieren una frontera importable; los stubs de esqueleto también pueden
+  examinarse en TypeScript/JavaScript si el proyecto tiene su toolchain.
+  `package main`, Rust y tareas Node antiguas sin contrato de esqueleto quedan
+  fuera del flujo nuevo.
 - **La suite oculta depende de la respuesta del examinador.** Si no produce el
   bloque oculto, ese gate se omite; la suite visible puede seguir existiendo.
 - **Las pruebas ocultas están separadas, no blindadas.** Viven fuera del worktree
