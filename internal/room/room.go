@@ -1,11 +1,12 @@
 // Package room manages the isolated workrooms: one git
-// worktree per active task under .devclean/rooms/<id>/, on branch
+// worktree per active task under Dir(root)/<id>/ (outside the project tree), on branch
 // devclean/<id>, with its own dependencies and port. Rooms are
 // destroyed when the task ends.
 package room
 
 import (
 	"context"
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"net"
@@ -29,9 +30,33 @@ type Room struct {
 	Commit string `json:"commit,omitempty"`
 }
 
-// Dir returns the rooms directory of the repository at root.
+// Dir es la carpeta de cuartos del repositorio en root. Vive FUERA del
+// árbol del proyecto (~/.devclean/rooms/<nombre>-<hash>): un cuarto es
+// una copia entera del repo, y adentro cualquier herramienta que recorra
+// el directorio (vitest, jest, linters, buscadores) la toma por código
+// del proyecto. En soundlike `npx vitest run` en la raíz corría 305
+// archivos de 30 cuartos, tardaba 10 veces más y fallaba con pruebas
+// viejas. DEVCLEAN_ROOMS elige otra carpeta. Un repo que ya tiene
+// cuartos en .devclean/rooms los sigue usando hasta que se vacíen.
 func Dir(root string) string {
-	return filepath.Join(root, ".devclean", "rooms")
+	viejo := filepath.Join(root, ".devclean", "rooms")
+	if es, _ := os.ReadDir(viejo); len(es) > 0 {
+		return viejo
+	}
+	base := os.Getenv("DEVCLEAN_ROOMS")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return viejo
+		}
+		base = filepath.Join(home, ".devclean", "rooms")
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		abs = root
+	}
+	hash := sha1.Sum([]byte(abs))
+	return filepath.Join(base, fmt.Sprintf("%s-%x", filepath.Base(abs), hash[:4]))
 }
 
 // Branch returns the branch name of a task's room.
@@ -447,7 +472,10 @@ func bajoNode(path, dir string) bool {
 
 // artefactos son carpetas que se generan o se instalan, nunca código:
 // ni se versionan ni se buscan manifiestos adentro.
-var artefactos = []string{"node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "dist", "build", "target", ".next", ".nuxt", ".svelte-kit", "coverage", ".turbo", ".gradle", "vendor"}
+var artefactos = []string{"node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "dist", "build", "target", ".next", ".nuxt", ".svelte-kit", "coverage", ".turbo", ".gradle", "vendor",
+	// lo de devclean que es de la máquina y no del plan: también para
+	// repos que se iniciaron antes de que init lo ignorara
+	".devclean/rooms", ".devclean/runs", ".devclean/corridas"}
 
 // Artefacto reporta si name es una carpeta de dependencias o de build.
 func Artefacto(name string) bool {

@@ -97,9 +97,10 @@ func runInit(cwd, pruebasFlag, plantilla, cli string, in io.Reader, sinSkills bo
 	if err := os.MkdirAll(config.TasksDir(root), 0o755); err != nil {
 		return err
 	}
-	// los cuartos son worktrees: nunca deben versionarse
+	// lo que se versiona es el plan (tasks, config, feature, intención);
+	// cuartos, logs de corridas y capturas son de la máquina
 	gitignore := filepath.Join(config.Dir(root), ".gitignore")
-	if err := os.WriteFile(gitignore, []byte("rooms/\n"), 0o644); err != nil {
+	if err := os.WriteFile(gitignore, []byte("rooms/\nruns/\ncorridas/\n"), 0o644); err != nil {
 		return err
 	}
 	cfg := config.Config{
