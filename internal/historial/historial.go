@@ -64,6 +64,9 @@ type Entrada struct {
 	// Gitignore son las líneas que Archivar puso en el .gitignore del
 	// proyecto para que el historial se pueda versionar; vacío si no lo tocó.
 	Gitignore []string
+	// Tareas son las tareas del feature archivado: su trabajo ya está en
+	// la rama de entrega y sus cuartos se pueden liberar.
+	Tareas []string
 }
 
 // Archivar guarda el spec en specPath como la siguiente entrada del
@@ -101,7 +104,7 @@ func Archivar(root, specPath string) (Entrada, error) {
 	if err != nil {
 		return Entrada{}, err
 	}
-	e := Entrada{Nombre: fmt.Sprintf("%04d-%s", n, slug(s.Feature))}
+	e := Entrada{Nombre: fmt.Sprintf("%04d-%s", n, slug(s.Feature)), Tareas: a.Tareas}
 	e.Dir = filepath.Join(Dir(root), e.Nombre)
 	// antes de escribir nada: si git va a ignorar el historial, archivar
 	// dejaría el spec vacío y la entrada sin versionar

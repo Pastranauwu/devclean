@@ -241,6 +241,13 @@ func Destroy(ctx context.Context, root, id string) error {
 	return nil
 }
 
+// Soltar quita la carpeta de un cuarto y deja su rama: es lo que se hace
+// con la rama de entrega, que es el PR y tiene que seguir existiendo.
+func Soltar(ctx context.Context, root, id string) {
+	_, _ = git(ctx, root, "worktree", "remove", "--force", filepath.Join(Dir(root), id))
+	_, _ = git(ctx, root, "worktree", "prune")
+}
+
 // freePort returns a port that was free a moment ago. Ports are
 // assigned, never fixed.
 func freePort() (int, error) {

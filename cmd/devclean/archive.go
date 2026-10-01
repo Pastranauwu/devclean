@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"github.com/spf13/cobra"
 
 	"github.com/Pastranauwu/devclean/internal/historial"
@@ -39,6 +40,11 @@ Se corre en la rama del PR, antes del merge.`,
 				for _, l := range e.Gitignore {
 					out.Line("    %s", l)
 				}
+			}
+			// el feature quedó entregado y archivado: sus cuartos (una
+			// copia del repo con dependencias por tarea) ya no sirven
+			if n := liberarCuartos(context.Background(), root, e.Tareas); n > 0 {
+				out.Line("· %d cuartos liberados", n)
 			}
 			out.Line("✓ archivado %s · spec vacío para el siguiente feature · commit hecho", e.Nombre)
 			return nil
