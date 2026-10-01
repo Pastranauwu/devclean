@@ -39,7 +39,10 @@ type Limites struct {
 type Spec struct {
 	Version int    `json:"version"`
 	Feature string `json:"feature"`
-	Agente  string `json:"agente,omitempty"`
+	// Motivo es por qué se pide el feature, en una o dos líneas. No entra
+	// al plan: va al índice del historial al archivar.
+	Motivo string `json:"motivo,omitempty"`
+	Agente string `json:"agente,omitempty"`
 	// Agentes es cuántas tareas corren en paralelo (el --agentes de run/up).
 	// El flag de la línea de comandos gana sobre el spec.
 	Agentes int `json:"agentes,omitempty"`
@@ -271,6 +274,9 @@ func Marshal(s Spec) []byte {
 	fmt.Fprintf(&b, "version: %d\n", s.Version)
 	if s.Feature != "" {
 		fmt.Fprintf(&b, "feature: %s\n", kv.Quote(s.Feature))
+	}
+	if s.Motivo != "" {
+		fmt.Fprintf(&b, "motivo: %s\n", kv.Quote(s.Motivo))
 	}
 	if s.Agente != "" {
 		fmt.Fprintf(&b, "agente: %s\n", s.Agente)

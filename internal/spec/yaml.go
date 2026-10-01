@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,11 @@ import (
 // corta histórica de tasks ("- hacer algo") y permiten agrupar requirements
 // y acceptance por categorías sin cambiar el modelo interno.
 func Parse(data []byte) (Spec, error) {
+	// `devclean archive` deja el spec en 0 bytes; sin esto el decoder
+	// respondía "EOF" y nada más
+	if strings.TrimSpace(string(data)) == "" {
+		return Spec{}, errors.New("el spec está vacío · escribe el siguiente feature (el anterior quedó en .devclean/historial)")
+	}
 	var root yaml.Node
 	dec := yaml.NewDecoder(strings.NewReader(string(data)))
 	if err := dec.Decode(&root); err != nil {
@@ -33,6 +39,8 @@ func Parse(data []byte) (Spec, error) {
 			err = val.Decode(&s.Version)
 		case "feature", "titulo":
 			err = val.Decode(&s.Feature)
+		case "motivo":
+			err = val.Decode(&s.Motivo)
 		case "agente":
 			err = val.Decode(&s.Agente)
 		case "agentes":

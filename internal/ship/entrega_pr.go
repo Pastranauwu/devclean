@@ -97,6 +97,9 @@ func (e Entrega) PrimerMotivo() string {
 // rompen juntas.
 func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	var e Entrega
+	// lo que quedó probado se guarda, pase o no: `devclean archive` solo
+	// archiva un feature cuya última entrega salió en verde
+	defer func() { _ = guardarAceptacion(o.Root, aceptacionDe(o, e)) }()
 	if o.Base == "" {
 		o.Base = "HEAD"
 	}

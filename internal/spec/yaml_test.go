@@ -36,3 +36,13 @@ rules:
 		}
 	}
 }
+
+func TestParseMotivo(t *testing.T) {
+	s, err := Parse([]byte("feature: exportar\nmotivo: soporte pierde 3h por semana\nrequirements:\n  - exportar a CSV\n"))
+	if err != nil || s.Motivo != "soporte pierde 3h por semana" {
+		t.Fatalf("motivo = %q err = %v", s.Motivo, err)
+	}
+	if IntencionDe(s).Igual(IntencionDe(Spec{Feature: "exportar", Requirements: []string{"exportar a CSV"}})) == false {
+		t.Error("el motivo no decide qué construir: cambiarlo no debe replanear")
+	}
+}

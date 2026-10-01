@@ -388,6 +388,10 @@ autenticado, además de `git`. Para PRs en GitHub necesitas `gh`; sin remoto
 
 `devclean doctor` comprueba las dependencias del entorno.
 
+`devclean archive` guarda el spec ya probado en `.devclean/historial/` con su
+resultado y el `motivo:` que declaraste, y lo vacía para el siguiente feature:
+los commits dicen qué cambió; el historial, por qué se pidió.
+
 ## Comandos
 
 Flujo principal:

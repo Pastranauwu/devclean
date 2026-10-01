@@ -442,3 +442,34 @@ func TestEntregarTodasOmiteLaTareaSinCambios(t *testing.T) {
 		t.Errorf("quiero solo el commit de T-002 · %q", log)
 	}
 }
+
+func TestAceptacionDeDistinguePasoFalloYNoCorrio(t *testing.T) {
+	o := OpcionesEntrega{
+		Tareas:     []task.Task{{ID: "T-001"}, {ID: "T-002"}},
+		Acceptance: []string{"go build ./...", "go test ./...", "make e2e"},
+	}
+	e := Entrega{Pasos: []Paso{
+		{"integradas", true, "go test ./..."},
+		{"aceptación", true, "go build ./..."},
+		{"aceptación", false, "go test ./... · FAIL"},
+	}}
+	a := aceptacionDe(o, e)
+	quiero := []Criterio{{"go build ./...", true, true}, {"go test ./...", true, false}, {"make e2e", false, false}}
+	if len(a.Criterios) != 3 || a.Criterios[0] != quiero[0] || a.Criterios[1] != quiero[1] || a.Criterios[2] != quiero[2] {
+		t.Errorf("criterios = %+v", a.Criterios)
+	}
+	if a.Aprobado || len(a.Tareas) != 2 || !strings.Contains(a.Motivo, "FAIL") {
+		t.Errorf("aceptación = %+v", a)
+	}
+
+	root := t.TempDir()
+	if err := guardarAceptacion(root, a); err != nil {
+		t.Fatal(err)
+	}
+	if leida, ok := LeerAceptacion(root); !ok || len(leida.Criterios) != 3 || leida.Motivo != a.Motivo {
+		t.Errorf("leída = %+v ok = %v", leida, ok)
+	}
+	if _, ok := LeerAceptacion(t.TempDir()); ok {
+		t.Error("sin archivo no hay aceptación")
+	}
+}
