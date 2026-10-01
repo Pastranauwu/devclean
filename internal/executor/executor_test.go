@@ -303,3 +303,64 @@ func TestOpenCodeRunReportaAvances(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexRunLeeElStreamReal(t *testing.T) {
+	fixture, err := filepath.Abs("testdata/codex-ok.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeBin(t, "codex", `echo "$@" > "$PWD/args.txt"; cat `+fixture)
+	dir := t.TempDir()
+	req := reqDePrueba()
+	req.RoomPath, req.Model, req.Effort, req.Rol = dir, "gpt-6-luna", "low", RolTexto
+	var avances []string
+	req.Avance = func(s string) { avances = append(avances, s) }
+
+	res, err := Codex{}.Run(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Text != "hola" {
+		t.Errorf("Text = %q, quiero el último mensaje del agente", res.Text)
+	}
+	// input_tokens (23499) incluye los 17920 de caché: no se cuentan dos veces
+	if u := res.Tokens; u.Input != 5579 || u.CacheRead != 17920 || u.Output != 111 || u.Turns != 1 || u.FirstTurn != 23499 {
+		t.Errorf("Tokens = %+v", u)
+	}
+	if j := strings.Join(avances, "\n"); !strings.Contains(j, "$ cat a.txt") || !strings.Contains(j, "turno 1") {
+		t.Errorf("avances = %q", j)
+	}
+	args, _ := os.ReadFile(filepath.Join(dir, "args.txt"))
+	for _, quiero := range []string{"exec --json", "--sandbox read-only", "--model gpt-6-luna", `model_reasoning_effort="low"`, "--ignore-user-config"} {
+		if !strings.Contains(string(args), quiero) {
+			t.Errorf("falta %q en los argumentos: %s", quiero, args)
+		}
+	}
+	if strings.Contains(string(args), "bypass") {
+		t.Error("un rol que no escribe no puede correr sin sandbox")
+	}
+}
+
+func TestCodexReportaElErrorYLosArchivos(t *testing.T) {
+	files, _, _, fallo := parseCodexEvents(`{"type":"item.completed","item":{"type":"file_change","changes":[{"path":"src/a.go","kind":"update"},{"path":"src/a.go","kind":"update"}]}}
+{"type":"turn.failed","error":{"message":"You've hit your usage limit"}}`)
+	if len(files) != 1 || files[0] != "src/a.go" || !strings.Contains(fallo, "usage limit") {
+		t.Errorf("files = %v fallo = %q", files, fallo)
+	}
+}
+
+func TestCodexModelsSoloLosVisibles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	if _, err := (Codex{}).Models(context.Background()); err == nil {
+		t.Error("sin caché de modelos debe dar error, no un catálogo vacío")
+	}
+	cache := `{"models":[{"slug":"gpt-6-sol","visibility":"list"},{"slug":"codex-auto-review","visibility":"hide"}]}`
+	if err := os.WriteFile(filepath.Join(home, "models_cache.json"), []byte(cache), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := Codex{}.Models(context.Background())
+	if err != nil || len(ids) != 1 || ids[0] != "gpt-6-sol" {
+		t.Errorf("ids = %v err = %v", ids, err)
+	}
+}

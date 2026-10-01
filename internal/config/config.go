@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -658,8 +659,8 @@ func parseAgentes(data []byte) (map[string]Agente, error) {
 		if provider == "" {
 			provider = fields["proveedor"]
 		}
-		if provider != "claude" && provider != "opencode" {
-			return nil, fmt.Errorf("config.yml: línea %d · provider desconocido: %s · usa claude u opencode", c.Line, provider)
+		if !slices.Contains(Clis, provider) {
+			return nil, fmt.Errorf("config.yml: línea %d · provider desconocido: %s · usa %s", c.Line, provider, strings.Join(Clis, ", "))
 		}
 
 		modelo := fields["model"]
@@ -696,6 +697,11 @@ var Pesos = []string{"liviana", "media", "pesada"}
 
 // pistas de tamaño en los ids de modelo, por peso. El orden importa:
 // gana la primera que casa.
+// Clis son los CLIs de agente que devclean maneja: valen como `cli:`,
+// como provider de un agente y como proveedor de ventanas de presupuesto.
+// Tiene que coincidir con executor.Todos (config no puede importarlo).
+var Clis = []string{"claude", "opencode", "codex"}
+
 var pistasPeso = map[string][]string{
 	"liviana": {"haiku", "flash", "lightning", "mini", "lite", "small", "free"},
 	"pesada":  {"opus", "ultra", "-max", "-pro", "thinking"},
@@ -706,9 +712,9 @@ var pistasPeso = map[string][]string{
 // sin proveedor ("opencode-go/kimi-k3" casa con "kimi-k3"). Si ninguno
 // está, se cae a las pistas por nombre.
 var preferidos = map[string][]string{
-	"pesada":  {"claude-opus-5-5", "kimi-k3", "grok-4.7", "grok-4.6"},
-	"media":   {"claude-sonnet-5", "deepseek-v4-flash", "deepseek-v4.1-flash"},
-	"liviana": {"claude-haiku-4-5", "muse-spark-1.3-contributor", "muse-spark-1.3-contributor-free", "muse-spark-1.2-contributor"},
+	"pesada":  {"claude-opus-5-5", "gpt-6-astra", "kimi-k3", "grok-4.7", "grok-4.6"},
+	"media":   {"claude-sonnet-5", "gpt-6-sol", "gpt-5.6-terra", "deepseek-v4-flash", "deepseek-v4.1-flash"},
+	"liviana": {"claude-haiku-4-5", "gpt-6-luna", "gpt-5.6-luna", "muse-spark-1.3-contributor", "muse-spark-1.3-contributor-free", "muse-spark-1.2-contributor"},
 }
 
 // ElegirModelos reparte un catálogo real de ids de modelo entre los tres
@@ -804,8 +810,11 @@ func DefaultAgentes(cli string) map[string]Agente {
 	}
 
 	keyEnv := "ANTHROPIC_API_KEY"
-	if provider == "opencode" {
+	switch provider {
+	case "opencode":
 		keyEnv = "OPENCODE_API_KEY"
+	case "codex":
+		keyEnv = "OPENAI_API_KEY"
 	}
 
 	// Los arquetipos NO fijan modelo. Antes traían ids inventados

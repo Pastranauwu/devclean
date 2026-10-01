@@ -478,7 +478,7 @@ agentes:
 	if err == nil {
 		t.Fatal("Parse debió fallar con un provider inválido")
 	}
-	want := "provider desconocido: openai · usa claude u opencode"
+	want := "provider desconocido: openai · usa claude, opencode, codex"
 	if !strings.Contains(err.Error(), want) {
 		t.Errorf("error = %q, quiere que contenga %q", err.Error(), want)
 	}

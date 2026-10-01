@@ -45,7 +45,7 @@ func newInitCmd() *cobra.Command {
 			return runInit(cwd, pruebas, plantilla, cli, in, sinSkills)
 		},
 	}
-	cmd.Flags().StringVar(&cli, "cli", "", "CLI de agente: opencode o claude (por defecto pregunta si hay más de uno)")
+	cmd.Flags().StringVar(&cli, "cli", "", "CLI de agente: opencode, claude o codex (por defecto pregunta si hay más de uno)")
 	cmd.Flags().StringVar(&pruebas, "pruebas", "", "comando de pruebas del proyecto, en vez del detectado")
 	cmd.Flags().StringVar(&plantilla, "pruebas-plantilla", "", "stack de pruebas: go, node o python")
 	cmd.Flags().BoolVar(&sinSkills, "sin-skills", false, "no traer las skills por defecto (puedes hacerlo luego con devclean skills sync)")
@@ -207,7 +207,7 @@ func detectarCatalogo(cli string) (string, []string) {
 // clisInstalados devuelve los nombres de los CLIs de agente que responden.
 func clisInstalados() []string {
 	var res []string
-	for _, e := range []executor.Executor{executor.OpenCode{}, executor.Claude{}} {
+	for _, e := range executor.Todos {
 		if e.Available() == nil {
 			res = append(res, e.Name())
 		}
@@ -225,8 +225,11 @@ func elegirCLIAMano(instalados []string) (string, error) {
 	ops := make([]tui.Opcion, 0, len(instalados))
 	for _, n := range instalados {
 		detalle := "Usa los proveedores y modelos configurados en OpenCode"
-		if n == "claude" {
+		switch n {
+		case "claude":
 			detalle = "Usa tu sesión de Claude · Opus planifica, Haiku y Sonnet implementan"
+		case "codex":
+			detalle = "Usa tu sesión de Codex (ChatGPT) y sus modelos gpt"
 		}
 		ops = append(ops, tui.Opcion{ID: n, Etiqueta: n, Detalle: detalle})
 	}

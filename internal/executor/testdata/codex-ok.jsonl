@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"01a0f83e-7e0e-79a3-bde3-15ba3b95d8ab"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"/bin/bash -lc 'cat a.txt'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"/bin/bash -lc 'cat a.txt'","aggregated_output":"hola\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"hola"}}
+{"type":"turn.completed","usage":{"input_tokens":23499,"cached_input_tokens":17920,"cache_write_input_tokens":0,"output_tokens":111,"reasoning_output_tokens":14}}

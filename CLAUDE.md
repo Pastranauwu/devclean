@@ -57,6 +57,7 @@ devclean actúa como una **gerencia técnica de software**:
 - **Motores de Agentes Integrados (Ejecutores):**
   - **Claude Code (`claude`):** Se ejecuta en modo print/headless (`claude -p <prompt> --output-format stream-json --verbose --permission-mode bypassPermissions <contexto limpio> --tools <por rol> [--model <modelo>]`). Herramientas por rol (`executor.Rol`): implementador `Bash,Read,Edit,Write`, planificador `Read,Bash`, examinador/revisor/constitución ninguna. Un 429 espera al `resetsAt` de la respuesta y relanza la misma invocación: no gasta intento ni escala.
   - **OpenCode (`opencode`):** Se ejecuta en modo no interactivo (`opencode run <prompt> --dir <cuarto> --format json --auto --agent devclean-<rol> [--model <modelo>]`). Los agentes llegan por `OPENCODE_CONFIG_CONTENT` sin tocar la config del usuario: el implementador sin webfetch/task/todo/skill, el de texto sin herramientas, el planificador con read y bash. Apagar `skill` saca las skills de `~/.config/opencode/skills`.
+  - **Codex (`codex`):** `codex exec --json --ephemeral --ignore-user-config --skip-git-repo-check -C <cuarto> [--model <modelo>] [-c model_reasoning_effort="<esfuerzo>"] <prompt>` (`internal/executor/codex.go`). El implementador corre con `--dangerously-bypass-approvals-and-sandbox` (igual que claude con bypassPermissions); los demás roles con `--sandbox read-only`. El catálogo sale de `$CODEX_HOME/models_cache.json`.
 - **Parseo YAML:** `gopkg.in/yaml.v3` para el spec humano (`internal/spec/yaml.go`, YAML 1.2 completo con anidación real). `internal/kv` sigue siendo el parser del frontmatter de contratos (`internal/task`), de `config` y del `Marshal` del spec.
 - **Filosofía de Dependencias:** Cero frameworks pesados. Una sola dependencia de parseo (`yaml.v3`), el resto stdlib. Cero servidores escuchando en red.
 
@@ -86,7 +87,7 @@ devclean/
 │   ├── loop/                 # Bucle de intentos, latidos (heartbeat), reversión y verificación
 │   ├── gate/                 # Esclusa de Entrada (validaciones previas al gasto de tokens)
 │   ├── ship/                 # Esclusa de Salida (10 pasos + aceptación del feature)
-│   ├── executor/             # Adaptadores para los CLIs `claude` y `opencode`
+│   ├── executor/             # Adaptadores para los CLIs `claude`, `opencode` y `codex`
 │   ├── plan/                 # Lógica de planificación, saneamiento de alcance y dependencias
 │   ├── spec/                 # Requirements as Code: spec humano, IR y aceptación
 │   │   ├── yaml.go           #   parser yaml.v3 del spec (requirements/acceptance/constraints)
@@ -313,7 +314,7 @@ Aunque el núcleo es sólido y funcional, existen áreas identificadas que requi
 
 ### 7.2. Motores de Agentes y Modelos
 1. **Modo API Directa:** Actualmente la ejecución depende obligatoriamente de los binarios instalados de `claude` (Claude Code) u `opencode`. Falta agregar un adaptador que permita llamadas directas a APIs (Anthropic, OpenAI, DeepSeek) sin requerir los CLIs externos.
-2. **Tercer Proveedor de CLI:** Soporte para herramientas adicionales como Aider, Gemini CLI o Codex CLI.
+2. **Más CLIs:** Codex ya está (v1.9.1, sin verificar con una tarea real). Faltan Aider y Gemini CLI. En codex un límite de uso de la cuenta gasta el intento (claude espera al reset): falta ver el evento real para esperar igual.
 3. **Manejo de Errores de CLI y Timeouts:** Optimizar los diagnósticos cuando Claude Code u OpenCode fallan por problemas de red o cuota del proveedor, evitando que el bucle consuma intentos cuando el fallo es de infraestructura.
 
 ### 7.3. Flujos de Tareas y Experiencia de Usuario
@@ -381,7 +382,9 @@ Aunque el núcleo es sólido y funcional, existen áreas identificadas que requi
 - **Secretos: sin comillas solo cuenta en archivos de configuración, y en pruebas solo los patrones de proveedor:** `api_key=settings.api_key` es una variable y `api_key="sk-or-secret"` en una prueba es un fixture; ambos frenaban el esqueleto de closet.
 - **Cada modelo se valida contra el CLI que lo corre y solo se reemplaza el inválido (`revisarModelos`):** antes todo `modelos:` se validaba contra el catálogo de `cli:` y un solo id desconocido reasignaba los tres pesos: en closet `opencode/…-free` con `cli: claude` convirtió la pesada de sonnet en opus y el arquitecto arrancó con opus.
 - **El agente muere si devclean muere (`executor.morirConPadre`, Pdeathsig en Linux):** matar devclean dejaba el `claude -p` del arquitecto corriendo y gastando. Fuera de Linux sigue abierto (marcado `ponytail:`).
-- **`modelos:` puede mezclar CLIs (`ejecutorPara`):** un id con proveedor (`opencode/mimo-v2.6-flash-free`) corre en opencode; `claude-*`, `opus`, `sonnet` y `haiku` en claude, sin importar `cli:`. Lo usan la tarea, su escalada, el examinador, el revisor y las hojas de la recursión (`recurse.Agent.EjecutorPara`). `gratis` reconoce `-free` (opencode) y `:free` (OpenRouter).
+- **Un CLI nuevo se agrega en dos listas (`executor.Todos`, `config.Clis`):** `elegirEjecutor`, `doctor`, `init`, la validación de `provider` y las ventanas de presupuesto salen de ahí; `TestClisDeConfigSonLosEjecutores` caza que se separen. Además: su prefijo de modelo en `ejecutorPara` y sus modelos en `config.preferidos`.
+- **El sandbox de codex no sirve para el implementador:** `workspace-write` solo deja escribir en el cuarto y `/tmp`; `go test`, npm y cargo escriben su caché en el home y el agente no podría correr sus pruebas. `input_tokens` de codex incluye la caché leída (`parseCodexEvents` la resta para no contarla dos veces).
+- **`modelos:` puede mezclar CLIs (`ejecutorPara`):** un id con proveedor (`opencode/mimo-v2.6-flash-free`) corre en opencode; `claude-*`, `opus`, `sonnet` y `haiku` en claude; `gpt-*` y `codex-*` en codex, sin importar `cli:`. Lo usan la tarea, su escalada, el examinador, el revisor y las hojas de la recursión (`recurse.Agent.EjecutorPara`). `gratis` reconoce `-free` (opencode) y `:free` (OpenRouter).
 - **Solo `topePagados` (3, o `agentes_pagados:` en config) tareas con modelo de pago corren a la vez sin `--agentes`:** los modelos `…-free` no cuentan y van primero en la fila; el automático sube a 16 trabajadores. `--agentes N` explícito topa ambos a N. Todas las pagadas gastan la misma ventana de 5 h: más en paralelo solo la vacía antes.
 - **La escalera nunca sube a `pesada` (`ModeloEscalado`):** liviana→media y ahí para. Opus solo corre en tareas con `peso: pesada` y en el planificador. Una tarea que el medio no resuelve suele tener el contrato mal hecho.
 - **El revisor corre con `Effort: "low"`** y por defecto con el modelo `media`: corre en cada intento verde y, desde el esqueleto plano, es el único contrapeso a una prueba complaciente escrita por el mismo agente.

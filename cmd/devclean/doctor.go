@@ -73,7 +73,7 @@ func runDoctor() error {
 	}
 
 	// ejecutores
-	ejecutores := []executor.Executor{executor.OpenCode{}, executor.Claude{}}
+	ejecutores := executor.Todos
 	var disponibles []string
 	for _, e := range ejecutores {
 		if err := e.Available(); err == nil {

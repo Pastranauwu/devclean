@@ -27,6 +27,19 @@ type Executor interface {
 	Models(ctx context.Context) ([]string, error)
 }
 
+// Todos son los CLIs que devclean sabe manejar, en orden de preferencia
+// cuando nadie eligió uno.
+var Todos = []Executor{OpenCode{}, Claude{}, Codex{}}
+
+// Nombres devuelve los nombres de Todos, para mensajes y validación.
+func Nombres() []string {
+	var n []string
+	for _, e := range Todos {
+		n = append(n, e.Name())
+	}
+	return n
+}
+
 // Request is one agent invocation.
 type Request struct {
 	RoomPath     string   // cwd del agente, su cuarto

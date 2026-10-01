@@ -220,7 +220,7 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 	if cfg.PresupuestoTokens > 0 {
 		out.Line("presupuesto absoluto %s tokens · quemados %s · quedan %s", budget.FormatearGasto(cfg.PresupuestoTokens), budget.FormatearGasto(budget.GastoEnDisco(root)), budget.FormatearGasto(cfg.PresupuestoTokens-budget.GastoEnDisco(root)))
 	}
-	for _, p := range []string{"claude", "opencode"} {
+	for _, p := range config.Clis {
 		if l := ventanas.LineaVentanas(ventanasReg, p); l != "" {
 			out.Line("presupuesto %s", l)
 		}
@@ -543,26 +543,23 @@ func modeloParaTarea(cfg config.Config, flagModelo string, t task.Task) string {
 // elegirEjecutor devuelve el ejecutor pedido o el primero instalado.
 func elegirEjecutor(nombre string) (executor.Executor, error) {
 	if nombre != "" {
-		var e executor.Executor
-		switch nombre {
-		case "opencode":
-			e = executor.OpenCode{}
-		case "claude":
-			e = executor.Claude{}
-		default:
-			return nil, fmt.Errorf("ejecutor desconocido: %s · usa opencode o claude", nombre)
+		for _, e := range executor.Todos {
+			if e.Name() != nombre {
+				continue
+			}
+			if err := e.Available(); err != nil {
+				return nil, err
+			}
+			return e, nil
 		}
-		if err := e.Available(); err != nil {
-			return nil, err
-		}
-		return e, nil
+		return nil, fmt.Errorf("ejecutor desconocido: %s · usa %s", nombre, strings.Join(executor.Nombres(), ", "))
 	}
-	for _, e := range []executor.Executor{executor.OpenCode{}, executor.Claude{}} {
+	for _, e := range executor.Todos {
 		if e.Available() == nil {
 			return e, nil
 		}
 	}
-	return nil, errors.New("ningún ejecutor disponible · instala opencode o claude")
+	return nil, errors.New("ningún ejecutor disponible · instala " + strings.Join(executor.Nombres(), ", "))
 }
 
 // agenteExecutor adapta internal/executor a la interfaz loop.Agent. Es el
@@ -843,8 +840,8 @@ func resolverAgenteTarea(cfg config.Config, defaultEx executor.Executor, flagMod
 // ejecutorPara elige el CLI que sabe correr el modelo: un id con
 // proveedor ("opencode/mimo-v2.6-flash-free") solo lo corre opencode, y
 // los de Anthropic sin proveedor ("claude-sonnet-5", "haiku") solo
-// claude. Así `modelos:` mezcla los dos: livianas gratis en opencode y
-// el resto en claude. Si el CLI que hace falta no está, queda ex.
+// claude; los de OpenAI ("gpt-…") solo codex. Así `modelos:` mezcla
+// CLIs: livianas gratis en opencode y el resto en claude o codex. Si el CLI que hace falta no está, queda ex.
 func ejecutorPara(ex executor.Executor, modelo string) executor.Executor {
 	quiere := ""
 	switch {
@@ -852,6 +849,8 @@ func ejecutorPara(ex executor.Executor, modelo string) executor.Executor {
 		quiere = "opencode"
 	case strings.HasPrefix(modelo, "claude-"), modelo == "opus", modelo == "sonnet", modelo == "haiku":
 		quiere = "claude"
+	case strings.HasPrefix(modelo, "gpt-"), strings.HasPrefix(modelo, "codex-"):
+		quiere = "codex"
 	}
 	if quiere == "" || (ex != nil && ex.Name() == quiere) {
 		return ex

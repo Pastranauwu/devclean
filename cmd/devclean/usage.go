@@ -56,7 +56,10 @@ func runUsage(sonda bool) error {
 	}
 
 	registro := ventanas.Nuevo(ventanas.LedgerPath(), cfg.PresupuestoVentanas)
-	proveedores := map[string]bool{"claude": true, "opencode": true}
+	proveedores := map[string]bool{}
+	for _, p := range config.Clis {
+		proveedores[p] = true
+	}
 	for p := range cfg.PresupuestoVentanas {
 		proveedores[p] = true
 	}

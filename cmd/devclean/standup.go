@@ -70,7 +70,7 @@ func runStandup() error {
 			out.Line("presupuesto %s", budget.Barra(budget.GastoEnDisco(root), cfg.PresupuestoTokens))
 		}
 		ventanasReg := ventanas.Nuevo(ventanas.LedgerPath(), cfg.PresupuestoVentanas)
-		for _, p := range []string{"claude", "opencode"} {
+		for _, p := range config.Clis {
 			if l := ventanas.LineaVentanas(ventanasReg, p); l != "" {
 				out.Line("presupuesto %s", l)
 			}

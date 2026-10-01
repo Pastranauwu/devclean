@@ -379,8 +379,9 @@ go install github.com/Pastranauwu/devclean/cmd/devclean@latest
 ```
 
 devclean no trae ningún modelo. Dirige un CLI que ya tienes y pagas:
-[Claude Code](https://docs.anthropic.com/claude-code) (`claude`) u
-[OpenCode](https://opencode.ai) (`opencode`). Necesitas uno instalado y
+[Claude Code](https://docs.anthropic.com/claude-code) (`claude`),
+[OpenCode](https://opencode.ai) (`opencode`) o
+[Codex](https://developers.openai.com/codex/cli) (`codex`). Necesitas uno instalado y
 autenticado, además de `git`. Para PRs en GitHub necesitas `gh`; sin remoto
 `origin`, devclean crea la rama `devclean/_entrega` y una descripción local en
 `.devclean/pr/`.
