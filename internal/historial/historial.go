@@ -61,6 +61,9 @@ type Tarea struct {
 type Entrada struct {
 	Nombre string // NNNN-slug
 	Dir    string
+	// Gitignore son las líneas que Archivar puso en el .gitignore del
+	// proyecto para que el historial se pueda versionar; vacío si no lo tocó.
+	Gitignore []string
 }
 
 // Archivar guarda el spec en specPath como la siguiente entrada del
@@ -80,6 +83,11 @@ func Archivar(root, specPath string) (Entrada, error) {
 	if !hay {
 		return Entrada{}, errors.New("sin entrega conjunta registrada · corre devclean ship --todas y archiva cuando pase")
 	}
+	// la entrega probó un spec concreto: si lo editaron después, lo que
+	// se archivaría no es lo que pasó la aceptación
+	if a.Spec != spec.IntencionDe(s).Hash() {
+		return Entrada{}, errors.New("el spec cambió desde la última entrega · corre devclean ship --todas sobre este spec y archiva cuando pase")
+	}
 	if !a.Aprobado {
 		return Entrada{}, fmt.Errorf("la última entrega no pasó · %s · arregla y corre devclean ship --todas", a.Motivo)
 	}
@@ -95,6 +103,11 @@ func Archivar(root, specPath string) (Entrada, error) {
 	}
 	e := Entrada{Nombre: fmt.Sprintf("%04d-%s", n, slug(s.Feature))}
 	e.Dir = filepath.Join(Dir(root), e.Nombre)
+	// antes de escribir nada: si git va a ignorar el historial, archivar
+	// dejaría el spec vacío y la entrada sin versionar
+	if e.Gitignore, err = abrirGitignore(root); err != nil {
+		return Entrada{}, err
+	}
 	if err := os.MkdirAll(e.Dir, 0o755); err != nil {
 		return Entrada{}, err
 	}
@@ -124,9 +137,7 @@ func Archivar(root, specPath string) (Entrada, error) {
 		return Entrada{}, err
 	}
 	rutas := []string{e.Dir, Index(root), specPath}
-	if cambio, err := abrirGitignore(root); err != nil {
-		return Entrada{}, err
-	} else if cambio {
+	if len(e.Gitignore) > 0 {
 		rutas = append(rutas, filepath.Join(root, ".gitignore"))
 	}
 	for _, f := range []string{spec.IntencionFile, spec.FeatureStateFile, ship.AceptacionFile} {
@@ -148,29 +159,63 @@ func Archivar(root, specPath string) (Entrada, error) {
 	return e, nil
 }
 
+// excepciones es lo que reemplaza a la línea que ignora `.devclean/`.
+var excepciones = []string{".devclean/*", "!.devclean/historial/", "!.devclean/index.md"}
+
 // abrirGitignore deja pasar el historial en un proyecto que ignora
 // `.devclean/` entero (soundlike): con la carpeta ignorada git no mira
 // adentro y ninguna excepción sirve, así que la línea pasa a ignorar su
 // contenido (`.devclean/*`) menos el historial y el índice. Todo lo demás
-// de .devclean sigue ignorado como estaba. Reporta si cambió el archivo.
-func abrirGitignore(root string) (bool, error) {
+// de .devclean sigue ignorado como estaba. Devuelve las líneas que puso.
+//
+// Si después de eso git sigue ignorando el historial, la regla está en un
+// lugar que no es del proyecto (el gitignore global o .git/info/exclude):
+// se deshace el cambio y se dice dónde está, en vez de dejar que `git
+// add` falle a mitad del archivado.
+func abrirGitignore(root string) ([]string, error) {
 	p := filepath.Join(root, ".gitignore")
-	b, err := os.ReadFile(p)
-	if err != nil {
-		return false, nil // sin .gitignore no hay nada que abrir
-	}
-	lineas := strings.Split(string(b), "\n")
-	cambio := false
-	for i, l := range lineas {
-		if strings.Trim(strings.TrimSpace(l), "/") == ".devclean" {
-			lineas[i] = ".devclean/*\n!.devclean/historial/\n!.devclean/index.md"
-			cambio = true
+	original, err := os.ReadFile(p)
+	hay := err == nil
+	var puestas []string
+	if hay {
+		lineas := strings.Split(string(original), "\n")
+		for i, l := range lineas {
+			if strings.Trim(strings.TrimSpace(l), "/") == ".devclean" {
+				lineas[i] = strings.Join(excepciones, "\n")
+				puestas = excepciones
+			}
+		}
+		if puestas != nil {
+			if err := os.WriteFile(p, []byte(strings.Join(lineas, "\n")), 0o644); err != nil {
+				return nil, err
+			}
 		}
 	}
-	if !cambio {
-		return false, nil
+	// check-ignore -v responde "<archivo>:<línea>:<patrón>\t<ruta>" por
+	// cada ruta ignorada, y sale con 1 si ninguna lo está
+	cmd := exec.Command("git", "check-ignore", "-v", "--no-index", ".devclean/historial/0000-x/spec.yml", ".devclean/index.md")
+	cmd.Dir = root
+	out, _ := cmd.Output()
+	// con -v también salen las rutas que una excepción ("!patrón") rescata
+	regla := ""
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if r, _, ok := strings.Cut(l, "\t"); ok && !strings.Contains(r, ":!") {
+			regla = r
+			break
+		}
 	}
-	return true, os.WriteFile(p, []byte(strings.Join(lineas, "\n")), 0o644)
+	if regla == "" {
+		return puestas, nil
+	}
+	if puestas != nil {
+		_ = os.WriteFile(p, original, 0o644)
+	}
+	fuente, patron := regla, ""
+	if partes := strings.SplitN(regla, ":", 3); len(partes) == 3 {
+		fuente, patron = partes[0], partes[2]
+	}
+	return nil, fmt.Errorf("git ignora el historial por el patrón %q de %s · quítalo o agrega ahí %s y %s, y vuelve a correr devclean archive",
+		patron, fuente, excepciones[1], excepciones[2])
 }
 
 // criterios junta los comandos que corrieron en la entrega (los del spec

@@ -29,7 +29,9 @@ type Aceptacion struct {
 	Commit   string    `json:"commit,omitempty"`
 	Aprobado bool      `json:"aprobado"`
 	// Motivo es el primer paso que frenó, si no quedó aprobada.
-	Motivo    string     `json:"motivo,omitempty"`
+	Motivo string `json:"motivo,omitempty"`
+	// Spec es el hash de la intención del spec que se probó.
+	Spec      string     `json:"spec,omitempty"`
 	Tareas    []string   `json:"tareas"`
 	Criterios []Criterio `json:"criterios"`
 }
@@ -37,7 +39,7 @@ type Aceptacion struct {
 // aceptacionDe resume una entrega: qué tareas llevó y qué comando de
 // aceptación pasó, falló o no llegó a correr.
 func aceptacionDe(o OpcionesEntrega, e Entrega) Aceptacion {
-	a := Aceptacion{Fecha: time.Now().UTC().Truncate(time.Second), Rama: e.Rama, Aprobado: e.Aprobado, Motivo: e.PrimerMotivo()}
+	a := Aceptacion{Fecha: time.Now().UTC().Truncate(time.Second), Rama: e.Rama, Aprobado: e.Aprobado, Motivo: e.PrimerMotivo(), Spec: o.Spec}
 	for _, t := range o.Tareas {
 		a.Tareas = append(a.Tareas, t.ID)
 	}

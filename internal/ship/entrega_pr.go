@@ -39,6 +39,9 @@ type OpcionesEntrega struct {
 	// Acceptance son comandos del spec humano y corren sobre el conjunto
 	// integrado, después de la suite general y antes de crear el PR.
 	Acceptance []string
+	// Spec es el hash de la intención del spec que se entrega
+	// (spec.Intencion.Hash); queda anotado en aceptacion.json.
+	Spec string
 	// Revisor, si no es nil, lee el diff completo antes de integrar y
 	// puede vetar. Es el único paso que juzga intención en vez de
 	// mecánica. Falla cerrado: lo que no se pudo revisar no se integra.

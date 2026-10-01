@@ -34,6 +34,12 @@ Se corre en la rama del PR, antes del merge.`,
 			if err := out.Data(map[string]string{"entrada": e.Nombre, "dir": e.Dir}); err != nil {
 				return err
 			}
+			if len(e.Gitignore) > 0 {
+				out.Line("· .gitignore: `.devclean/` pasa a ignorar su contenido menos el historial:")
+				for _, l := range e.Gitignore {
+					out.Line("    %s", l)
+				}
+			}
 			out.Line("✓ archivado %s · spec vacío para el siguiente feature · commit hecho", e.Nombre)
 			return nil
 		},

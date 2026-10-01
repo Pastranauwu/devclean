@@ -62,6 +62,20 @@ requests que se pisan entre sí.`,
 	return cmd
 }
 
+// hashDelSpec es el hash de la intención del spec del repo, o "" si no hay
+// spec legible (una petición suelta con `up "<frase>"` no deja archivo).
+func hashDelSpec(root string) string {
+	path, err := spec.Find(root)
+	if err != nil {
+		return ""
+	}
+	s, err := spec.Load(path)
+	if err != nil {
+		return ""
+	}
+	return spec.IntencionDe(s).Hash()
+}
+
 // runShipTodas entrega en un solo PR todas las tareas que quedaron
 // listas. Cada una pasa su propia esclusa de salida antes de integrarse:
 // el PR conjunto no baja el listón, solo evita repartirlo en N PRs que
@@ -147,6 +161,7 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 		Commits: commits,
 		Titulo:  titulo,
 		DryRun:  dryRun,
+		Spec:    hashDelSpec(root),
 		Progreso: func(p ship.Paso) {
 			if p.OK {
 				out.Line("✓ %s  · %s", p.Nombre, p.Detalle)

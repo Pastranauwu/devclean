@@ -65,8 +65,20 @@ func repo(t *testing.T, contenidoSpec string, a *ship.Aceptacion) (root, specPat
 	return root, specPath
 }
 
+// hashDe es el hash con que `ship --todas` anota el spec que probó.
+func hashDe(t *testing.T, contenido string) string {
+	t.Helper()
+	s, err := spec.Parse([]byte(contenido))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return spec.IntencionDe(s).Hash()
+}
+
 func verde() *ship.Aceptacion {
+	s, _ := spec.Parse([]byte(specDePrueba))
 	return &ship.Aceptacion{
+		Spec:  spec.IntencionDe(s).Hash(),
 		Fecha: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC), Rama: "devclean/_entrega", Commit: "abc123", Aprobado: true,
 		Tareas:    []string{"T-001"},
 		Criterios: []ship.Criterio{{Comando: "go test ./...", Corrio: true, Paso: true}},
@@ -180,7 +192,9 @@ func TestArchivarNumeraEnOrdenSinReusar(t *testing.T) {
 	}
 
 	escribir(t, specPath, "feature: \"¡¡Otro!! feature\"\nrequirements:\n  - algo\n")
-	b, _ := json.Marshal(verde())
+	otra := verde()
+	otra.Spec = hashDe(t, leer(t, specPath))
+	b, _ := json.Marshal(otra)
 	escribir(t, filepath.Join(root, ".devclean", ship.AceptacionFile), string(b))
 	e, err = Archivar(root, specPath)
 	if err != nil || e.Nombre != "0009-otro-feature" {
@@ -205,8 +219,12 @@ func TestArchivarEnRepoQueIgnoraDevclean(t *testing.T) {
 	gitEn(t, root, "add", ".gitignore")
 	gitEn(t, root, "commit", "-q", "-m", "ignora .devclean")
 
-	if _, err := Archivar(root, specPath); err != nil {
+	e, err := Archivar(root, specPath)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if len(e.Gitignore) != 3 {
+		t.Errorf("Archivar debe reportar las líneas que puso en .gitignore: %v", e.Gitignore)
 	}
 	stat := gitEn(t, root, "show", "--stat=200", "--format=%s")
 	for _, quiero := range []string{
@@ -233,5 +251,50 @@ func TestArchivarEnRepoQueIgnoraDevclean(t *testing.T) {
 	escribir(t, filepath.Join(root, ".devclean", ship.AceptacionFile), "{}")
 	if sucio := gitEn(t, root, "status", "--porcelain"); sucio != "" {
 		t.Errorf("el árbol quedó sucio:\n%s", sucio)
+	}
+}
+
+// La entrega probó un spec concreto. Si después lo editan, lo que se
+// archivaría como "probado" no es lo que pasó la aceptación.
+func TestArchivarRechazaUnSpecQueCambioDesdeLaEntrega(t *testing.T) {
+	root, specPath := repo(t, specDePrueba, verde())
+	escribir(t, specPath, strings.Replace(specDePrueba, "solicitar recuperación por email", "solicitar recuperación por SMS", 1))
+	if _, err := Archivar(root, specPath); err == nil || !strings.Contains(err.Error(), "el spec cambió desde la última entrega") {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(Dir(root)); !os.IsNotExist(err) {
+		t.Error("no debía escribir nada en el historial")
+	}
+
+	// el motivo y los comentarios no cambian lo que se construye: no
+	// obligan a entregar de nuevo
+	escribir(t, specPath, "# nota para el equipo\n"+strings.Replace(specDePrueba, "soporte resetea 40 cuentas a mano por semana", "otro motivo", 1))
+	if _, err := Archivar(root, specPath); err != nil {
+		t.Fatalf("un cambio de motivo no invalida la entrega: %v", err)
+	}
+	if !strings.Contains(leer(t, Index(root)), "otro motivo") {
+		t.Error("el index lleva el motivo del spec que se archiva")
+	}
+}
+
+// La regla que ignora el historial puede no estar en el .gitignore del
+// proyecto: ahí archive no puede arreglarla y tiene que decir dónde está.
+func TestArchivarAvisaSiElHistorialQuedaIgnoradoFueraDelProyecto(t *testing.T) {
+	root, specPath := repo(t, specDePrueba, verde())
+	escribir(t, filepath.Join(root, ".gitignore"), ".devclean/\n")
+	escribir(t, filepath.Join(root, ".git", "info", "exclude"), ".devclean/\n")
+
+	_, err := Archivar(root, specPath)
+	if err == nil || !strings.Contains(err.Error(), "git ignora el historial") || !strings.Contains(err.Error(), "info/exclude") || !strings.Contains(err.Error(), "!.devclean/historial/") {
+		t.Fatalf("err = %v", err)
+	}
+	if leer(t, specPath) != specDePrueba {
+		t.Error("el spec no se toca si no se puede archivar")
+	}
+	if got := leer(t, filepath.Join(root, ".gitignore")); got != ".devclean/\n" {
+		t.Errorf("el .gitignore debía quedar como estaba, quedó %q", got)
+	}
+	if _, err := os.Stat(Dir(root)); !os.IsNotExist(err) {
+		t.Error("no debía escribir nada en el historial")
 	}
 }

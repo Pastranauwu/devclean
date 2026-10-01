@@ -392,6 +392,11 @@ autenticado, además de `git`. Para PRs en GitHub necesitas `gh`; sin remoto
 resultado y el `motivo:` que declaraste, y lo vacía para el siguiente feature:
 los commits dicen qué cambió; el historial, por qué se pidió.
 
+Después de archivar, un ajuste va en un spec **nuevo que solo contenga el
+cambio**, no el spec anterior completo: lo archivado ya está construido, y
+volver a declararlo haría que devclean lo planee otra vez como si faltara.
+El spec anterior queda en `.devclean/historial/` para consultarlo.
+
 ## Comandos
 
 Flujo principal:

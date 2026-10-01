@@ -1,7 +1,9 @@
 package spec
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -64,10 +66,17 @@ func IntencionDe(s Spec) Intencion {
 // antes: una intención guardada antes de que existieran no cuenta como
 // cambio (replanearía todo el spec al actualizar devclean).
 func (i Intencion) Igual(o Intencion) bool {
-	i.IDs, o.IDs = i.TodosLosIDs(), o.TodosLosIDs()
-	a, _ := json.Marshal(i)
-	b, _ := json.Marshal(o)
-	return string(a) == string(b)
+	return i.Hash() == o.Hash()
+}
+
+// Hash identifica lo que el spec pide construir. Dos specs con la misma
+// intención dan el mismo hash aunque cambien comentarios, el motivo o el
+// orden de las claves: es lo que la entrega anota para que `devclean
+// archive` no archive un spec distinto del que se probó.
+func (i Intencion) Hash() string {
+	i.IDs = i.TodosLosIDs()
+	b, _ := json.Marshal(i)
+	return fmt.Sprintf("%x", sha256.Sum256(b))
 }
 
 // TodosLosIDs devuelve un id por requerimiento, calculando los que falten.
