@@ -36,7 +36,7 @@ func planoPython(t *testing.T) string {
 	}
 	escribir(t, dir, Documento, "# arquitectura\n")
 	escribir(t, dir, "calc/__init__.py", "")
-	escribir(t, dir, "calc/suma.py", "def suma(a: int, b: int) -> int:\n    \"\"\"Suma a y b.\n\n    Casos: suma(2, 3) -> 5; suma(-1, 1) -> 0\n    \"\"\"\n    raise NotImplementedError(\""+Marca+"\")\n")
+	escribir(t, dir, "calc/suma.py", "def suma(a: int, b: int) -> int:\n    \"\"\"Suma a y b.\n\n    Idea: a + b, sin validar.\n    Casos: suma(2, 3) -> 5; suma(-1, 1) -> 0\n    \"\"\"\n    raise NotImplementedError(\""+Marca+"\")\n")
 	escribir(t, dir, "calc/resta.py", "def resta(a: int, b: int) -> int:\n    return a - b\n")
 	escribir(t, dir, "calc/mult.py", "def mult(a: int, b: int) -> int:\n    raise NotImplementedError(\""+Marca+"\")\n")
 	return dir
@@ -78,6 +78,7 @@ func TestProblemasDetectaCadaFormaDePlanoMalo(t *testing.T) {
 		"calc/div.py no existe",
 		"calc/resta.py es nuevo y no tiene ningún stub",
 		"no trae \"Casos:\"",
+		"no trae \"Idea:\"",
 		"falta la tarea final",
 	} {
 		if !strings.Contains(todo, quiero) {

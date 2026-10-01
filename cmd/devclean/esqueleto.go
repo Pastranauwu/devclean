@@ -36,7 +36,7 @@ const timeoutArquitecto = 45 * time.Minute
 
 // notaCambio va en las tareas que cambian código que ya funciona: no hay
 // stub que rellenar y lo que ya existe no se puede romper.
-const notaCambio = "Cambias código que ya funciona. Primero escribe la prueba del comportamiento nuevo en el archivo que corre listo_cuando, con los \"Casos:\" de arriba; después haz el cambio. No cambies firmas, nombres ni exportaciones que otros módulos usan salvo que el contrato lo pida, y las pruebas que ya existen tienen que seguir pasando. El contexto está en " + esqueleto.Documento + "."
+const notaCambio = "Cambias código que ya funciona. Primero escribe la prueba del comportamiento nuevo en el archivo que corre listo_cuando, con los \"Casos:\" de arriba; después haz el cambio. No cambies firmas, nombres ni exportaciones que otros módulos usan salvo que el contrato lo pida, y las pruebas que ya existen tienen que seguir pasando. Si un comentario del archivo describe lo que cambias, actualízalo o bórralo: no dejes comentarios que contradigan el código. El contexto está en " + esqueleto.Documento + "."
 
 // notaPara elige la nota según lo que toca la tarea: rellenar un stub o
 // cambiar código existente.
@@ -50,7 +50,7 @@ func notaPara(ctx context.Context, dir string, tocar []string) string {
 // notaRelleno va en las notas de cada tarea de relleno: el agente barato
 // no necesita más que saber qué reemplazar, dónde está el contrato y que
 // la prueba sale de sus casos.
-const notaRelleno = "Primero escribe la prueba del archivo que corre listo_cuando con los \"Casos:\" del contrato de cada stub (y los casos límite que el contrato nombre); las dependencias de otros módulos van con fakes. Después rellena los cuerpos que lanzan \"" + esqueleto.Marca + "\". No cambies firmas, nombres ni exportaciones: otros módulos ya dependen de ellas. El contrato está en el comentario de cada stub y en " + esqueleto.Documento + "."
+const notaRelleno = "Primero escribe la prueba del archivo que corre listo_cuando con los \"Casos:\" del contrato de cada stub (y los casos límite que el contrato nombre): una prueba por caso, sin variantes que prueben lo mismo; las dependencias de otros módulos van con fakes. Después rellena los cuerpos que lanzan \"" + esqueleto.Marca + "\" siguiendo la \"Idea:\" del contrato: el diseño ya está decidido, no lo cambies ni busques otro. No cambies firmas, nombres ni exportaciones: otros módulos ya dependen de ellas. El contrato está en el comentario de cada stub y en " + esqueleto.Documento + ". Al terminar, el comentario de contrato deja de ser una instrucción para ti y pasa a ser documentación: redúcelo a lo que necesita quien mantenga el código (qué hace y lo que no es obvio) y borra \"Idea:\", \"Casos:\", la lista de quién llama a quién y cualquier maqueta o paso que el código ya dice; los casos viven en la prueba."
 
 // planearEsqueleto es el camino de requirements: el modelo grande
 // escribe el esqueleto en el cuarto de la primera tarea, devclean lo

@@ -118,6 +118,7 @@ No escribes lógica ni pruebas: cada línea que escribas la paga el modelo caro,
 4. Todo lo NUEVO es STUB, también el cableado nuevo (main, rutas, contenedor, App): cada clase, función y método público con su firma exacta (tipos de entrada y salida) y un comentario de contrato encima con
    - qué hace, entradas, salida y errores;
    - a quién llama (módulo y método) y quién lo usa;
+   - "Idea:" cómo se resuelve, ya pensado por ti: algoritmo, estructuras de datos, orden de los pasos y las trampas (casos límite, lo que parece obvio y está mal). Telegráfico, de 1 a 8 líneas, sin código ni frases completas: tú ya resolviste el problema al planear y el agente solo lo escribe. No repitas lo que la firma ya dice.
    - "Casos:" de 2 a 5 ejemplos concretos de entrada → salida o error, que el agente convertirá en su prueba.
    El cuerpo solo lanza un error con el texto exacto "` + Marca + `".
 5. Nada más. No escribas pruebas, implementaciones de referencia, datos de ejemplo ni código fuera del repositorio. No corras nada salvo lo necesario para que "verificar" pase.
@@ -129,7 +130,7 @@ No escribes lógica ni pruebas: cada línea que escribas la paga el modelo caro,
 	b.WriteString(`
 
 CÓMO REPARTIR
-- Una tarea por archivo stub o por cambio a un archivo existente (o por dos o tres muy acoplados).
+- Una tarea por módulo: un archivo stub, o varios que comparten estado o no tienen sentido por separado, o un cambio a un archivo existente. Con la "Idea:" escrita, un agente barato puede con un módulo complejo entero: no partas en tareas mínimas lo que se entiende junto, ni subas el "peso" de una tarea porque sea difícil de pensar; eso ya lo pensaste tú. El peso sube solo por tamaño o por interfaz.
 - Excepción: un pedido VISUAL (diseño, estilo, experiencia de uso) no se reparte en tareas chicas. Es UNA tarea de diseño con "peso": "pesada", dueña de todos los archivos de interfaz que cambian (tema, componentes y pantallas en su "tocar_solo"), porque un diseño coherente no sale de parches de agentes que no ven la pantalla completa. En "como" describe el diseño concreto: paleta, tipografía, espaciado, cómo se ve cada pantalla y cada estado. Las tareas funcionales que toquen esos archivos dependen de ella. Cuanto más chicas e independientes, más agentes en paralelo y más barato.
 - Cada tarea escribe su propia prueba a partir de los "Casos:" de su contrato: "listo_cuando" corre ese archivo de prueba (que hoy no existe) y "tocar_solo" incluye el stub y ese archivo de prueba.
 - El agente es un modelo barato: no rediseña ni elige librerías. Lo que necesite decidir tiene que estar en el contrato.
@@ -154,7 +155,7 @@ RESPONDE AL FINAL SOLO CON ESTE JSON
       "tocar_solo": ["el stub o el archivo que cambia", "su archivo de prueba"],
       "depende_de": [],
       "peso": "liviana | media | pesada",
-      "como": "qué archivo rellenar o qué cambiar, y sus Casos: si es un cambio a código existente"
+      "como": "qué archivo rellenar o qué cambiar; si es un cambio a código existente, su Idea: y sus Casos:"
     }
   ]
 }
@@ -309,7 +310,7 @@ func contrato(dir, nombre string, t plan.Borrador, archivos []string, previos ma
 	}
 	var out []string
 	if len(nuevos) > 0 {
-		marca, casos := false, false
+		marca, casos, idea := false, false, false
 		for _, f := range nuevos {
 			b, err := os.ReadFile(filepath.Join(dir, f))
 			if err != nil {
@@ -317,12 +318,18 @@ func contrato(dir, nombre string, t plan.Borrador, archivos []string, previos ma
 			}
 			marca = marca || strings.Contains(string(b), Marca)
 			casos = casos || strings.Contains(string(b), "Casos:")
+			idea = idea || strings.Contains(string(b), "Idea:")
 		}
 		if !marca {
 			out = append(out, fmt.Sprintf("%s: %s es nuevo y no tiene ningún stub con \"%s\"; lo nuevo lo implementa el agente, no tú", nombre, strings.Join(nuevos, ", "), Marca))
 		}
 		if !casos {
 			out = append(out, fmt.Sprintf("%s: el contrato de %s no trae \"Casos:\"; sin ejemplos el agente no sabe qué probar", nombre, strings.Join(nuevos, ", ")))
+		}
+		// lo pensado por el modelo caro viaja en el contrato: sin eso el
+		// barato rediseña, y solo se le podían dar tareas triviales
+		if !idea {
+			out = append(out, fmt.Sprintf("%s: el contrato de %s no trae \"Idea:\"; escribe en pocas líneas cómo se resuelve (algoritmo, estructuras, trampas) para que el agente solo lo implemente", nombre, strings.Join(nuevos, ", ")))
 		}
 	} else if len(existentes) > 0 && !strings.Contains(t.Como, "Casos:") {
 		out = append(out, fmt.Sprintf("%s: cambia %s, que ya existe, y su \"como\" no trae \"Casos:\" del comportamiento nuevo", nombre, strings.Join(existentes, ", ")))

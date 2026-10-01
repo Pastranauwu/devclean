@@ -1,6 +1,7 @@
 package ship
 
 import (
+	"github.com/Pastranauwu/devclean/internal/task"
 	"path"
 	"regexp"
 	"strings"
@@ -22,6 +23,11 @@ func escanearRuido(diff string, archivos []string) []Hallazgo {
 		for _, linea := range ad.lineas {
 			if t := tipoDebug(linea, entrada); t != "" {
 				h = append(h, Hallazgo{Tipo: t, Archivo: ad.nombre, Detalle: recortar(linea)})
+			} else if !task.EsArchivoDePrueba(ad.nombre) && (strings.Contains(linea, "Idea:") || strings.Contains(linea, "Casos:")) {
+				// el contrato del stub era una instrucción para el agente;
+				// en el código entregado se pudre (soundlike: 100 líneas de
+				// contrato sobre una función de 130, ya contradiciéndola)
+				h = append(h, Hallazgo{Tipo: "contrato del esqueleto", Archivo: ad.nombre, Detalle: recortar(linea)})
 			} else if esCodigoComentado(linea) {
 				h = append(h, Hallazgo{Tipo: "código comentado", Archivo: ad.nombre, Detalle: recortar(linea)})
 			}
