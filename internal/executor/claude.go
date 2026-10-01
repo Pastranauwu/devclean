@@ -45,9 +45,18 @@ func (Claude) Models(context.Context) ([]string, error) {
 //   - --exclude-dynamic-system-prompt-sections: el cwd y el git status
 //     pasan del prompt de sistema al primer mensaje, así el prompt de
 //     sistema es igual en todos los cuartos y el caché se comparte.
+//   - --system-prompt: reemplaza el prompt de sistema de Claude Code, que
+//     está escrito para una sesión interactiva con un humano. Medido con
+//     las 4 herramientas, "responde ok" baja de 11,9k a 5,8k tokens, y
+//     eso se reenvía en cada turno de cada intento. Es fijo, igual para
+//     todos los roles y cuartos: el caché se comparte. Cómo trabajar lo
+//     dice el prompt de devclean (skills.Base).
 //
-// --disable-slash-commands no va: también apaga las skills del proyecto.
-var contextoLimpio = []string{"--setting-sources", "project,local", "--strict-mcp-config", "--exclude-dynamic-system-prompt-sections"}
+// --disable-slash-commands no va: también apaga las skills del proyecto
+// (y medido no ahorra nada).
+var contextoLimpio = []string{"--setting-sources", "project,local", "--strict-mcp-config", "--exclude-dynamic-system-prompt-sections", "--system-prompt", sistemaClaude}
+
+const sistemaClaude = "Eres un agente de programación que trabaja sin supervisión en el directorio actual, un repositorio git. Si tienes herramientas, úsalas para leer, editar y correr comandos; edita los archivos existentes con Edit en vez de reescribirlos. No pidas confirmación ni hagas preguntas: nadie responde. No expliques lo que vas a hacer: actúa y responde al final solo lo que se te pide."
 
 // herramientasClaude es el --tools de cada rol. Sin Glob ni Grep: Bash
 // los cubre. "" apaga todas: medido, un "responde ok" arranca con 6,5k
