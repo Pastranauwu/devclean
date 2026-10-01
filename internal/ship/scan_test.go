@@ -124,13 +124,22 @@ func TestEscanearSecretosSinSecretos(t *testing.T) {
 }
 
 func TestTipoCommit(t *testing.T) {
-	if tipoCommit("exportar clientes a CSV") != "feat" {
-		t.Error("título de feature debió ser feat")
+	src := []string{"src/a.ts", "tests/a.test.ts"}
+	for _, titulo := range []string{"exportar clientes a CSV", "pantalla de arregla el beat", "romper beat determinista", "esqueleto · base de minijuegos"} {
+		if got := tipoCommit(titulo, src, nil); got != "feat" {
+			t.Errorf("tipoCommit(%q) = %q, quiero feat", titulo, got)
+		}
 	}
 	for _, titulo := range []string{"arreglar el login", "fix del bug de tildes", "corrige la falla"} {
-		if tipoCommit(titulo) != "fix" {
-			t.Errorf("tipoCommit(%q) = %q, quiero fix", titulo, tipoCommit(titulo))
+		if got := tipoCommit(titulo, src, nil); got != "fix" {
+			t.Errorf("tipoCommit(%q) = %q, quiero fix", titulo, got)
 		}
+	}
+	if got := tipoCommit("prueba de integración punta a punta", []string{"tests/integracion.test.ts"}, nil); got != "test" {
+		t.Errorf("solo pruebas = %q, quiero test", got)
+	}
+	if got := tipoCommit("guía de uso", []string{"README.md", "docs/uso.md"}, nil); got != "docs" {
+		t.Errorf("solo documentación = %q, quiero docs", got)
 	}
 }
 

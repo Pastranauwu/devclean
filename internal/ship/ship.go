@@ -91,7 +91,8 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	apuntar(Paso{"base", true, "rebaseado sobre " + target})
 
 	// 2. historial — aplanar los wip en un commit limpio
-	tipo := tipoCommit(o.Task.Titulo)
+	tocados, _ := diffArchivos(o.Room.Path, target)
+	tipo := tipoCommit(o.Task.Titulo, tocados, patronesPruebaDe(o.Config))
 	cuenta, _, err := aplanar(ctx, o.Room.Path, target, o.Task.ID, o.Task.Titulo, tipo, o.Modelo)
 	if err != nil {
 		apuntar(Paso{"historial", false, err.Error()})
@@ -114,7 +115,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	// escribe a propósito. Prints de debug y temporales sí frenan.
 	var frena, avisa []Hallazgo
 	for _, x := range escanearRuido(diff, archivos) {
-		if x.Tipo == "código comentado" {
+		if x.Tipo == "código comentado" || x.Tipo == "contrato del esqueleto" {
 			avisa = append(avisa, x)
 		} else {
 			frena = append(frena, x)

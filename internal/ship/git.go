@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/task"
 )
 
 // gitRun ejecuta git en dir y devuelve la salida combinada.
@@ -166,11 +167,27 @@ func diffNumstat(roomPath, target string, patronesPrueba []string) (mas, menos, 
 	return mas, menos, masPrueba, nil
 }
 
-// tipoCommit infiere el tipo Conventional Commits del título de la tarea.
-func tipoCommit(titulo string) string {
-	lower := strings.ToLower(titulo)
-	for _, w := range []string{"arregl", "fix", "bug", "falla", "corrig", "repar", "error", "romp"} {
-		if strings.Contains(lower, w) {
+// tipoCommit decide el tipo Conventional Commits por lo que el commit
+// toca: solo pruebas es test, solo documentación es docs. fix es solo
+// cuando el título EMPIEZA por un verbo de arreglo. Antes bastaba una
+// palabra en cualquier parte del título y en soundlike "pantalla de
+// arregla el beat" (el nombre del juego), "romper beat determinista" y
+// el esqueleto salieron como fix, y la prueba de integración como feat.
+func tipoCommit(titulo string, archivos, patronesPrueba []string) string {
+	pruebas, docs := len(archivos) > 0, len(archivos) > 0
+	for _, a := range archivos {
+		pruebas = pruebas && (task.EsArchivoDePrueba(a) || config.MatchesAny(patronesPrueba, a))
+		docs = docs && esDocumentacion(a)
+	}
+	switch {
+	case pruebas:
+		return "test"
+	case docs:
+		return "docs"
+	}
+	primera, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(titulo)), " ")
+	for _, w := range []string{"arregl", "fix", "corrig", "corrij", "repar", "solucion"} {
+		if strings.HasPrefix(primera, w) {
 			return "fix"
 		}
 	}
