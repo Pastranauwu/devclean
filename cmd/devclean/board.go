@@ -54,8 +54,8 @@ func runBoard() error {
 			return runShip(accion.ID, true)
 		case tui.AccionReintentar:
 			return reintentarTarea(root, accion.ID)
-		case tui.AccionDetalle:
-			return runLogs(accion.ID)
+		case tui.AccionEntregarTodas:
+			return runShipTodas(false, "", false, false)
 		}
 		return nil
 	}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -255,11 +256,15 @@ func TestBoardKeyRSoloSobreDetenida(t *testing.T) {
 // justo cuando algo va mal cuando hace falta mirar.
 func TestBoardKeyDSiempreDisponible(t *testing.T) {
 	for _, estado := range []string{state.Lista, state.Detenida, state.EnCurso, state.Pendiente} {
-		m := boardModel{filas: []Fila{{ID: "T-001", Estado: estado}}}
+		m := boardModel{filas: []Fila{{ID: "T-001", Estado: estado}}, params: DefaultPlasma()}
 		next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 		bm := next.(boardModel)
-		if bm.accion != (Accion{AccionDetalle, "T-001"}) || cmd == nil {
-			t.Errorf("estado %s: accion = %+v", estado, bm.accion)
+		if bm.detalleID != "T-001" || cmd != nil || !strings.Contains(bm.View(), "INTENTOS") {
+			t.Errorf("estado %s: d debe abrir el detalle sin salir del tablero", estado)
+		}
+		next, _ = bm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+		if next.(boardModel).detalleID != "" {
+			t.Errorf("estado %s: d otra vez debe cerrar el detalle", estado)
 		}
 	}
 }
@@ -270,5 +275,81 @@ func TestBoardAyudaListaLasTeclas(t *testing.T) {
 		if !strings.Contains(texto, tecla) {
 			t.Errorf("la ayuda no menciona %q", tecla)
 		}
+	}
+}
+
+func TestTableroQueNoCabeSigueAlCursor(t *testing.T) {
+	var filas []Fila
+	for i := 1; i <= 60; i++ {
+		filas = append(filas, Fila{ID: fmt.Sprintf("T-%03d", i), Titulo: strings.Repeat("título largo ", 20), Estado: state.Lista})
+	}
+	filas = append(filas, Fila{ID: "T-061", Titulo: "la última", Estado: state.Pendiente})
+
+	ls := encajarTablero(filas, "T-061", "", "", nil, 80, 24)
+	texto := textoTablero(ls)
+	if len(ls) > 24-2*margenTablero {
+		t.Errorf("%d líneas no caben en 24 filas", len(ls))
+	}
+	if !strings.Contains(texto, "> T-061") || !strings.Contains(texto, "más arriba") || !strings.Contains(texto, "q sale") {
+		t.Errorf("la tarea seleccionada, el aviso de recorte o la ayuda no están:\n%s", texto)
+	}
+	for _, l := range ls {
+		if n := len([]rune(l.texto)); n > 80-2*margenTablero {
+			t.Errorf("línea de %d columnas en una terminal de 80: %q", n, l.texto)
+		}
+	}
+	if arriba := textoTablero(encajarTablero(filas, "T-001", "", "", nil, 80, 24)); !strings.Contains(arriba, "> T-001") || !strings.Contains(arriba, "más abajo") {
+		t.Errorf("al principio de la lista:\n%s", arriba)
+	}
+}
+
+func teclas(m boardModel, ks string) (boardModel, tea.Cmd) {
+	var cmd tea.Cmd
+	for _, r := range ks {
+		var next tea.Model
+		next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = next.(boardModel)
+	}
+	return m, cmd
+}
+
+func TestBoardFiltraYSalta(t *testing.T) {
+	filas := []Fila{
+		{ID: "T-001", Titulo: "exportar CSV", Estado: state.Lista},
+		{ID: "T-002", Titulo: "login", Estado: state.Lista},
+		{ID: "T-003", Titulo: "Exportar PDF", Estado: state.Pendiente},
+	}
+	m, _ := teclas(boardModel{filas: filas, todas: filas}, "G")
+	if m.cursor != 2 {
+		t.Errorf("G debe ir a la última, cursor = %d", m.cursor)
+	}
+	m, _ = teclas(m, "/export")
+	if len(m.filas) != 2 || selectedID(m.filas, m.cursor) != "T-003" {
+		t.Errorf("filtro: quedan %d filas, cursor en %s", len(m.filas), selectedID(m.filas, m.cursor))
+	}
+	// mientras se escribe el filtro las letras no son comandos
+	if m, cmd := teclas(m, "q"); cmd != nil || m.filtro != "exportq" {
+		t.Errorf("q dentro del filtro debe escribirse, filtro = %q", m.filtro)
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m = next.(boardModel); len(m.filas) != 3 || m.filtro != "" {
+		t.Errorf("esc debe quitar el filtro: %d filas, filtro %q", len(m.filas), m.filtro)
+	}
+}
+
+func TestBoardSEntregaTodasPideConfirmacion(t *testing.T) {
+	filas := []Fila{{ID: "T-001", Estado: state.Lista}, {ID: "T-002", Estado: state.Pendiente}}
+	m, cmd := teclas(boardModel{filas: filas}, "S")
+	if cmd != nil || m.accion.Tipo != "" || !strings.Contains(m.aviso, "S otra vez") {
+		t.Fatalf("la primera S solo avisa: accion = %+v aviso = %q", m.accion, m.aviso)
+	}
+	if otra, cmd := teclas(m, "jS"); cmd != nil || otra.accion.Tipo != "" {
+		t.Error("otra tecla en medio cancela la confirmación")
+	}
+	if m, cmd = teclas(m, "S"); cmd == nil || m.accion.Tipo != AccionEntregarTodas {
+		t.Errorf("la segunda S entrega: accion = %+v", m.accion)
+	}
+	if m, cmd := teclas(boardModel{filas: filas[1:]}, "SS"); cmd != nil || m.accion.Tipo != "" {
+		t.Error("sin tareas listas S no entrega nada")
 	}
 }

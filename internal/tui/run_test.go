@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -32,5 +33,24 @@ func TestReloj(t *testing.T) {
 	}
 	if reloj(5*time.Second) != "5s" {
 		t.Errorf("reloj(5s) = %q", reloj(5*time.Second))
+	}
+}
+
+func TestCorridaQueNoCabeMuestraLasQueTrabajan(t *testing.T) {
+	m := runModel{estado: map[string]*tareaViva{}, inicio: map[string]time.Time{}, alto: 24}
+	for i := 1; i <= 40; i++ {
+		id := fmt.Sprintf("T-%03d", i)
+		m.filas = append(m.filas, FilaRun{ID: id, Titulo: "tarea"})
+		if i <= 10 {
+			m.estado[id] = &tareaViva{estado: "lista", intentos: 1}
+		}
+	}
+	m.estado["T-011"] = &tareaViva{estado: "trabajando"}
+	v := m.View()
+	if n := strings.Count(v, "\n") + 1; n > 24 {
+		t.Errorf("la vista tiene %d líneas en una terminal de 24", n)
+	}
+	if !strings.Contains(v, "T-011") || !strings.Contains(v, "10 verdes") || !strings.Contains(v, "29 pendientes") || strings.Contains(v, "T-040") {
+		t.Errorf("vista compacta:\n%s", v)
 	}
 }

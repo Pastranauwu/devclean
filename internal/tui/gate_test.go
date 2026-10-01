@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/Pastranauwu/devclean/internal/ship"
 )
 
@@ -39,7 +41,7 @@ func TestRenderGate(t *testing.T) {
 		{Nombre: "base", OK: true},
 		{Nombre: "historial", OK: true, Detalle: "47 guardados → 1 commit"},
 	}
-	vista := renderGate("T-003", pasos, false, 0, 80)
+	vista := renderGate("T-003", pasos, false, 0, 0, 0)
 
 	for _, want := range []string{"ESCLUSA DE SALIDA · T-003", "base", "hist", "ruido", "secr", "presu", "iface", "bisec", "hand", "pr", "✓", "·", "2/11"} {
 		if !strings.Contains(vista, want) {
@@ -53,7 +55,7 @@ func TestRenderGate(t *testing.T) {
 
 func TestRenderGateFreno(t *testing.T) {
 	pasos := []ship.Paso{{Nombre: "base", OK: false, Detalle: "rebase en conflicto"}}
-	vista := renderGate("T-003", pasos, true, 0, 80)
+	vista := renderGate("T-003", pasos, true, 0, 0, 0)
 	if !strings.Contains(vista, "✗") {
 		t.Errorf("un paso fallado debió pintarse con ✗:\n%s", vista)
 	}
@@ -99,7 +101,7 @@ func TestContadorNuncaPasaDelTotal(t *testing.T) {
 	pasos = append(pasos, ship.Paso{Nombre: "esclusa T-001", OK: true})
 	pasos = append(pasos, ship.Paso{Nombre: "integradas", OK: true})
 
-	vista := renderGate("T-001", pasos, true, 0, 100)
+	vista := renderGate("T-001", pasos, true, 0, 100, 0)
 	if !strings.Contains(vista, "11/11") {
 		t.Errorf("contador fuera de rango, quiero 11/11:\n%s", vista)
 	}
@@ -120,7 +122,7 @@ func TestPasoQueNoAplicaNoDejaLaBarraCorta(t *testing.T) {
 		}
 		pasos = append(pasos, ship.Paso{Nombre: n, OK: true})
 	}
-	vista := renderGate("T-001", pasos, true, 0, 100)
+	vista := renderGate("T-001", pasos, true, 0, 100, 0)
 	if !strings.Contains(vista, "9/9") {
 		t.Errorf("quiero 9/9 con dos pasos que no aplican:\n%s", vista)
 	}
@@ -142,5 +144,22 @@ func TestSaltoNoCorreLasEtiquetas(t *testing.T) {
 	}
 	if e[1] != pendiente {
 		t.Errorf("historial no corrió: debió quedar pendiente, es %v", e[1])
+	}
+}
+
+func TestRenderGateCabeEnTerminalChica(t *testing.T) {
+	pasos := []ship.Paso{{Nombre: "base", OK: true, Detalle: strings.Repeat("detalle largo ", 30)}}
+	vista := renderGate("T-001", pasos, false, 0, 60, 24)
+	lineas := strings.Split(vista, "\n")
+	if len(lineas) > 24 {
+		t.Errorf("%d líneas en una terminal de 24", len(lineas))
+	}
+	for _, l := range lineas {
+		if w := lipgloss.Width(l); w > 60 {
+			t.Errorf("línea de %d columnas en una terminal de 60: %q", w, l)
+		}
+	}
+	if !strings.Contains(vista, "bisectable") {
+		t.Error("en angosto los pasos van en lista con su nombre completo")
 	}
 }

@@ -135,35 +135,59 @@ func renderNombre(e estadoPaso, nombre string) string {
 	}
 }
 
+// anchoPaso son las columnas de cada paso en la fila horizontal.
+const anchoPaso = 8
+
 // renderGate dibuja la compuerta con colores, spinner y barra de progreso,
-// dentro de una tarjeta.
-func renderGate(id string, pasos []ship.Paso, terminado bool, tick, width int) string {
+// dentro de una tarjeta. La fila de pasos mide 94 columnas con la tarjeta:
+// en una terminal más angosta se partía en dos renglones desalineados, así
+// que ahí los pasos van en lista. Si la terminal es baja, sin logo.
+// width o alto en 0 = sin límite.
+func renderGate(id string, pasos []ship.Paso, terminado bool, tick, width, alto int) string {
 	e := clasificar(pasos, terminado)
+	const marco = 6 // borde y relleno de la tarjeta
 
 	var cuerpo strings.Builder
 	cuerpo.WriteString(estiloTitulo.Render("ESCLUSA DE SALIDA · "+id) + "\n\n")
 
-	var glifos, nombres strings.Builder
-	for i := 0; i < len(e); i++ {
-		glifos.WriteString(acomodar(renderGlifo(e[i], tick), 8))
-		nombres.WriteString(acomodar(renderNombre(e[i], nombresCortos[i]), 8))
+	if width > 0 && width < len(e)*anchoPaso+marco {
+		for i := range e {
+			cuerpo.WriteString(renderGlifo(e[i], tick) + " " + renderNombre(e[i], NombresPasos[i]) + "\n")
+		}
+	} else {
+		var glifos, nombres strings.Builder
+		for i := 0; i < len(e); i++ {
+			glifos.WriteString(acomodar(renderGlifo(e[i], tick), anchoPaso))
+			nombres.WriteString(acomodar(renderNombre(e[i], nombresCortos[i]), anchoPaso))
+		}
+		cuerpo.WriteString(strings.TrimRight(glifos.String(), " ") + "\n")
+		cuerpo.WriteString(strings.TrimRight(nombres.String(), " ") + "\n")
 	}
-	cuerpo.WriteString(strings.TrimRight(glifos.String(), " ") + "\n")
-	cuerpo.WriteString(strings.TrimRight(nombres.String(), " ") + "\n")
 
 	hechos, total := hechosYTotal(e, terminado)
-	cuerpo.WriteString("\n" + barra(hechos, total, 40) + " " +
+	largo := 40
+	if width > 0 {
+		largo = max(min(largo, width-marco-6), 5)
+	}
+	cuerpo.WriteString("\n" + barra(hechos, total, largo) + " " +
 		estiloApagado.Render(strconv.Itoa(hechos)+"/"+strconv.Itoa(total)) + "\n")
 
 	if len(pasos) > 0 {
-		cuerpo.WriteString("\n" + estiloApagado.Render(pasos[len(pasos)-1].Detalle) + "\n")
+		// el detalle es texto libre (un error de git, una ruta): en una
+		// sola línea, cortado, o ensancha la tarjeta fuera de la terminal
+		detalle := strings.Join(strings.Fields(pasos[len(pasos)-1].Detalle), " ")
+		if r := []rune(detalle); width > marco+1 && len(r) > width-marco {
+			detalle = string(r[:width-marco-1]) + "…"
+		}
+		cuerpo.WriteString("\n" + estiloApagado.Render(detalle) + "\n")
 	}
 
-	var b strings.Builder
-	b.WriteString(Logo(width))
-	b.WriteString("\n")
-	b.WriteString(caja(cuerpo.String()))
-	return b.String()
+	tarjeta := caja(strings.TrimRight(cuerpo.String(), "\n"))
+	logo := Logo(width) + "\n"
+	if alto > 0 && strings.Count(logo+tarjeta, "\n")+1 > alto {
+		return tarjeta
+	}
+	return logo + tarjeta
 }
 
 // acomodar rellena s con espacios hasta el ancho visible n (celdas).
@@ -210,6 +234,8 @@ type gateModel struct {
 	terminado bool
 	resultado ship.Resultado
 	tick      int
+	ancho     int
+	alto      int
 }
 
 func (m gateModel) Init() tea.Cmd {
@@ -238,6 +264,8 @@ func (m gateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.tick++
 		return m, tickCmd()
+	case tea.WindowSizeMsg:
+		m.ancho, m.alto = msg.Width, msg.Height
 	case tea.KeyMsg:
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -256,5 +284,5 @@ func (m gateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m gateModel) View() string {
-	return renderGate(m.opciones.Task.ID, m.pasos, m.terminado, m.tick, 80)
+	return renderGate(m.opciones.Task.ID, m.pasos, m.terminado, m.tick, m.ancho, m.alto)
 }

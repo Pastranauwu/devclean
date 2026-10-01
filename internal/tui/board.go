@@ -2,6 +2,8 @@ package tui
 
 import (
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/bubbletea"
 
@@ -66,8 +68,38 @@ func Tablero(root string) ([]Fila, error) {
 		}
 		filas = append(filas, f)
 	}
-	sort.Slice(filas, func(i, j int) bool { return filas[i].ID < filas[j].ID })
+	// el orden es el de la pantalla (por columna y dentro por id): el
+	// cursor recorre filas, y ordenadas solo por id saltaba de una columna
+	// a otra en vez de bajar a la línea de abajo
+	sort.SliceStable(filas, func(i, j int) bool {
+		if a, b := rangoEstado(filas[i].Estado), rangoEstado(filas[j].Estado); a != b {
+			return a < b
+		}
+		return filas[i].ID < filas[j].ID
+	})
 	return filas, nil
+}
+
+// columnas es el orden en que el tablero agrupa las tareas.
+var columnas = []struct {
+	nombre string
+	estado string
+	glifo  string
+	color  [3]int
+}{
+	{"LISTO PARA ENTREGAR", state.Lista, "✓", rgbPresion},
+	{"EN CURSO", state.EnCurso, "◐", rgbEspera},
+	{"DETENIDO", state.Detenida, "⏸", rgbAlerta},
+	{"PENDIENTE", state.Pendiente, "·", rgbApagado},
+}
+
+func rangoEstado(estado string) int {
+	for i, c := range columnas {
+		if c.estado == estado {
+			return i
+		}
+	}
+	return len(columnas)
 }
 
 // hijosDe arma recursivamente el árbol de un padre a partir de los nodos
@@ -173,64 +205,119 @@ func filaConHijos(f Fila, profundidad int, sel string) []lineaSticker {
 	return ls
 }
 
+// armarTablero es el tablero entero, sin recortar: lo que se ve cuando
+// cabe en la terminal.
 func armarTablero(filas []Fila, sel, aviso string, presupuesto []string) []lineaSticker {
-	var ls []lineaSticker
-	alto := len(logoFilas)
+	return encajarTablero(filas, sel, aviso, "", presupuesto, 0, 0)
+}
+
+// encajarTablero arma el tablero para una terminal de ancho × alto (0 =
+// sin límite). Si no cabe, el logo se reduce a una línea y las tareas se
+// ven por una ventana que sigue al cursor: antes lo que no entraba se
+// cortaba sin aviso y con muchas tareas solo se veía el principio de la
+// primera columna, sin forma de llegar al resto.
+// filtro es la línea del filtro activo ("" si no hay): con él, una lista
+// vacía es "nada coincide", no "sin tareas".
+func encajarTablero(filas []Fila, sel, aviso, filtro string, presupuesto []string, ancho, alto int) []lineaSticker {
+	var cab []lineaSticker
+	n := len(logoFilas)
 	for i, fila := range logoFilas {
-		c := mezclarRGB([3]int{79, 179, 162}, [3]int{44, 110, 99}, float64(i)/float64(alto-1))
-		ls = append(ls, lineaSticker{texto: fila, color: c})
+		c := mezclarRGB([3]int{79, 179, 162}, [3]int{44, 110, 99}, float64(i)/float64(n-1))
+		cab = append(cab, lineaSticker{texto: fila, color: c})
 	}
-	ls = append(ls, lineaSticker{})
-	ls = append(ls, lineaSticker{texto: "dirige agentes · entrega código limpio", color: rgbApagado})
+	cab = append(cab, lineaSticker{}, lineaSticker{texto: "dirige agentes · entrega código limpio", color: rgbApagado})
+	var gasto []lineaSticker
 	for _, l := range presupuesto {
-		ls = append(ls, lineaSticker{texto: "presupuesto " + l, color: rgbApagado})
+		gasto = append(gasto, lineaSticker{texto: "presupuesto " + l, color: rgbApagado})
 	}
-	ls = append(ls, lineaSticker{})
+	cab = append(append(cab, gasto...), lineaSticker{})
 
-	if len(filas) == 0 {
-		ls = append(ls, lineaSticker{texto: "sin tareas · empieza con devclean plan \"lo que necesitas\"", color: rgbApagado})
-		return ls
+	if len(filas) == 0 && filtro == "" {
+		return recortarAncho(append(cab, lineaSticker{texto: "sin tareas · empieza con devclean plan \"lo que necesitas\"", color: rgbApagado}), ancho)
 	}
 
-	orden := []struct {
-		nombre string
-		estado string
-		glifo  string
-		color  [3]int
-	}{
-		{"LISTO PARA ENTREGAR", state.Lista, "✓", rgbPresion},
-		{"EN CURSO", state.EnCurso, "◐", rgbEspera},
-		{"DETENIDO", state.Detenida, "⏸", rgbAlerta},
-		{"PENDIENTE", state.Pendiente, "·", rgbApagado},
-	}
-	for _, col := range orden {
+	var cuerpo []lineaSticker
+	lineaSel := 0
+	for _, col := range columnas {
 		var suyos []Fila
 		for _, f := range filas {
 			if f.Estado == col.estado {
 				suyos = append(suyos, f)
 			}
 		}
-		ls = append(ls, lineaSticker{texto: col.glifo + " " + col.nombre, color: col.color})
+		titulo := col.glifo + " " + col.nombre
+		if len(suyos) > 0 {
+			titulo += " · " + strconv.Itoa(len(suyos))
+		}
+		cuerpo = append(cuerpo, lineaSticker{texto: titulo, color: col.color})
 		if len(suyos) == 0 {
-			ls = append(ls, lineaSticker{texto: "  —", color: rgbApagado})
+			cuerpo = append(cuerpo, lineaSticker{texto: "  —", color: rgbApagado})
 		}
 		for _, f := range suyos {
-			ls = append(ls, filaConHijos(f, 0, sel)...)
+			if f.ID == sel {
+				lineaSel = len(cuerpo)
+			}
+			cuerpo = append(cuerpo, filaConHijos(f, 0, sel)...)
 		}
-		ls = append(ls, lineaSticker{})
+		cuerpo = append(cuerpo, lineaSticker{})
 	}
+
+	var pie []lineaSticker
 	if aviso != "" {
-		ls = append(ls, lineaSticker{texto: aviso, color: rgbAlerta})
+		pie = append(pie, lineaSticker{texto: aviso, color: rgbAlerta})
 	}
-	ls = append(ls, lineaSticker{texto: "j/k mueve · s entrega · r reintenta · d detalle · q sale · se refresca solo", color: rgbApagado})
+	if filtro != "" {
+		pie = append(pie, lineaSticker{texto: filtro, color: rgbEspera})
+	}
+	pie = append(pie, lineaSticker{texto: ayudaTablero, color: rgbApagado})
+
+	libre := alto - 2*margenTablero
+	if alto > 0 && len(cab)+len(cuerpo)+len(pie) > libre {
+		cab = append([]lineaSticker{{texto: "devclean · " + strconv.Itoa(len(filas)) + " tareas", color: rgbPresion}}, gasto...)
+		// dos líneas fijas para "más arriba / más abajo": si aparecieran
+		// y desaparecieran, la lista saltaría al mover el cursor
+		visibles := libre - len(cab) - len(pie) - 2
+		if visibles < 1 {
+			visibles = 1
+		}
+		desde, hasta := ventana(lineaSel, len(cuerpo), visibles)
+		arriba, abajo := lineaSticker{}, lineaSticker{}
+		if desde > 0 {
+			arriba = lineaSticker{texto: "↑ " + strconv.Itoa(desde) + " líneas más arriba", color: rgbApagado}
+		}
+		if hasta < len(cuerpo) {
+			abajo = lineaSticker{texto: "↓ " + strconv.Itoa(len(cuerpo)-hasta) + " líneas más abajo", color: rgbApagado}
+		}
+		cuerpo = append(append([]lineaSticker{arriba}, cuerpo[desde:hasta]...), abajo)
+	}
+	return recortarAncho(append(append(cab, cuerpo...), pie...), ancho)
+}
+
+const ayudaTablero = "j/k · / filtra · d detalle · s entrega · S todas · r reintenta · q sale"
+
+// margenTablero es el borde transparente del sticker sobre el plasma.
+const margenTablero = 2
+
+// recortarAncho corta con "…" las líneas que no caben: un título largo
+// ensanchaba el sticker más que la terminal y se perdía el final de todas.
+func recortarAncho(ls []lineaSticker, ancho int) []lineaSticker {
+	max := ancho - 2*margenTablero
+	if ancho <= 0 || max < 1 {
+		return ls
+	}
+	for i, l := range ls {
+		if r := []rune(l.texto); len(r) > max {
+			ls[i].texto = string(r[:max-1]) + "…"
+		}
+	}
 	return ls
 }
 
 // Tipos de acción que el tablero puede devolver al comando.
 const (
-	AccionEntregar   = "entregar"   // ship --dry-run sobre la tarea
-	AccionReintentar = "reintentar" // run --reintentar
-	AccionDetalle    = "detalle"    // logs de la tarea
+	AccionEntregar      = "entregar"       // ship --dry-run sobre la tarea
+	AccionReintentar    = "reintentar"     // run --reintentar
+	AccionEntregarTodas = "entregar_todas" // ship --todas
 )
 
 // Accion es lo que el humano pidió desde el tablero. Tipo vacío = salió
@@ -248,7 +335,7 @@ func CorrerBoard(root string) (Accion, error) {
 	if err != nil {
 		return Accion{}, err
 	}
-	m := boardModel{filas: filas, cursor: cursorInicial(filas), params: DefaultPlasma(), root: root, presupuesto: lineasPresupuesto(root)}
+	m := boardModel{todas: filas, filas: filas, cursor: cursorInicial(filas), params: DefaultPlasma(), root: root, presupuesto: lineasPresupuesto(root)}
 	final, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	if err != nil {
 		return Accion{}, err
@@ -257,7 +344,18 @@ func CorrerBoard(root string) (Accion, error) {
 }
 
 type boardModel struct {
-	filas       []Fila
+	// filas es lo que se ve y lo que recorre el cursor; todas, lo que hay
+	// en disco. Solo difieren con un filtro puesto.
+	filas []Fila
+	todas []Fila
+
+	filtro     string
+	filtrando  bool // el teclado escribe en el filtro
+	confirmaS  bool // ya se pidió S una vez: la segunda entrega
+	detalleID  string
+	detalle    []lineaSticker
+	desplazado int
+
 	cursor      int
 	accion      Accion
 	aviso       string
@@ -296,36 +394,169 @@ func (m boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tickPlasma()
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "esc", "ctrl+c":
-			return m, tea.Quit
-		case "j", "down":
-			if n := len(m.filas); n > 0 {
-				m.cursor = (m.cursor + 1) % n
-				m.aviso = ""
-			}
-			return m, nil
-		case "k", "up":
-			if n := len(m.filas); n > 0 {
-				m.cursor = (m.cursor - 1 + n) % n
-				m.aviso = ""
-			}
-			return m, nil
-		case "s", "r", "d":
-			if m.cursor < 0 || m.cursor >= len(m.filas) {
-				return m, nil
-			}
-			f := m.filas[m.cursor]
-			accion, aviso := accionDeTecla(msg.String(), f)
-			if aviso != "" {
-				m.aviso = aviso
-				return m, nil
-			}
-			m.accion = accion
-			return m, tea.Quit
-		}
+		return m.tecla(msg)
 	}
 	return m, nil
+}
+
+// saltoPagina es cuánto mueven pgup/pgdn.
+const saltoPagina = 10
+
+func (m boardModel) tecla(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	tecla := msg.String()
+	if tecla == "ctrl+c" {
+		return m, tea.Quit
+	}
+	confirma := m.confirmaS
+	m.confirmaS = false
+
+	if m.filtrando {
+		switch {
+		case tecla == "enter":
+			m.filtrando = false
+		case tecla == "esc":
+			m.filtrando, m.filtro = false, ""
+		case tecla == "backspace":
+			if r := []rune(m.filtro); len(r) > 0 {
+				m.filtro = string(r[:len(r)-1])
+			}
+		case msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace:
+			m.filtro += string(msg.Runes)
+		}
+		m.filtrar()
+		return m, nil
+	}
+
+	if m.detalleID != "" {
+		switch tecla {
+		case "q":
+			return m, tea.Quit
+		case "d", "esc", "enter":
+			m.detalleID, m.detalle, m.desplazado = "", nil, 0
+		case "j", "down":
+			m.desplazar(1)
+		case "k", "up":
+			m.desplazar(-1)
+		case "pgdown", "ctrl+d":
+			m.desplazar(saltoPagina)
+		case "pgup", "ctrl+u":
+			m.desplazar(-saltoPagina)
+		}
+		return m, nil
+	}
+
+	n := len(m.filas)
+	switch tecla {
+	case "q":
+		return m, tea.Quit
+	case "esc":
+		// con filtro puesto, esc lo quita; sin filtro, sale
+		if m.filtro == "" {
+			return m, tea.Quit
+		}
+		m.filtro = ""
+		m.filtrar()
+	case "/":
+		m.filtrando, m.aviso = true, ""
+	case "j", "down":
+		if n > 0 {
+			m.cursor = (m.cursor + 1) % n
+			m.aviso = ""
+		}
+	case "k", "up":
+		if n > 0 {
+			m.cursor = (m.cursor - 1 + n) % n
+			m.aviso = ""
+		}
+	case "pgdown", "ctrl+d":
+		m.cursor = min(m.cursor+saltoPagina, max(n-1, 0))
+	case "pgup", "ctrl+u":
+		m.cursor = max(m.cursor-saltoPagina, 0)
+	case "g", "home":
+		m.cursor = 0
+	case "G", "end":
+		m.cursor = max(n-1, 0)
+	case "d", "enter":
+		if id := selectedID(m.filas, m.cursor); id != "" {
+			m.detalleID, m.desplazado = id, 0
+			m.detalle = detalleTarea(m.root, id, m.ancho)
+		}
+	case "S":
+		listas := 0
+		for _, f := range m.base() {
+			if f.Estado == state.Lista {
+				listas++
+			}
+		}
+		switch {
+		case listas == 0:
+			m.aviso = "ninguna tarea lista · S entrega las que están en LISTO"
+		case !confirma:
+			// abre un PR: no sale de una tecla suelta
+			m.confirmaS = true
+			m.aviso = "S otra vez entrega las " + strconv.Itoa(listas) + " listas en un solo PR · cualquier otra tecla cancela"
+		default:
+			m.accion = Accion{Tipo: AccionEntregarTodas}
+			return m, tea.Quit
+		}
+	case "s", "r":
+		if m.cursor < 0 || m.cursor >= n {
+			return m, nil
+		}
+		accion, aviso := accionDeTecla(tecla, m.filas[m.cursor])
+		if aviso != "" {
+			m.aviso = aviso
+			return m, nil
+		}
+		m.accion = accion
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// base son todas las tareas, con o sin filtro puesto.
+func (m boardModel) base() []Fila {
+	if m.todas != nil {
+		return m.todas
+	}
+	return m.filas
+}
+
+// filtrar deja en filas las tareas cuyo id o título contiene el filtro,
+// sin distinguir mayúsculas, y mantiene el cursor sobre la misma tarea.
+func (m *boardModel) filtrar() {
+	sel := selectedID(m.filas, m.cursor)
+	todas := m.base()
+	m.todas = todas
+	m.filas = todas
+	if f := strings.ToLower(m.filtro); f != "" {
+		m.filas = nil
+		for _, x := range todas {
+			if strings.Contains(strings.ToLower(x.ID+" "+x.Titulo), f) {
+				m.filas = append(m.filas, x)
+			}
+		}
+	}
+	m.cursor = 0
+	for i, f := range m.filas {
+		if f.ID == sel {
+			m.cursor = i
+		}
+	}
+}
+
+// desplazar mueve el panel de detalle sin pasarse del final.
+func (m *boardModel) desplazar(d int) {
+	tope := max(len(m.detalle)-m.altoDetalle(), 0)
+	m.desplazado = max(min(m.desplazado+d, tope), 0)
+}
+
+// altoDetalle son las líneas del detalle que caben, sin el pie.
+func (m boardModel) altoDetalle() int {
+	if m.alto <= 0 {
+		return len(m.detalle)
+	}
+	return max(m.alto-2*margenTablero-2, 1)
 }
 
 // accionDeTecla traduce una tecla a la acción que el comando ejecutará,
@@ -342,8 +573,6 @@ func accionDeTecla(tecla string, f Fila) (Accion, string) {
 			return Accion{}, f.ID + " no está detenida · r solo revive las que están en DETENIDO"
 		}
 		return Accion{AccionReintentar, f.ID}, ""
-	case "d":
-		return Accion{AccionDetalle, f.ID}, ""
 	}
 	return Accion{}, ""
 }
@@ -352,24 +581,35 @@ func accionDeTecla(tecla string, f Fila) (Accion, string) {
 // se sigue por id, no por posición, porque una tarea puede cambiar de
 // columna entre dos refrescos.
 func (m *boardModel) refrescar() {
-	sel := selectedID(m.filas, m.cursor)
 	filas, err := Tablero(m.root)
 	if err != nil {
 		return // un fallo de lectura no debe tumbar el tablero
 	}
-	m.filas = filas
+	m.todas = filas
+	m.filtrar()
 	m.presupuesto = lineasPresupuesto(m.root)
-	for i, f := range filas {
-		if f.ID == sel {
-			m.cursor = i
-			return
-		}
-	}
-	if m.cursor >= len(filas) {
-		m.cursor = 0
+	if m.detalleID != "" {
+		m.detalle = detalleTarea(m.root, m.detalleID, m.ancho)
+		m.desplazar(0)
 	}
 }
 
 func (m boardModel) View() string {
-	return FondoPlasma(m.ancho, m.alto, m.t, m.params, armarTablero(m.filas, selectedID(m.filas, m.cursor), m.aviso, m.presupuesto), 2)
+	if m.detalleID != "" {
+		hasta := min(m.desplazado+m.altoDetalle(), len(m.detalle))
+		ls := append([]lineaSticker{}, m.detalle[min(m.desplazado, hasta):hasta]...)
+		pie := "j/k desplaza · d vuelve · q sale"
+		if hasta < len(m.detalle) {
+			pie = "↓ " + strconv.Itoa(len(m.detalle)-hasta) + " líneas más · " + pie
+		}
+		ls = append(ls, lineaSticker{}, lineaSticker{texto: pie, color: rgbApagado})
+		return FondoPlasma(m.ancho, m.alto, m.t, m.params, recortarAncho(ls, m.ancho), margenTablero)
+	}
+	filtro := ""
+	if m.filtrando {
+		filtro = "/" + m.filtro + "▏ enter fija · esc quita"
+	} else if m.filtro != "" {
+		filtro = "/" + m.filtro + " · " + strconv.Itoa(len(m.filas)) + " de " + strconv.Itoa(len(m.todas)) + " · esc quita"
+	}
+	return FondoPlasma(m.ancho, m.alto, m.t, m.params, encajarTablero(m.filas, selectedID(m.filas, m.cursor), m.aviso, filtro, m.presupuesto, m.ancho, m.alto), margenTablero)
 }

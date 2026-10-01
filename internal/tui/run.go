@@ -61,6 +61,7 @@ type runModel struct {
 	fase   map[string]FaseRun
 	tick   int
 	fin    bool
+	alto   int
 }
 
 // CorrerRun muestra la corrida en vivo. `fases` se consulta en cada tick
@@ -118,6 +119,8 @@ func (m runModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.fase = m.fases()
 		}
 		return m, tickCmd()
+	case tea.WindowSizeMsg:
+		m.alto = msg.Height
 	case tea.KeyMsg:
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -161,15 +164,44 @@ func (m runModel) View() string {
 	cuerpo.WriteString(barra(hechos, total, 40) + " " +
 		estiloApagado.Render(strconv.Itoa(hechos)+"/"+strconv.Itoa(len(m.filas))) + "\n\n")
 
+	cabecera := cuerpo.String()
+	// logo (6) + borde y relleno de la caja (4) + cabecera (3)
+	const marco = 13
+	filas := m.renderFilas(false)
+	if m.alto > 0 && marco+strings.Count(filas, "\n") > m.alto {
+		// no cabe: sin logo y solo lo que está pasando. bubbletea corta
+		// por arriba lo que sobra, y con muchas tareas quedaban a la
+		// vista las pendientes del final y no las que trabajan
+		return caja(cabecera + strings.TrimRight(m.renderFilas(true), "\n"))
+	}
+	return Logo(80) + "\n" + caja(cabecera+strings.TrimRight(filas, "\n"))
+}
+
+// renderFilas pinta una línea por tarea. En compacto, las verdes y las
+// pendientes se resumen en una cuenta y quedan las que trabajan o se
+// detuvieron, que son las que hay que mirar.
+func (m runModel) renderFilas(compacto bool) string {
+	var b strings.Builder
+	verdes, pendientes := 0, 0
 	for _, f := range m.filas {
-		fase, hay := m.fase[f.ID]
-		cuerpo.WriteString(renderFilaRun(f, m.estado[f.ID], m.inicio[f.ID], m.tick))
-		if hay && (m.estado[f.ID] == nil || m.estado[f.ID].estado == "trabajando") {
-			cuerpo.WriteString(renderFase(fase))
+		v := m.estado[f.ID]
+		if compacto && v == nil {
+			pendientes++
+			continue
+		}
+		if compacto && v.estado == "lista" {
+			verdes++
+			continue
+		}
+		b.WriteString(renderFilaRun(f, v, m.inicio[f.ID], m.tick))
+		if fase, hay := m.fase[f.ID]; hay && (v == nil || v.estado == "trabajando") {
+			b.WriteString(renderFase(fase))
 		}
 	}
-
-	return Logo(80) + "\n" + caja(strings.TrimRight(cuerpo.String(), "\n"))
+	if compacto {
+		b.WriteString("  " + estiloPresion.Render("✓ "+strconv.Itoa(verdes)+" verdes") + estiloApagado.Render(" · "+strconv.Itoa(pendientes)+" pendientes") + "\n")
+	}
+	return b.String()
 }
 
 // renderFase pinta la línea de detalle: intento, fase, modelo, tiempo en
