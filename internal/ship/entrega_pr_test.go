@@ -281,9 +281,11 @@ func TestEntregarTodasEsIdempotente(t *testing.T) {
 	if !primera.Aprobado {
 		t.Fatalf("primera pasada · %s", primera.PrimerMotivo())
 	}
-	// la rama quedó aplanada: ya no hay marcadores wip que mirar
-	if log := gitCmd(t, root, "log", "--format=%s", "main..devclean/T-001"); strings.Contains(log, "wip:") {
-		t.Fatalf("la primera pasada debió aplanar la rama · %q", log)
+	// la rama del cuarto vuelve a su punta: lo aplanado vive en la rama
+	// de entrega, y las tareas que dependen de esta siguen encima de sus
+	// commits originales
+	if log := gitCmd(t, root, "log", "--format=%s", "main..devclean/T-001"); !strings.Contains(log, "wip:") {
+		t.Fatalf("la entrega no debe dejar reescrita la rama del cuarto · %q", log)
 	}
 
 	segunda := correr(conCommit)
@@ -471,5 +473,65 @@ func TestAceptacionDeDistinguePasoFalloYNoCorrio(t *testing.T) {
 	}
 	if _, ok := LeerAceptacion(t.TempDir()); ok {
 		t.Error("sin archivo no hay aceptación")
+	}
+}
+
+func TestFalloDeSacaLasPruebasQueFallaron(t *testing.T) {
+	f := falloDe("integradas", "npx vitest run", "FAIL  tests/screens/tutoriales.test.ts > muestra intro · AssertionError: x · FAIL  tests/screens/tutoriales.test.ts > otra · FAIL  tests/ui/a.test.ts > b")
+	if len(f.Pruebas) != 2 || f.Pruebas[0] != "tests/screens/tutoriales.test.ts" || f.Pruebas[1] != "tests/ui/a.test.ts" {
+		t.Errorf("pruebas = %v", f.Pruebas)
+	}
+}
+
+// vitest sin archivos cierra con su lista de exclusiones: la entrega tiene
+// que decir que la prueba no existe, no "exclude: **/node_modules/**".
+func TestEntregarTodasNombraLaPruebaDeAceptacionQueNoExiste(t *testing.T) {
+	root := repoConCommit(t)
+	sinIdentidadGit(t, root)
+	cuartoDeTarea(t, root, "T-001", "a.go")
+
+	e := EntregarTodas(context.Background(), OpcionesEntrega{
+		Root: root, Config: config.Config{Base: "main", Pruebas: "true"}, Base: "main",
+		Tareas:     []task.Task{tareaEntrega("T-001", "a.go")},
+		Acceptance: []string{"false tests/integracion-escucha.test.ts"},
+		DryRun:     true,
+	})
+	t.Cleanup(func() { _ = limpiarEntrega(root, roomPathDe(root, "_entrega")) })
+	if e.Aprobado || e.Fallo == nil || !strings.Contains(e.PrimerMotivo(), "la prueba tests/integracion-escucha.test.ts no existe") {
+		t.Fatalf("motivo = %q fallo = %+v", e.PrimerMotivo(), e.Fallo)
+	}
+	if a, ok := LeerAceptacion(root); !ok || a.Fallo == nil || a.Fallo.Paso != "aceptación" {
+		t.Errorf("el fallo debe quedar en aceptacion.json para devclean reparar: %+v", a)
+	}
+}
+
+// La entrega aplana las ramas para integrarlas, pero al salir las deja
+// como estaban: las tareas que dependen de ellas se construyeron sobre
+// sus commits originales y `run` tiene que poder volver a juntarlas.
+func TestEntregarTodasDejaLasRamasDeLosCuartosComoEstaban(t *testing.T) {
+	root := repoConCommit(t)
+	sinIdentidadGit(t, root)
+	cuartoDeTarea(t, root, "T-001", "a.go")
+	cuartoDeTarea(t, root, "T-002", "b.go")
+	antes := map[string]string{}
+	for _, id := range []string{"T-001", "T-002"} {
+		antes[id] = strings.TrimSpace(gitCmd(t, root, "rev-parse", room.Branch(id)))
+	}
+	for _, aceptacion := range []string{"true", "false"} { // entrega aprobada y frenada
+		e := EntregarTodas(context.Background(), OpcionesEntrega{
+			Root: root, Config: config.Config{Base: "main", Pruebas: "true"}, Base: "main",
+			Tareas:     []task.Task{tareaEntrega("T-001", "a.go"), tareaEntrega("T-002", "b.go", "T-001")},
+			Acceptance: []string{aceptacion},
+			DryRun:     true,
+		})
+		_ = limpiarEntrega(root, roomPathDe(root, "_entrega"))
+		if e.Aprobado != (aceptacion == "true") {
+			t.Fatalf("aceptación %s: aprobado = %v · %s", aceptacion, e.Aprobado, e.PrimerMotivo())
+		}
+		for id, punta := range antes {
+			if ahora := strings.TrimSpace(gitCmd(t, root, "rev-parse", room.Branch(id))); ahora != punta {
+				t.Errorf("aceptación %s: la rama de %s pasó de %s a %s", aceptacion, id, punta, ahora)
+			}
+		}
 	}
 }

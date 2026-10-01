@@ -197,6 +197,11 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 		return err
 	}
 	if !e.Aprobado {
+		if e.Fallo != nil {
+			if ids := responsables(listas, e.Fallo.Pruebas); len(ids) > 0 {
+				out.Line("· probable responsable: %s (toca el código que esa prueba cubre) · reábrela con devclean reparar", strings.Join(ids, ", "))
+			}
+		}
 		return fmt.Errorf("entrega frenada · %s", e.PrimerMotivo())
 	}
 	if dryRun {

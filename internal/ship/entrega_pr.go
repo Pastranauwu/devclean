@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -72,6 +74,31 @@ type Entrega struct {
 	// Integrado dice si el PR llegó a mergearse. Un PR abierto y sin
 	// integrar es un desenlace válido: el revisor pudo vetarlo.
 	Integrado bool `json:"integrado,omitempty"`
+	// Fallo es lo que frenó la entrega al probar el conjunto integrado
+	// (pasos integradas y aceptación); nil si frenó otra cosa o no frenó.
+	Fallo *Fallo `json:"fallo,omitempty"`
+}
+
+// Fallo es un comando que falló sobre el conjunto integrado. Es lo que
+// `devclean reparar` necesita para reabrir la tarea responsable.
+type Fallo struct {
+	Paso    string `json:"paso"`
+	Comando string `json:"comando"`
+	Salida  string `json:"salida"`
+	// Pruebas son los archivos de prueba que fallaron, según la salida.
+	Pruebas []string `json:"pruebas,omitempty"`
+}
+
+var pruebaFallida = regexp.MustCompile(`FAIL\s+(\S+)`)
+
+func falloDe(paso, comando, salida string) *Fallo {
+	f := &Fallo{Paso: paso, Comando: comando, Salida: salida}
+	for _, m := range pruebaFallida.FindAllStringSubmatch(salida, -1) {
+		if task.EsArchivoDePrueba(m[1]) && !slices.Contains(f.Pruebas, m[1]) {
+			f.Pruebas = append(f.Pruebas, m[1])
+		}
+	}
+	return f
 }
 
 // PrimerMotivo devuelve el motivo del primer paso o tarea que frenó.
@@ -124,9 +151,28 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 
 	// 1. la esclusa de salida completa de cada tarea, en seco: ninguna
 	//    entra al PR si no pasa sola su propio control de calidad.
+	//
+	//    La esclusa aplana la rama de cada cuarto, y ese commit nuevo es
+	//    el que se integra abajo. Pero la rama no puede quedarse así: las
+	//    tareas que dependen de ella se construyeron sobre sus commits
+	//    originales, y con otro commit en su lugar `run` ya no puede
+	//    juntarlas ("CONFLICTO (agregar/agregar)" en cada archivo del
+	//    esqueleto). En soundlike una entrega frenada dejó así las 10
+	//    ramas y la tarea que faltaba no pudo correr. Al salir, cada rama
+	//    vuelve a su punta.
+	puntas := map[string]string{}
+	defer func() {
+		for path, punta := range puntas {
+			_, _ = gitRun(path, "rebase", "--abort")
+			_, _ = gitRun(path, "reset", "--hard", punta)
+		}
+	}()
 	var conCambios []task.Task
 	for _, t := range ordenadas {
 		roomPath := roomPathDe(o.Root, t.ID)
+		if punta, err := gitRun(roomPath, "rev-parse", "HEAD"); err == nil {
+			puntas[roomPath] = strings.TrimSpace(punta)
+		}
 		// cada tarea se aplana contra su propio punto de partida, no
 		// contra la rama base: así su commit lleva solo lo suyo
 		baseTarea := o.Commits[t.ID]
@@ -233,6 +279,7 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	if pruebas == "" {
 		apuntar(Paso{"integradas", true, "sin comando de pruebas en config.yml · no se verificó el conjunto"})
 	} else if salida, ok := correrPruebas(ctx, path, pruebas, o.Timeout); !ok {
+		e.Fallo = falloDe("integradas", pruebas, salida)
 		apuntar(Paso{"integradas", false,
 			"las tareas pasan por separado pero el conjunto falla · " + salida})
 		return e
@@ -241,6 +288,12 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	}
 	for _, command := range o.Acceptance {
 		if salida, ok := correrPruebas(ctx, path, command, o.Timeout); !ok {
+			// vitest sin archivos cierra con su lista de exclusiones: el
+			// motivo real es que la prueba no existe en lo entregado
+			if f := task.PruebaSinEscribir(path, command); f != "" {
+				salida = "la prueba " + f + " no existe · ninguna tarea entregada la escribe (¿se borró o no corrió la tarea final?)"
+			}
+			e.Fallo = falloDe("aceptación", command, salida)
 			apuntar(Paso{"aceptación", false, command + " · " + salida})
 			return e
 		}
@@ -430,7 +483,7 @@ func correrPruebas(ctx context.Context, dir, cmdStr string, timeout time.Duratio
 		return fmt.Sprintf("las pruebas tardaron más de %s", timeout), false
 	}
 	if err != nil {
-		return tail(string(out)), false
+		return resumenPruebas(string(out)), false
 	}
 	return "", true
 }

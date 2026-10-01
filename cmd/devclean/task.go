@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/examiner"
+	"github.com/Pastranauwu/devclean/internal/room"
 	"github.com/Pastranauwu/devclean/internal/sealed"
+	"github.com/Pastranauwu/devclean/internal/spec"
 	"github.com/Pastranauwu/devclean/internal/state"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
@@ -278,6 +281,23 @@ func newTaskRmCmd() *cobra.Command {
 				return err
 			}
 			dir := config.TasksDir(root)
+			// lo que se pierde al borrarla se dice antes: en soundlike se
+			// borraron la tarea de cableado (verde, sin entregar) y la que
+			// escribía la prueba de punta a punta, y la entrega frenó en
+			// una aceptación que ya nadie podía cumplir
+			var avisos []string
+			if t, err := task.Load(dir, id); err == nil {
+				if st, err := state.Get(root, id); err == nil && st.Estado == state.Lista && room.RamaExiste(context.Background(), root, id) {
+					avisos = append(avisos, "su trabajo verde en "+room.Branch(id)+" no se va a entregar")
+				}
+				if f, err := spec.LoadFeatureState(root); err == nil {
+					for _, c := range f.AcceptanceCommands() {
+						if strings.Contains(t.ListoCuando, c) {
+							avisos = append(avisos, "la aceptación del feature sigue corriendo `"+c+"`, que cumplía esta tarea: la entrega va a frenar ahí (edita .devclean/feature.json o vuelve a crear la tarea)")
+						}
+					}
+				}
+			}
 			if err := task.Remove(dir, id); err != nil {
 				return err
 			}
@@ -294,6 +314,9 @@ func newTaskRmCmd() *cobra.Command {
 				return err
 			}
 			out.Line("✓ %s eliminada", id)
+			for _, a := range avisos {
+				out.Line("· ojo: %s", a)
+			}
 			if len(liberadas) > 0 {
 				out.Line("· ya no dependen de ella: %s · revisa que sigan teniendo sentido sin %s", strings.Join(liberadas, ", "), id)
 			}

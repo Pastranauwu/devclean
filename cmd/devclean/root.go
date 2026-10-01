@@ -58,6 +58,7 @@ func newRootCmd() *cobra.Command {
 		newUsageCmd(),
 		newModelosCmd(),
 		newArchiveCmd(),
+		newRepararCmd(),
 	)
 
 	return root
