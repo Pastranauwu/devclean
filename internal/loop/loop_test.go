@@ -736,7 +736,7 @@ func TestRunNoEsVerdeSinLaPruebaQueListoCuandoNombra(t *testing.T) {
 		return "", 0, nil
 	}}
 	tk := tareaDePrueba()
-	tk.ListoCuando = "true src/nuevo.test.js"
+	tk.ListoCuando = "test -f src/done.txt && true src/nuevo.test.js"
 	tk.LimiteIntentos = 2
 	opts := optsDePrueba(t, root, ag, tk)
 	opts.PatronesPrueba = []string{}
@@ -749,5 +749,47 @@ func TestRunNoEsVerdeSinLaPruebaQueListoCuandoNombra(t *testing.T) {
 	}
 	if len(prompts) != 2 || !strings.Contains(prompts[1], "src/nuevo.test.js no existe") {
 		t.Errorf("el segundo intento debe saber qué faltó:\n%v", prompts)
+	}
+}
+
+// El agente escribe código y prueba. Si la prueba pasa igual con el
+// código de antes de la tarea, no prueba el cambio: el intento es rojo.
+func TestRunRechazaLaPruebaQuePasaSinLaImplementacion(t *testing.T) {
+	root := repoConCommit(t)
+	var prompts []string
+	ag := &agenteFalso{nombre: "falso", hacer: func(n int, req Request) (string, int, error) {
+		prompts = append(prompts, req.Prompt)
+		escribir(t, req.RoomPath, "src/suma.js", "hecho\n")
+		// primer intento: una prueba que no mira el código; segundo: sí
+		escribir(t, req.RoomPath, "src/suma.test.js", "ok\n")
+		return "", 0, nil
+	}}
+	tk := tareaDePrueba()
+	tk.LimiteIntentos = 2
+	tk.ListoCuando = "grep -q ok src/suma.test.js"
+	opts := optsDePrueba(t, root, ag, tk)
+	opts.PatronesPrueba = []string{}
+	out, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Verde {
+		t.Fatal("una prueba que pasa sin la implementación no puede dar verde")
+	}
+	if len(prompts) != 2 || !strings.Contains(prompts[1], "pasa igual SIN tu implementación") {
+		t.Errorf("el siguiente intento debe saber por qué: %v", len(prompts))
+	}
+	// el cuarto queda con el trabajo del agente, no con el código de antes
+	if b, err := os.ReadFile(filepath.Join(opts.Room.Path, "src/suma.js")); err != nil || string(b) != "hecho\n" {
+		t.Errorf("la comprobación debe restaurar el cuarto: %q %v", b, err)
+	}
+
+	// la misma tarea con una prueba que sí depende del código es verde
+	root2 := repoConCommit(t)
+	tk.ListoCuando = "grep -q ok src/suma.test.js && grep -q hecho src/suma.js"
+	opts = optsDePrueba(t, root2, ag, tk)
+	opts.PatronesPrueba = []string{}
+	if out, err := Run(context.Background(), opts); err != nil || !out.Verde || out.Intentos != 1 {
+		t.Fatalf("una prueba que falla sin el código es legítima: %+v %v", out, err)
 	}
 }

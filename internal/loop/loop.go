@@ -432,6 +432,10 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 					uno := 1
 					code = &uno
 					salida = "listo_cuando pasó sin la prueba de esta tarea: " + f + " no existe. Escríbela con los casos del contrato; las otras pruebas del comando ya pasaban antes de tu cambio."
+				} else if len(o.PatronesPrueba) == 0 && pruebaComplaciente(ctx, o, base) {
+					uno := 1
+					code = &uno
+					salida = "La prueba que escribiste pasa igual SIN tu implementación: se devolvió el código a como estaba antes de la tarea, se dejó tu prueba y listo_cuando siguió verde. Así no prueba nada de lo que pide el contrato. Reescríbela para que ejercite el código nuevo y falle sin él (llama a lo que implementaste y compara con los Casos: del contrato)."
 				}
 			}
 		}
@@ -724,6 +728,55 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration, e
 		return string(out) + err.Error(), nil
 	}
 	return string(out), &code
+}
+
+// pruebaComplaciente dice si la prueba que el agente escribió pasa también
+// sin su implementación. Es la mutación más barata que hay: se devuelve
+// todo el código que no es de prueba a como estaba al empezar la tarea,
+// se deja la prueba nueva y se corre listo_cuando. Si sigue verde, la
+// prueba no ejercita el cambio. Es el contrapeso sin modelo a que el
+// mismo agente escriba código y prueba (soundlike: 37 de 38 tareas verdes
+// al primer intento, juzgadas por su propia prueba).
+//
+// Solo opina cuando listo_cuando nombra un archivo de prueba y la tarea
+// cambió código que no es de prueba: un Dockerfile verificado con
+// `docker compose config` o una tarea que solo escribe pruebas pasarían
+// igual sin el cambio y no son complacientes.
+func pruebaComplaciente(ctx context.Context, o Options, inicio string) bool {
+	if o.Room.Commit != "" {
+		inicio = o.Room.Commit
+	}
+	if inicio == "" || len(task.ArchivosDePrueba(o.Task.ListoCuando)) == 0 {
+		return false
+	}
+	cambiados, err := filesSince(o.Room.Path, inicio)
+	if err != nil {
+		return false
+	}
+	var codigo []string
+	for _, f := range cambiados {
+		if !task.EsArchivoDePrueba(f) {
+			codigo = append(codigo, f)
+		}
+	}
+	if len(codigo) == 0 {
+		return false
+	}
+	// pase lo que pase, el cuarto vuelve al commit del intento
+	defer func() {
+		_, _ = gitRun(o.Room.Path, "checkout", "HEAD", "--", ".")
+	}()
+	for _, f := range codigo {
+		if _, err := gitRun(o.Room.Path, "cat-file", "-e", inicio+":"+f); err == nil {
+			if _, err := gitRun(o.Room.Path, "checkout", inicio, "--", f); err != nil {
+				return false
+			}
+		} else if err := os.Remove(filepath.Join(o.Room.Path, f)); err != nil && !os.IsNotExist(err) {
+			return false
+		}
+	}
+	salida, code := runPrueba(ctx, o.Room.Path, o.Task.ListoCuando, o.PruebaTimeout, o.Env)
+	return code != nil && *code == 0 && !SinPruebas(salida)
 }
 
 // conPruebasPropias suma a tocar_solo los archivos de prueba que corre
