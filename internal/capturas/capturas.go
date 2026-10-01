@@ -120,9 +120,12 @@ func Tomar(ctx context.Context, dir string, p Pantallas, puerto int, env []strin
 
 // ProbarFlujos levanta la app y corre solo la semilla y el script de
 // flujos: el error del script, con la cola de su salida, es lo que el
-// arquitecto necesita para corregirlo antes de repartir tareas.
+// arquitecto necesita para corregirlo antes de repartir tareas. Sus PNG
+// se borran: son de la app en stubs (páginas en blanco) y el humano los
+// tomaba por las capturas de la revisión. Quedan app.log y flujos.log.
 func ProbarFlujos(ctx context.Context, dir string, p Pantallas, puerto int, env []string, outDir string) error {
 	_, errScript, err := tomar(ctx, dir, p, puerto, env, outDir, false)
+	_ = os.RemoveAll(filepath.Join(outDir, "flujos"))
 	if err != nil {
 		return err
 	}

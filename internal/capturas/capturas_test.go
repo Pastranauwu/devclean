@@ -106,4 +106,7 @@ func TestScriptQueFallaNoEntregaCapturasYSeReporta(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Elegir de la galería") {
 		t.Fatalf("el error del script no llegó: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(dir, "b", "flujos")); err == nil {
+		t.Fatal("los PNG de la prueba del script quedaron en disco")
+	}
 }
