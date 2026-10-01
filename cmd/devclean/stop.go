@@ -36,6 +36,20 @@ func marcarCorrida(root string) func() {
 	}
 }
 
+// otraCorridaViva reporta si hay otra corrida de devclean trabajando en
+// este repo: corrida.pid apunta a un proceso que existe y no es este.
+func otraCorridaViva(root string) bool {
+	b, err := os.ReadFile(corridaPath(root))
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || pid == os.Getpid() {
+		return false
+	}
+	return esDevclean(pid)
+}
+
 func newStopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",

@@ -33,6 +33,7 @@ type Options struct {
 	Root    string
 	Model   string
 	Timeout time.Duration
+	OnUsage func(loop.Tokens)
 
 	// Lenguaje es el stack del proyecto (config.DetectLanguage), y decide
 	// cómo se arma y se valida la suite. Vacío se trata como go. Un stack
@@ -49,7 +50,11 @@ func (r Runner) Run(ctx context.Context, roomPath string) (bool, error) {
 
 // Run invokes the examiner agent, parses the response, writes the visible
 // suite to the worktree and seals the hidden suite.
+// El bool dice si la prueba visible del cuarto es del examinador: es lo
+// que decide si el implementador tiene vedadas las pruebas.
 // Returns (true, nil) when a hidden suite was sealed.
+// Returns (true, err) cuando la visible quedó escrita y la oculta no se
+// pudo sellar: la tarea tiene examen, el paso suite_oculta se omite.
 // Returns (false, nil) when la tarea no es examinable: no hay examen que
 // hacer y no falló nada.
 // Returns (false, err) on graceful degradation, con el motivo: el error
@@ -65,14 +70,39 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	// frontera que probar. Tareas de andamiaje (init, wiring) no exponen
 	// nada; examinarlas solo produce un test file de relleno que después
 	// dispara falsos solapamientos entre ramas.
-	if len(o.Task.Expone) == 0 {
+	if len(o.Task.Expone) == 0 && !o.Task.ExamenEsqueleto {
 		return false, nil
 	}
 	// un stack sin examinador (rust, node) no se examina: emitir un
 	// archivo de otro lenguaje solo rompería la compilación del cuarto.
-	lenguaje := lenguajeExamen(o.Lenguaje)
+	lenguaje := lenguajeDeTarea(o.Lenguaje, o.Task)
 	if lenguaje == "" {
 		return false, nil
+	}
+	if (lenguaje == "typescript" || lenguaje == "javascript") && !o.Task.ExamenEsqueleto {
+		return false, nil // los contratos Node antiguos conservan sus propias pruebas
+	}
+	var contrato string
+	if o.Task.ExamenEsqueleto {
+		var err error
+		contrato, err = contratoDelEsqueleto(roomPath, o.Task)
+		if err != nil {
+			return false, fmt.Errorf("no se pudo leer el contrato ciego del esqueleto · %w", err)
+		}
+		if contrato == "" {
+			return false, fmt.Errorf("el esqueleto no tiene firmas y Casos: para esta tarea")
+		}
+		v := o.Task.ExamenVisible
+		if v == "" || filepath.IsAbs(v) || strings.HasPrefix(filepath.Clean(v), "..") {
+			return false, fmt.Errorf("ruta de prueba visible inválida: %q", v)
+		}
+		// al retomar o escalar la prueba ya está: no se paga otro examen
+		// para descartarlo. Si la escribió el examinador sigue vedada; si
+		// la escribió el implementador (el examen no se pudo preparar),
+		// sigue siendo suya.
+		if _, err := os.Stat(filepath.Join(roomPath, v)); err == nil {
+			return visibleDelExaminador(roomPath, v), nil
+		}
 	}
 	if o.Timeout <= 0 {
 		o.Timeout = DefaultTimeout
@@ -134,14 +164,37 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	}
 
 	prompt := buildPrompt(o.Task, pkg, lenguaje)
+	if contrato != "" {
+		prompt += "\nFIRMAS Y CASOS DEL ESQUELETO (sin cuerpos de implementación):\n" + contrato + "\n"
+	}
+	// Un rol de texto no garantiza ceguera: algunos CLIs conservan acceso de
+	// lectura al cwd. En el camino del esqueleto el modelo recibe únicamente
+	// el contrato, desde un directorio vacío ajeno al cuarto de trabajo.
+	cuartoExamen := roomPath
+	if o.Task.ExamenEsqueleto {
+		var err error
+		cuartoExamen, err = os.MkdirTemp("", "devclean-examen-")
+		if err != nil {
+			return false, fmt.Errorf("no se pudo aislar al examinador · %w", err)
+		}
+		defer os.RemoveAll(cuartoExamen)
+	}
 	req := loop.Request{
-		RoomPath: roomPath,
+		RoomPath: cuartoExamen,
 		Prompt:   prompt,
 		Model:    o.Model,
 		Timeout:  o.Timeout,
 		Texto:    true,
 	}
 	res, err := o.Agent.Run(ctx, req)
+	if o.OnUsage != nil {
+		o.OnUsage(res.Tokens)
+	}
+	if o.Root != "" {
+		if recordErr := guardarUso(o.Root, o.Task.ID, res.Tokens); recordErr != nil {
+			return false, fmt.Errorf("no se pudo registrar el gasto del examinador · %w", recordErr)
+		}
+	}
 	if err != nil {
 		return false, fmt.Errorf("el examinador no pudo invocar al modelo · %s", err)
 	}
@@ -159,6 +212,16 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	}
 
 	visibleRelPath, hiddenRelPath := RutasSuite(o.Task.TocarSolo, lenguaje)
+	if o.Task.ExamenEsqueleto {
+		visibleRelPath = o.Task.ExamenVisible
+		_, hiddenName := nombresSuite(lenguaje)
+		hiddenRelPath = toRelPath(filepath.Join(filepath.Dir(visibleRelPath), hiddenName))
+		// el implementador no puede tocar esta prueba: si importa un
+		// archivo que no existe no pasa nunca y la tarea quema sus intentos
+		if roto := importRelativoRoto(roomPath, visibleRelPath, imports); roto != "" {
+			return false, fmt.Errorf("la suite del examinador importa %s, que no existe desde %s", roto, visibleRelPath)
+		}
+	}
 
 	visibleContent, okVisible := suiteCompleta(lenguaje, roomPath, pkg, importPath, imports, visible)
 	if !okVisible {
@@ -168,11 +231,11 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	// implementador: no puede tocar el archivo y su impl correcta
 	// igual da "build failed". Si la suite ni siquiera parsea, se
 	// descarta y el implementador corre sin suite ciega.
-	if err := validarSintaxis(lenguaje, visibleContent); err != nil {
+	if err := validarSintaxisEnProyecto(roomPath, lenguaje, visibleRelPath, visibleContent); err != nil {
 		return false, fmt.Errorf("la suite visible del examinador no compila · %s", err)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return false, fmt.Errorf("no se pudo crear %s · %s", dir, err)
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(roomPath, visibleRelPath)), 0o755); err != nil {
+		return false, fmt.Errorf("no se pudo preparar la suite visible · %s", err)
 	}
 	visiblePath := filepath.Join(roomPath, filepath.FromSlash(visibleRelPath))
 	if err := os.WriteFile(visiblePath, []byte(visibleContent), 0o644); err != nil {
@@ -182,25 +245,78 @@ func Run(ctx context.Context, roomPath string, o Options) (bool, error) {
 	// undo them — git status won't list committed files as "changed".
 	commitVisible(roomPath, visiblePath)
 
+	// Desde aquí la visible ya existe y es la que juzga la tarea: lo que
+	// falle con la oculta deja el paso suite_oculta sin correr, no a la
+	// tarea sin examen. (Esperar a tener las dos para escribir la visible
+	// dejaba sin suite a toda tarea cuyo examinador no devolvía "hidden",
+	// y con las rutas de prueba vedadas nadie más podía escribirla.)
 	if len(hidden) == 0 {
-		return false, fmt.Errorf("el examinador no devolvió suite oculta · el paso suite_oculta se omite")
+		return true, fmt.Errorf("el examinador no devolvió suite oculta · el paso suite_oculta se omite")
 	}
-
 	hiddenContent, okHidden := suiteCompleta(lenguaje, roomPath, pkg, importPath, imports, hidden)
 	if !okHidden {
-		return false, fmt.Errorf("no se pudieron resolver los imports de la suite oculta · solo queda la visible")
+		return true, fmt.Errorf("no se pudieron resolver los imports de la suite oculta · solo queda la visible")
 	}
-	if err := validarSintaxis(lenguaje, hiddenContent); err != nil {
-		return false, fmt.Errorf("la suite oculta del examinador no compila · solo queda la visible · %s", err)
+	if err := validarSintaxisEnProyecto(roomPath, lenguaje, hiddenRelPath, hiddenContent); err != nil {
+		return true, fmt.Errorf("la suite oculta del examinador no compila · solo queda la visible · %s", err)
 	}
 	s := sealed.SuiteOculta{
 		Content: hiddenContent,
 		Archivo: hiddenRelPath,
 	}
 	if err := sealed.Write(o.Root, o.Task.ID, s); err != nil {
-		return false, fmt.Errorf("no se pudo sellar la suite oculta · %s", err)
+		return true, fmt.Errorf("no se pudo sellar la suite oculta · solo queda la visible · %s", err)
 	}
 	return true, nil
+}
+
+// mensajeExamen es el commit con que el examinador fija su prueba visible.
+const mensajeExamen = "exam: suite visible"
+
+// visibleDelExaminador reporta si la prueba en rel la escribió el
+// examinador: su primer commit es el del examen.
+func visibleDelExaminador(roomPath, rel string) bool {
+	out, err := exec.Command("git", "-C", roomPath, "log", "--diff-filter=A", "--format=%s", "--", rel).Output()
+	if err != nil {
+		return false
+	}
+	l := strings.Split(strings.TrimSpace(string(out)), "\n")
+	return l[len(l)-1] == mensajeExamen
+}
+
+// importRelativoRoto devuelve el primer import relativo de la suite que
+// no lleva a ningún archivo del cuarto, o "". Los de paquete (vitest,
+// node:test) no se miran.
+func importRelativoRoto(roomPath, visibleRel string, imports []string) string {
+	dir := filepath.Dir(filepath.Join(roomPath, filepath.FromSlash(visibleRel)))
+	for _, imp := range imports {
+		i := strings.LastIndexAny(imp, "'\"")
+		if i < 0 {
+			continue
+		}
+		j := strings.LastIndexAny(imp[:i], "'\"")
+		if j < 0 {
+			continue
+		}
+		ruta := imp[j+1 : i]
+		if !strings.HasPrefix(ruta, ".") {
+			continue
+		}
+		base := filepath.Join(dir, filepath.FromSlash(ruta))
+		// TypeScript importa "./x.js" y el archivo es x.ts
+		sinExt := strings.TrimSuffix(base, filepath.Ext(base))
+		existe := false
+		for _, c := range []string{base, base + ".ts", base + ".tsx", base + ".js", base + ".jsx", base + ".mjs", sinExt + ".ts", sinExt + ".tsx", filepath.Join(base, "index.ts"), filepath.Join(base, "index.js")} {
+			if info, err := os.Stat(c); err == nil && !info.IsDir() {
+				existe = true
+				break
+			}
+		}
+		if !existe {
+			return ruta
+		}
+	}
+	return ""
 }
 
 // buildPrompt constructs the examiner instruction. lenguaje va explícito
@@ -217,6 +333,9 @@ func buildPrompt(t task.Task, pkg, lenguaje string) string {
 	if len(t.Expone) > 0 {
 		fmt.Fprintf(&b, "Contrato público (firmas que debe exponer): %s\n", strings.Join(t.Expone, "; "))
 	}
+	if t.ExamenEsqueleto {
+		fmt.Fprintf(&b, "La prueba visible debe vivir en %s y ser descubierta por listo_cuando.\n", t.ExamenVisible)
+	}
 	if len(t.TocarSolo) > 0 {
 		fmt.Fprintf(&b, "Archivos que puede tocar: %s\n", strings.Join(t.TocarSolo, ", "))
 	}
@@ -229,7 +348,7 @@ func buildPrompt(t task.Task, pkg, lenguaje string) string {
 	}
 	b.WriteString(`
 Reglas:
-- Pruebas de CAJA NEGRA: testea solo la interfaz pública declarada en "expone".
+- Pruebas de CAJA NEGRA: testea solo la interfaz pública declarada en el contrato.
 - NO escribas código de implementación.
 - 70% van en "visible": el implementador las verá como criterio de aceptación.
 - 30% van en "hidden": edge cases y casos límite que el implementador NO verá.
@@ -480,7 +599,7 @@ func commitVisible(roomPath, absPath string) {
 		_ = cmd.Run()
 	}
 	git("-c", "user.name=devclean", "-c", "user.email=devclean@local", "add", rel)
-	git("-c", "user.name=devclean", "-c", "user.email=devclean@local", "commit", "-m", "exam: suite visible")
+	git("-c", "user.name=devclean", "-c", "user.email=devclean@local", "commit", "-m", mensajeExamen)
 }
 
 // inferDirFromTocarSolo finds the best directory from tocar_solo:

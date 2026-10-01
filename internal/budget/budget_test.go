@@ -79,9 +79,12 @@ func TestGastoEnDiscoSumaIntentos(t *testing.T) {
 	}
 	escribe("T-001", "100", "50")
 	escribe("T-100001", "200", "80")
+	if err := os.WriteFile(filepath.Join(runs, "T-001", "examinador-usage.jsonl"), []byte(`{"entrada":10,"salida":5}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	if got := GastoEnDisco(root); got != 100+50+200+80 {
-		t.Errorf("GastoEnDisco = %d, quiero 430", got)
+	if got := GastoEnDisco(root); got != 100+50+200+80+10+5 {
+		t.Errorf("GastoEnDisco = %d, quiero 445", got)
 	}
 }
 

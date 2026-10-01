@@ -62,6 +62,10 @@ type Task struct {
 	// implementa. Cuando uno cambia o se quita, devclean le dice al
 	// arquitecto qué tareas y archivos lo implementaron.
 	Cubre []string `json:"cubre,omitempty"`
+	// ExamenEsqueleto indica que el arquitecto dejó stubs con Casos: y
+	// que un examinador independiente escribe el test de listo_cuando.
+	ExamenEsqueleto bool   `json:"examen_esqueleto,omitempty"`
+	ExamenVisible   string `json:"examen_visible,omitempty"`
 
 	// Recursivo marca una tarea como demasiado grande para un solo
 	// intento de agente: en vez de escribir código directo, el bucle la
@@ -237,6 +241,17 @@ func Parse(data []byte) (Task, error) {
 			t.Agente = kv.Unquote(p.Value)
 		case "cubre":
 			t.Cubre, err = kv.ParseList(p.Value)
+		case "examen_esqueleto":
+			switch kv.Unquote(p.Value) {
+			case "true":
+				t.ExamenEsqueleto = true
+			case "false":
+				t.ExamenEsqueleto = false
+			default:
+				err = fmt.Errorf("examen_esqueleto inválido: %s · usa true o false", p.Value)
+			}
+		case "examen_visible":
+			t.ExamenVisible = kv.Unquote(p.Value)
 		case "skills":
 			if t.Skills, err = kv.ParseList(p.Value); t.Skills == nil && err == nil {
 				t.Skills = []string{} // declarada vacía: ninguna, no las del rol
@@ -309,6 +324,9 @@ func (t Task) Validate() []error {
 	if t.Recursivo && t.LimiteSubtareas < 1 {
 		errs = append(errs, fmt.Errorf("limite_subtareas inválido: %d · mínimo 1 en una tarea recursiva", t.LimiteSubtareas))
 	}
+	if t.ExamenEsqueleto && (t.ExamenVisible == "" || !EsArchivoDePrueba(t.ExamenVisible) || strings.HasPrefix(t.ExamenVisible, "/") || strings.Contains(t.ExamenVisible, "..")) {
+		errs = append(errs, fmt.Errorf("examen_visible inválido: %q · usa un archivo de prueba relativo", t.ExamenVisible))
+	}
 	return errs
 }
 
@@ -352,6 +370,10 @@ func (t Task) Marshal() []byte {
 	}
 	if len(t.Cubre) > 0 {
 		fmt.Fprintf(&b, "cubre: %s\n", kv.MarshalList(t.Cubre))
+	}
+	if t.ExamenEsqueleto {
+		fmt.Fprintf(&b, "examen_esqueleto: true\n")
+		fmt.Fprintf(&b, "examen_visible: %s\n", t.ExamenVisible)
 	}
 	if t.Recursivo {
 		fmt.Fprintf(&b, "recursivo: true\n")

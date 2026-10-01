@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Pastranauwu/devclean/internal/examiner"
 	"github.com/Pastranauwu/devclean/internal/loop"
 )
 
@@ -114,6 +115,11 @@ func GastoEnDisco(root string) int {
 		}
 		for _, a := range as {
 			total += a.Tokens.Gasto()
+		}
+		if usos, err := examiner.LeerUso(root, e.Name()); err == nil {
+			for _, u := range usos {
+				total += u.Gasto()
+			}
 		}
 	}
 	return total

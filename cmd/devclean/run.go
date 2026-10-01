@@ -91,7 +91,7 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 	}
 
 	var pendientes, existentes []task.Task
-	var detenidas, interrumpidas, huerfanas []string
+	var detenidas, interrumpidas, huerfanas, enOtraCorrida []string
 	for _, t := range tareas {
 		s, err := state.Get(root, t.ID)
 		if err != nil {
@@ -109,7 +109,18 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 			// detenida. No es automático a propósito: si otra corrida la
 			// está trabajando de verdad su latido está fresco, y revivirla
 			// pondría dos agentes en el mismo cuarto.
-			if lat, muerta := loop.Interrumpida(root, t.ID); muerta {
+			lat, muerta := loop.Interrumpida(root, t.ID)
+			// sin otra corrida viva en este repo nadie la está
+			// trabajando, diga lo que diga el latido: un Ctrl-C deja el
+			// estado en en_curso y el latido fresco por 90 s, y en ese
+			// rato `up` respondía "sin tareas pendientes · empieza con
+			// task add" con la tarea a medias. Se retoma sola.
+			if !otraCorridaViva(root) {
+				interrumpidas = append(interrumpidas, t.ID)
+				pendientes = append(pendientes, t)
+				continue
+			}
+			if muerta {
 				if reintentar {
 					interrumpidas = append(interrumpidas, t.ID)
 					pendientes = append(pendientes, t)
@@ -118,6 +129,7 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 				}
 				continue
 			}
+			enOtraCorrida = append(enOtraCorrida, t.ID)
 			existentes = append(existentes, t)
 		case state.Detenida:
 			// una tarea detenida quedaba muerta para siempre: `run` solo
@@ -137,6 +149,10 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 		}
 		if len(detenidas) == 0 && tieneDetenidas(root, tareas) {
 			out.Line("sin tareas pendientes · hay tareas detenidas · revíveles con devclean run --reintentar")
+			return nil
+		}
+		if len(enOtraCorrida) > 0 {
+			out.Line("sin tareas pendientes · %s ya la está corriendo otra corrida de este repo · mírala con devclean board o párala con devclean stop", strings.Join(enOtraCorrida, ", "))
 			return nil
 		}
 		out.Line("sin tareas pendientes · empieza con devclean task add \"lo que necesitas\"")
@@ -977,13 +993,22 @@ func correrUno(ctx context.Context, root string, cfg config.Config, ex executor.
 	// se quedaba sin suite: el examinador no alcanzaba a responder,
 	// degradaba, y la tarea moría con "listo_cuando pasó sin ejecutar
 	// ninguna prueba" porque la veda le quita al implementador las suyas.
+	examEx := ejecutorPara(exTarea, modeloExaminador(cfg))
 	exam := examiner.Runner{Options: examiner.Options{
-		Agent:    agenteExecutor{ejecutorPara(exTarea, modeloExaminador(cfg))},
+		Agent:    agenteExecutor{examEx},
 		Task:     t,
 		Root:     root,
 		Model:    modeloExaminador(cfg),
 		Timeout:  agentTimeout,
 		Lenguaje: config.DetectLanguage(root),
+		OnUsage: func(tk loop.Tokens) {
+			if presupuesto != nil {
+				_ = presupuesto.Gastar(tk.Gasto())
+			}
+			if ventanasReg != nil {
+				_ = ventanasReg.Registrar(examEx.Name(), tk.Gasto())
+			}
+		},
 	}}
 
 	// presupuesto: las hojas lo gastan con sus intentos; el padre
@@ -1242,6 +1267,17 @@ func fasesVivas(root string, ids []string) map[string]tui.FaseRun {
 func patronesPruebaTarea(cfg config.Config, root string, t task.Task) []string {
 	if !examiner.Examinable(root, t, config.DetectLanguage(root)) {
 		return []string{}
+	}
+	if t.ExamenEsqueleto {
+		var patrones []string
+		if len(cfg.PatronesPrueba) > 0 {
+			patrones = append(patrones, cfg.PatronesPrueba...)
+		} else {
+			patrones = config.DefaultTestPatterns()
+		}
+		// Los patrones históricos no incluyen necesariamente *.test.js/tsx.
+		// La ruta exacta del examen sí debe quedar vedada siempre.
+		return append(patrones, t.ExamenVisible)
 	}
 	return patronesPrueba(cfg, root)
 }

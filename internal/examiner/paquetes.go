@@ -216,10 +216,16 @@ func suiteCompleta(lenguaje, roomPath, pkg, importPath string, imports, funcs []
 // Es un pronóstico, no una promesa: el examen puede degradar después por
 // razones que solo se ven con la respuesta del modelo en la mano.
 func Examinable(root string, t task.Task, lenguaje string) bool {
-	if len(t.Expone) == 0 || lenguajeExamen(lenguaje) == "" {
+	if t.ExamenEsqueleto {
+		return t.ExamenVisible != "" && lenguajeDeTarea(lenguaje, t) != ""
+	}
+	if lenguajeDeTarea(lenguaje, t) == "typescript" || lenguajeDeTarea(lenguaje, t) == "javascript" {
 		return false
 	}
-	if lenguajeExamen(lenguaje) != "go" {
+	if len(t.Expone) == 0 || lenguajeDeTarea(lenguaje, t) == "" {
+		return false
+	}
+	if lenguajeDeTarea(lenguaje, t) != "go" {
 		return true
 	}
 	dir, pkg := inferDirPkg(t.TocarSolo, root)

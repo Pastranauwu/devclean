@@ -138,6 +138,9 @@ func TestSoportado(t *testing.T) {
 			t.Errorf("Soportado(%q) = true, quiero false", l)
 		}
 	}
+	if !SoportadoEsqueleto("node") {
+		t.Error("el esqueleto Node sí debe poder examinarse")
+	}
 }
 
 func TestPaqueteDeExpone(t *testing.T) {

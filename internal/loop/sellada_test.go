@@ -20,6 +20,37 @@ func (e *examinadorFalso) Run(context.Context, string) (bool, error) {
 	return true, nil
 }
 
+type examinadorSinSuite struct{}
+
+func (examinadorSinSuite) Run(context.Context, string) (bool, error) {
+	return false, errors.New("parser del proyecto no disponible")
+}
+
+func TestEsqueletoRecuperaPruebaPropiaSiExaminadorFalla(t *testing.T) {
+	root := repoConCommit(t)
+	tk := tareaDePrueba()
+	tk.TocarSolo = []string{"src/done.txt"}
+	tk.ListoCuando = "test -f src/done.test.js"
+	tk.ExamenEsqueleto = true
+	tk.ExamenVisible = "src/done.test.js"
+	ag := &agenteFalso{nombre: "falso", hacer: func(_ int, req Request) (string, int, error) {
+		if !strings.Contains(strings.Join(req.AllowedGlobs, ","), tk.ExamenVisible) {
+			t.Errorf("el agente no recuperó el alcance de la prueba: %v", req.AllowedGlobs)
+		}
+		escribir(t, req.RoomPath, tk.ExamenVisible, "prueba propia\n")
+		return "", 0, nil
+	}}
+	o := optsDePrueba(t, root, ag, tk)
+	o.Examinador = examinadorSinSuite{}
+	resultado, err := Run(context.Background(), o)
+	if err != nil || !resultado.Verde {
+		t.Fatalf("resultado=%+v err=%v", resultado, err)
+	}
+	if _, err := os.Stat(filepath.Join(o.Room.Path, tk.ExamenVisible)); err != nil {
+		t.Fatalf("la prueba propia fue revertida: %v", err)
+	}
+}
+
 func agenteQueTermina(t *testing.T) *agenteFalso {
 	t.Helper()
 	ag := &agenteFalso{nombre: "falso"}

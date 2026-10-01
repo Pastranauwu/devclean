@@ -338,13 +338,28 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		// implementador. Pero deja de degradar en SILENCIO: el motivo va
 		// a examinador.log y al diagnóstico de la tarea sin suite, que
 		// era imposible de depurar sin volver a correrla.
-		if _, err := o.Examinador.Run(ctx, o.Room.Path); err != nil {
+		// hayExamen: la prueba visible es del examinador. Puede venir
+		// con error (la oculta no se pudo sellar) y sigue valiendo.
+		hayExamen, err := o.Examinador.Run(ctx, o.Room.Path)
+		if err != nil {
 			fallaExamen = err.Error()
 			guardarExamen(o.Root, o.Task.ID, err)
+		}
+		if o.Task.ExamenEsqueleto && !hayExamen {
+			// Una suite que no se pudo generar no debe dejar a la tarea
+			// imposible: el implementador recupera el archivo de prueba.
+			o.PatronesPrueba = []string{}
+			o.Task.TocarSolo = conPruebasPropias(o.Task)
+			if o.Task.ExamenVisible != "" {
+				o.Task.TocarSolo = append(o.Task.TocarSolo, o.Task.ExamenVisible)
+			}
 		}
 	}
 
 	var prevErr string
+	if o.Task.ExamenEsqueleto && len(o.PatronesPrueba) == 0 {
+		prevErr = "El examen ciego no se pudo preparar. Escribe la prueba en " + o.Task.ExamenVisible + " desde Casos: y hazla pasar. " + fallaExamen
+	}
 	var noCorrio bool
 	for intento := 1; intento <= limite; intento++ {
 		inicio := time.Now().UTC()

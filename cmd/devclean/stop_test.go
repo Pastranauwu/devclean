@@ -4,6 +4,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/config"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -65,5 +66,30 @@ func TestPruebasDeLosCuartos(t *testing.T) {
 	pruebasDeLosCuartos(root, &cfg, []string{"T-002"})
 	if cfg.Pruebas != "make check" {
 		t.Fatalf("pisó el comando del humano: %q", cfg.Pruebas)
+	}
+}
+
+// Sin otra corrida viva nadie trabaja una tarea en_curso: tras un Ctrl-C
+// el latido sigue fresco 90 s y `up` decía "sin tareas pendientes".
+func TestOtraCorridaViva(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Dir(corridaPath(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if otraCorridaViva(root) {
+		t.Error("sin corrida.pid no hay otra corrida")
+	}
+	escribirPid := func(pid int) {
+		if err := os.WriteFile(corridaPath(root), []byte(strconv.Itoa(pid)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	escribirPid(os.Getpid())
+	if otraCorridaViva(root) {
+		t.Error("esta misma corrida no es otra")
+	}
+	escribirPid(1 << 22) // por encima del pid máximo por defecto: no existe
+	if otraCorridaViva(root) {
+		t.Error("un pid muerto no es una corrida viva")
 	}
 }

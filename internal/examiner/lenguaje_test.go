@@ -16,7 +16,7 @@ func TestLenguajeExamen(t *testing.T) {
 		"pytest": "python",
 		"PYTHON": "python",
 		"rust":   "", // fase aparte: pide syn o cargo check
-		"node":   "",
+		"node":   "typescript",
 	}
 	for entrada, quiere := range casos {
 		if got := lenguajeExamen(entrada); got != quiere {

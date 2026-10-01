@@ -29,3 +29,18 @@ func TestQuitarDependenciaLiberaALasQueEsperaban(t *testing.T) {
 		t.Errorf("depende_de: T-002 = %v, T-003 = %v", t2.DependeDe, t3.DependeDe)
 	}
 }
+
+func TestPruebaVisibleDeTareaEnMonorepo(t *testing.T) {
+	alcance := []string{"backend/calc/suma.py", "backend/tests/test_suma.py"}
+	for cmd, quiero := range map[string]string{
+		"cd backend && python3 -m pytest tests/test_suma.py": "backend/tests/test_suma.py",
+		"python3 -m pytest backend/tests/test_suma.py":       "backend/tests/test_suma.py",
+		"npm --prefix backend test -- tests/test_suma.py":    "backend/tests/test_suma.py",
+		"cd frontend && npx vitest run tests/test_suma.py":   "",
+		"cd backend && python3 -m pytest tests/test_otra.py": "",
+	} {
+		if got := pruebaVisibleDeTarea(alcance, cmd); got != quiero {
+			t.Errorf("%q → %q, quiero %q", cmd, got, quiero)
+		}
+	}
+}

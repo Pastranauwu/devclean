@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -12,6 +14,8 @@ import (
 
 	"github.com/Pastranauwu/devclean/internal/budget"
 	"github.com/Pastranauwu/devclean/internal/config"
+	"github.com/Pastranauwu/devclean/internal/examiner"
+	"github.com/Pastranauwu/devclean/internal/executor"
 	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/ventanas"
 )
@@ -165,6 +169,67 @@ func mostrarGastoPorTarea(root string) error {
 		for _, m := range modelos {
 			filas = append(filas, *por[m])
 		}
+		// El arquitecto corre antes de los intentos de implementación y su
+		// gasto no aparece en attempts.jsonl. Sus logs conservan el resultado
+		// del CLI; los contamos una sola vez como fase separada.
+		logs, err := filepath.Glob(filepath.Join(loop.RunsDir(root), d.Name(), "esqueleto-*.log"))
+		if err != nil {
+			return err
+		}
+		if len(logs) > 0 {
+			g := gastoTarea{Tarea: d.Name() + "/arq", Modelo: "arquitecto"}
+			for _, path := range logs {
+				b, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				var u executor.Usage
+				usagePath := strings.TrimSuffix(path, ".log") + ".usage.json"
+				if exacto, err := os.ReadFile(usagePath); err == nil {
+					if err := json.Unmarshal(exacto, &u); err != nil {
+						return fmt.Errorf("uso inválido en %s: %w", usagePath, err)
+					}
+				} else if errors.Is(err, os.ErrNotExist) {
+					// Los logs anteriores al archivo estructurado guardan solo
+					// entrada, salida y USD redondeado en la primera línea.
+					cabecera, _, _ := strings.Cut(string(b), "\n")
+					var vuelta int
+					_, _ = fmt.Sscanf(cabecera, "=== esqueleto %d · %d tokens de entrada · %d de salida · $%f", &vuelta, &u.Input, &u.Output, &u.CostUSD)
+				} else {
+					return err
+				}
+				g.Intentos++
+				g.Turnos += u.Turns
+				g.Entrada += u.Input
+				g.Salida += u.Output
+				g.CacheLeida += u.CacheRead
+				g.CacheEscrita += u.CacheWrite
+				g.CostoUSD += u.CostUSD
+				if g.PrimerTurno == 0 {
+					g.PrimerTurno, g.PrimerTurnoEscrita = u.FirstTurn, u.FirstTurnWrite
+				}
+			}
+			filas = append(filas, g)
+		}
+		usos, err := examiner.LeerUso(root, d.Name())
+		if err != nil {
+			return err
+		}
+		if len(usos) > 0 {
+			g := gastoTarea{Tarea: d.Name() + "/exam", Modelo: "examinador", Intentos: len(usos)}
+			for _, u := range usos {
+				g.Turnos += u.Turnos
+				g.Entrada += u.Entrada
+				g.Salida += u.Salida
+				g.CacheLeida += u.CacheLeida
+				g.CacheEscrita += u.CacheEscrita
+				g.CostoUSD += u.CostoUSD
+				if g.PrimerTurno == 0 {
+					g.PrimerTurno, g.PrimerTurnoEscrita = u.PrimerTurno, u.PrimerTurnoEscrita
+				}
+			}
+			filas = append(filas, g)
+		}
 	}
 	if err := out.Data(filas); err != nil {
 		return err
@@ -193,5 +258,6 @@ func mostrarGastoPorTarea(root string) error {
 		total.CostoUSD += f.CostoUSD
 	}
 	out.Line(formato, "total", "", total.Intentos, total.Turnos, total.PrimerTurno, total.PrimerTurnoEscrita, total.Entrada, total.Salida, total.CacheLeida, total.CacheEscrita, total.CostoUSD)
+	out.Line("usd = precio de lista informado por el CLI, no cargo de la suscripción · incluye implementación, arquitectura y examinador; otros roles pueden faltar")
 	return nil
 }

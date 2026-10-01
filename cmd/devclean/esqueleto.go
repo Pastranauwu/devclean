@@ -14,6 +14,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/capturas"
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/esqueleto"
+	"github.com/Pastranauwu/devclean/internal/examiner"
 	"github.com/Pastranauwu/devclean/internal/executor"
 	"github.com/Pastranauwu/devclean/internal/loop"
 	"github.com/Pastranauwu/devclean/internal/plan"
@@ -51,6 +52,8 @@ func notaPara(ctx context.Context, dir string, tocar []string) string {
 // no necesita más que saber qué reemplazar, dónde está el contrato y que
 // la prueba sale de sus casos.
 const notaRelleno = "Primero escribe la prueba del archivo que corre listo_cuando con los \"Casos:\" del contrato de cada stub (y los casos límite que el contrato nombre): una prueba por caso, sin variantes que prueben lo mismo; las dependencias de otros módulos van con fakes. Después rellena los cuerpos que lanzan \"" + esqueleto.Marca + "\" siguiendo la \"Idea:\" del contrato: el diseño ya está decidido, no lo cambies ni busques otro. No cambies firmas, nombres ni exportaciones: otros módulos ya dependen de ellas. El contrato está en el comentario de cada stub y en " + esqueleto.Documento + ". Al terminar, el comentario de contrato deja de ser una instrucción para ti y pasa a ser documentación: redúcelo a lo que necesita quien mantenga el código (qué hace y lo que no es obvio) y borra \"Idea:\", \"Casos:\", la lista de quién llama a quién y cualquier maqueta o paso que el código ya dice; los casos viven en la prueba."
+
+const notaRellenoExamen = "Un examinador independiente escribe la prueba visible desde las firmas y Casos: del esqueleto antes de que empieces. No edites pruebas: implementa los stubs que lanzan \"" + esqueleto.Marca + "\" siguiendo la Idea: del contrato y haz pasar listo_cuando. Mantén firmas y exportaciones. Al terminar, reduce los comentarios de contrato a documentación útil y borra Idea: y Casos:."
 
 // planearEsqueleto es el camino de requirements: el modelo grande
 // escribe el esqueleto en el cuarto de la primera tarea, devclean lo
@@ -287,12 +290,23 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	for i, b := range bs {
 		// las firmas viven en el código y las valida el compilador: sin
 		// expone/usa en prosa no hay nada que comparar a mano
+		pruebaVisible := pruebaVisibleDeTarea(b.TocarSolo, b.ListoCuando)
+		examenCiego := esqueleto.ConStub(ctx, r.Path, b.TocarSolo) && !strings.Contains(b.Como, "Obsoleto:") &&
+			pruebaVisible != "" && examiner.Examinable(r.Path, task.Task{TocarSolo: b.TocarSolo, ExamenEsqueleto: true, ExamenVisible: pruebaVisible}, config.DetectLanguage(r.Path))
+		alcance := b.TocarSolo
+		nota := notaPara(ctx, r.Path, b.TocarSolo)
+		if examenCiego {
+			alcance = sinPruebasDeTarea(b.TocarSolo)
+			nota = notaRellenoExamen
+		}
 		s.Tasks = append(s.Tasks, task.Task{
 			Version: task.Version, ID: idsRelleno[i], Titulo: b.Titulo, Porque: b.Porque,
-			ListoCuando: conVerificar(res.Verificar, b.ListoCuando), TocarSolo: b.TocarSolo, NoTocar: b.NoTocar,
+			ListoCuando: conVerificar(res.Verificar, b.ListoCuando), TocarSolo: alcance, NoTocar: b.NoTocar,
 			DependeDe: append(append([]string(nil), deEsqueleto...), b.DependeDe...), Peso: b.Peso, Agente: b.Agente,
-			Skills: b.Skills, Cubre: b.Cubre, Notas: b.Como + "\n\n" + notaPara(ctx, r.Path, b.TocarSolo),
-			LimiteIntentos: intentos, LimiteLineas: s.Limites.Lineas,
+			Skills: b.Skills, Cubre: b.Cubre, Notas: b.Como + "\n\n" + nota,
+			ExamenEsqueleto: examenCiego,
+			ExamenVisible:   pruebaVisible,
+			LimiteIntentos:  intentos, LimiteLineas: s.Limites.Lineas,
 		})
 	}
 	if res.Verificar != "" {
@@ -313,6 +327,40 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	}
 	out.Line("· esqueleto %s listo · %d tareas de relleno · integración: %s", id, len(bs), valorO(res.Integracion, "sin prueba de punta a punta"))
 	return nil
+}
+
+// pruebaVisibleDeTarea es el archivo de prueba de tocar_solo que corre
+// listo_cuando. En un monorepo el comando lo nombra relativo a un `cd` o
+// a un --prefix ("cd backend && pytest tests/test_x.py" para
+// backend/tests/test_x.py): vale si el comando trae el resto de la ruta y
+// también la carpeta que le falta.
+func pruebaVisibleDeTarea(alcance []string, comando string) string {
+	for _, p := range alcance {
+		if !task.EsArchivoDePrueba(p) || strings.ContainsAny(p, "*?[") {
+			continue
+		}
+		if strings.Contains(comando, p) {
+			return p
+		}
+		partes := strings.Split(p, "/")
+		for i := 1; i < len(partes); i++ {
+			carpeta, resto := strings.Join(partes[:i], "/"), strings.Join(partes[i:], "/")
+			if strings.Contains(comando, resto) && strings.Contains(comando, carpeta) {
+				return p
+			}
+		}
+	}
+	return ""
+}
+
+func sinPruebasDeTarea(alcance []string) []string {
+	var out []string
+	for _, p := range alcance {
+		if !task.EsArchivoDePrueba(p) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // conVerificar antepone el build/typecheck del esqueleto al listo_cuando
@@ -367,6 +415,9 @@ func guardarLogEsqueleto(root, id string, vuelta int, prompt string, res executo
 	contenido := fmt.Sprintf("=== esqueleto %d · %d tokens de entrada · %d de salida · $%.3f\n--- prompt\n%s\n--- respuesta\n%s\n--- stderr\n%s\n",
 		vuelta+1, res.Tokens.Input, res.Tokens.Output, res.Tokens.CostUSD, prompt, res.Text, res.Stderr)
 	_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("esqueleto-%d.log", vuelta+1)), []byte(contenido), 0o644)
+	if b, err := json.Marshal(res.Tokens); err == nil {
+		_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("esqueleto-%d.usage.json", vuelta+1)), b, 0o644)
+	}
 }
 
 // tomarCapturas fotografía la interfaz si el proyecto declara cómo
