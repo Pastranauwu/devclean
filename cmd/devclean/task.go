@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -276,19 +277,50 @@ func newTaskRmCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := task.Remove(config.TasksDir(root), id); err != nil {
+			dir := config.TasksDir(root)
+			if err := task.Remove(dir, id); err != nil {
 				return err
 			}
 			if err := state.Remove(root, id); err != nil {
 				return err
 			}
-			if err := out.Data(map[string]string{"eliminada": id}); err != nil {
+			// las que dependían de ella quedarían bloqueadas para siempre
+			// esperando una tarea que ya no existe
+			liberadas, err := quitarDependencia(dir, id)
+			if err != nil {
+				return err
+			}
+			if err := out.Data(map[string]any{"eliminada": id, "liberadas": liberadas}); err != nil {
 				return err
 			}
 			out.Line("✓ %s eliminada", id)
+			if len(liberadas) > 0 {
+				out.Line("· ya no dependen de ella: %s · revisa que sigan teniendo sentido sin %s", strings.Join(liberadas, ", "), id)
+			}
 			return nil
 		},
 	}
+}
+
+// quitarDependencia saca id del depende_de de las tareas de dir y
+// devuelve cuáles cambió.
+func quitarDependencia(dir, id string) ([]string, error) {
+	tareas, err := task.List(dir)
+	if err != nil {
+		return nil, err
+	}
+	var cambiadas []string
+	for _, t := range tareas {
+		if !slices.Contains(t.DependeDe, id) {
+			continue
+		}
+		t.DependeDe = slices.DeleteFunc(t.DependeDe, func(d string) bool { return d == id })
+		if err := task.Save(dir, t); err != nil {
+			return cambiadas, err
+		}
+		cambiadas = append(cambiadas, t.ID)
+	}
+	return cambiadas, nil
 }
 
 type listEntry struct {

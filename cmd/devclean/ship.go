@@ -292,6 +292,21 @@ func runShip(id string, dryRun bool) error {
 		return errorShipNoLista(id, st)
 	}
 
+	// una tarea suelta se aplana contra la base: si depende de otra que
+	// todavía no está ahí, su commit se llevaría el trabajo de esa (el
+	// esqueleto entero, en soundlike) bajo su nombre
+	ctx := context.Background()
+	entregadas := ship.Entregadas(ctx, root, cfg.Base)
+	var faltan []string
+	for _, dep := range t.DependeDe {
+		if !entregadas[dep] && room.RamaExiste(ctx, root, dep) {
+			faltan = append(faltan, dep)
+		}
+	}
+	if len(faltan) > 0 {
+		return fmt.Errorf("%s depende de %s, que todavía no se entregó · entrégalas juntas con devclean ship --todas", id, strings.Join(faltan, ", "))
+	}
+
 	r := room.Room{ID: id, Path: filepath.Join(room.Dir(root), id), Rama: room.Branch(id)}
 	if _, err := os.Stat(r.Path); err != nil {
 		return fmt.Errorf("no existe el cuarto de %s · la tarea no corrió", id)
@@ -305,6 +320,8 @@ func runShip(id string, dryRun bool) error {
 		Modelo: ultimoModelo(root, id),
 		Base:   cfg.Base,
 		DryRun: dryRun,
+		// en seco la rama queda como estaba
+		Conservar: dryRun,
 	}
 	if cfg.TimeoutPruebas > 0 {
 		opciones.Timeout = time.Duration(cfg.TimeoutPruebas) * time.Second

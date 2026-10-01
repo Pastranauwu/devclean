@@ -394,3 +394,29 @@ func TestEjecutableLeeElComandoComoSh(t *testing.T) {
 		t.Errorf("programa inexistente tras el cd: %+v", ch)
 	}
 }
+
+// vitest y jest salen verdes si uno de los archivos pedidos no existe y
+// otro sí: eso no es "ya pasa", la prueba de la tarea falta por escribir.
+func TestFallaHoyNoRechazaSiFaltaLaPruebaNombrada(t *testing.T) {
+	root := t.TempDir()
+	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "frontend", "tests"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "frontend", "tests", "viejo.test.ts"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if c := checkFallaHoy(ctx, root, "true && (true tests/nuevo.test.ts tests/viejo.test.ts)", time.Minute); !c.OK || !strings.Contains(c.Motivo, "tests/nuevo.test.ts") {
+		t.Errorf("con una prueba sin escribir no puede decir que ya pasa: %+v", c)
+	}
+	// la ruta es relativa a un cd: basta con que exista en algún lado
+	if c := checkFallaHoy(ctx, root, "cd frontend && true tests/viejo.test.ts", time.Minute); c.OK {
+		t.Errorf("todas las pruebas existen y pasan: la tarea no tiene sentido: %+v", c)
+	}
+	if c := checkFallaHoy(ctx, root, "true", time.Minute); c.OK {
+		t.Errorf("sin pruebas nombradas, verde es ya pasa: %+v", c)
+	}
+}

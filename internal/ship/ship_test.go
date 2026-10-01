@@ -220,3 +220,31 @@ func TestOrdenTopologico(t *testing.T) {
 		t.Error("un ciclo debe reportarse")
 	}
 }
+
+// Un --dry-run que deja la rama rebasada y aplanada no es en seco: la
+// corrida siguiente ya no puede juntarla con las tareas de las que depende.
+func TestRunConservarDejaLaRamaComoEstaba(t *testing.T) {
+	root := repoConCommit(t)
+	r := cuartoConWip(t, root)
+	cfg := config.Config{Base: "main", Pruebas: "true", PatronesPrueba: config.DefaultTestPatterns()}
+	tk := taskTitulo("exportar a CSV")
+	tk.TocarSolo = []string{"a.go"}
+	antes := strings.TrimSpace(gitCmd(t, r.Path, "rev-parse", "HEAD"))
+
+	res := Run(context.Background(), Opciones{Root: root, Room: r, Task: tk, Config: cfg, Base: "main", DryRun: true, Conservar: true})
+	if !res.Aprobado {
+		t.Fatalf("dry-run no aprobado: %+v", res.Pasos)
+	}
+	if despues := strings.TrimSpace(gitCmd(t, r.Path, "rev-parse", "HEAD")); despues != antes {
+		t.Errorf("la rama cambió de %s a %s", antes, despues)
+	}
+	if sucio := strings.TrimSpace(gitCmd(t, r.Path, "status", "--porcelain")); sucio != "" {
+		t.Errorf("el cuarto quedó sucio:\n%s", sucio)
+	}
+
+	// sin Conservar (la entrega conjunta) el commit aplanado se queda
+	Run(context.Background(), Opciones{Root: root, Room: r, Task: tk, Config: cfg, Base: "main", DryRun: true})
+	if despues := strings.TrimSpace(gitCmd(t, r.Path, "rev-parse", "HEAD")); despues == antes {
+		t.Error("sin Conservar la esclusa aplana la rama")
+	}
+}

@@ -43,15 +43,22 @@ type Resultado struct {
 
 // Opciones carries the exit gate's dependencies.
 type Opciones struct {
-	Root     string
-	Room     room.Room
-	Task     task.Task
-	Config   config.Config
-	Modelo   string        // del último intento, para el trailer Agent:
-	Base     string        // rama base sobre la que rebasear
-	Timeout  time.Duration // timeout del paso bisectable
-	DryRun   bool          // corre todo menos abrir el PR
-	Progreso func(Paso)    // llamado tras cada paso, para el TUI; nil = silencio
+	Root    string
+	Room    room.Room
+	Task    task.Task
+	Config  config.Config
+	Modelo  string        // del último intento, para el trailer Agent:
+	Base    string        // rama base sobre la que rebasear
+	Timeout time.Duration // timeout del paso bisectable
+	DryRun  bool          // corre todo menos abrir el PR
+	// Conservar deja la rama del cuarto como estaba al terminar: la
+	// esclusa la rebasa y la aplana para revisarla, y un `--dry-run` que
+	// se queda con eso ya no es en seco. En soundlike dejó la rama de
+	// T-035 con el esqueleto del que dependía metido en su commit, y la
+	// corrida siguiente no pudo juntarla con él (conflictos agregar/agregar).
+	// La entrega conjunta no lo usa: necesita el commit aplanado.
+	Conservar bool
+	Progreso  func(Paso) // llamado tras cada paso, para el TUI; nil = silencio
 	// SuiteAlIntegrar es la entrega conjunta: la suite completa la corre
 	// el paso integradas sobre todo junto y la base actual. En la rama de
 	// la tarea, que arrancó de una base vieja, un rojo puede ser algo que
@@ -74,6 +81,15 @@ func Run(ctx context.Context, o Opciones) Resultado {
 		res.Pasos = append(res.Pasos, p)
 		if o.Progreso != nil {
 			o.Progreso(p)
+		}
+	}
+
+	if o.Conservar {
+		if punta, err := gitRun(o.Room.Path, "rev-parse", "HEAD"); err == nil {
+			defer func() {
+				_, _ = gitRun(o.Room.Path, "rebase", "--abort")
+				_, _ = gitRun(o.Room.Path, "reset", "--hard", strings.TrimSpace(punta))
+			}()
 		}
 	}
 

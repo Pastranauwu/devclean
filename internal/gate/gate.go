@@ -210,6 +210,37 @@ func programas(cmd string) []string {
 	return out
 }
 
+// pruebaSinEscribir devuelve el primer archivo de prueba que listo_cuando
+// nombra tal cual y que no está en el repo, o "". La ruta puede ser
+// relativa a un `cd` o a un --prefix, así que basta con que algún archivo
+// termine en ella. Sin git no opina.
+func pruebaSinEscribir(root, listoCuando string) string {
+	cmd := exec.Command("git", "ls-files", "-co", "--exclude-standard")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	archivos := strings.Split(string(out), "\n")
+	for _, tkn := range strings.Fields(listoCuando) {
+		f := strings.TrimPrefix(strings.Trim(tkn, "()\"'"), "./")
+		if !task.EsArchivoDePrueba(f) || strings.ContainsAny(f, "*?[$") {
+			continue
+		}
+		existe := false
+		for _, a := range archivos {
+			if a == f || strings.HasSuffix(a, "/"+f) {
+				existe = true
+				break
+			}
+		}
+		if !existe {
+			return f
+		}
+	}
+	return ""
+}
+
 // checkFallaHoy: the command must fail today. It runs for real with a
 // timeout; a zero exit rejects the task as pointless.
 func checkFallaHoy(ctx context.Context, root, listoCuando string, timeout time.Duration) Check {
@@ -229,6 +260,14 @@ func checkFallaHoy(ctx context.Context, root, listoCuando string, timeout time.D
 		return Check{"falla hoy", false, fmt.Sprintf("listo_cuando tardó más de %s · acota el comando", timeout)}
 	}
 	if err == nil {
+		// vitest y jest ignoran un archivo que no existe si otro de la
+		// lista sí: "run nuevo.test.ts viejo.test.ts" corre el viejo y
+		// sale verde. La prueba de la tarea todavía no está escrita, así
+		// que no es cierto que ya pase (soundlike: T-036 y T-039
+		// rechazadas, y con ellas todo lo que dependía)
+		if f := pruebaSinEscribir(root, listoCuando); f != "" {
+			return Check{"falla hoy", true, "verde solo porque " + f + " todavía no existe"}
+		}
 		return Check{"falla hoy", false, "listo_cuando ya pasa · la tarea no tiene sentido"}
 	}
 	var exitErr *exec.ExitError
