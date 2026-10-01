@@ -360,7 +360,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 
 		req := Request{
 			RoomPath:     o.Room.Path,
-			Prompt:       promptPara(o.Task, o.Interfaces, o.Constitucion, o.Skills, o.SkillsContenido, prevErr, len(o.PatronesPrueba) == 0),
+			Prompt:       promptPara(o.Task, o.Interfaces, o.Constitucion, o.Skills, o.SkillsContenido, prevErr, len(o.PatronesPrueba) == 0) + alcancePara(o.Room.Path),
 			AllowedGlobs: o.Task.TocarSolo,
 			Model:        o.Model,
 			Timeout:      o.AgentTimeout,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -191,7 +192,7 @@ func TestRunRevierteArchivosFueraDeAlcance(t *testing.T) {
 	if len(revertidos) != 1 || revertidos[0] != "docs/notas.txt" {
 		t.Errorf("revertidos = %v, quiero [docs/notas.txt]", revertidos)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".devclean", "rooms", "T-001", "docs", "notas.txt")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(room.Dir(root), "T-001", "docs", "notas.txt")); !os.IsNotExist(err) {
 		t.Error("el archivo fuera de alcance quedó en el cuarto")
 	}
 }
@@ -675,5 +676,21 @@ func TestSinInterfazNoHayRevisionVisual(t *testing.T) {
 	opts.RevisorVisual = v
 	if outcome, err := Run(context.Background(), opts); err != nil || !outcome.Verde || v.veces != 0 {
 		t.Fatalf("outcome = %+v err = %v revisiones = %d", outcome, err, v.veces)
+	}
+}
+
+func TestAlcanceParaListaLosArchivosDelCuarto(t *testing.T) {
+	dir := t.TempDir()
+	if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if alcancePara(dir) != "" {
+		t.Error("un cuarto vacío no tiene nada que listar")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.ts"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if p := alcancePara(dir); !strings.Contains(p, "\na.ts\n") {
+		t.Errorf("falta el archivo en la lista:\n%s", p)
 	}
 }
