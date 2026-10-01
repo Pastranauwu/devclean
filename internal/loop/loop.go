@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -221,7 +222,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	// la prueba que listo_cuando nombra y ya estaba cuando arrancó la
 	// tarea es el oráculo que alguien más escribió (el esqueleto, el
 	// humano): se protege como ruta de prueba y no se examina encima.
-	if fijas := pruebasFijas(o.Room, o.Base, o.Task.ListoCuando); len(fijas) > 0 {
+	if fijas := pruebasFijas(o.Room, o.Base, o.Task); len(fijas) > 0 {
 		o.Examinador = nil
 		o.PatronesPrueba = append(append([]string{}, o.PatronesPrueba...), fijas...)
 	}
@@ -408,6 +409,16 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		var code *int
 		if detener == nil {
 			salida, code = runPrueba(ctx, o.Room.Path, o.Task.ListoCuando, o.PruebaTimeout, o.Env)
+			// verde sin la prueba de la tarea: el runner ignoró el archivo
+			// que listo_cuando nombra y todavía no existe, y corrió solo las
+			// pruebas viejas. El comportamiento nuevo no lo juzgó nadie.
+			if code != nil && *code == 0 {
+				if f := task.PruebaSinEscribir(o.Room.Path, o.Task.ListoCuando); f != "" {
+					uno := 1
+					code = &uno
+					salida = "listo_cuando pasó sin la prueba de esta tarea: " + f + " no existe. Escríbela con los casos del contrato; las otras pruebas del comando ya pasaban antes de tu cambio."
+				}
+			}
 		}
 		pasaron, fallaron := ParseTestCounts(salida)
 		fin := time.Now().UTC()
@@ -711,8 +722,16 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration, e
 // existían en el commit con que arrancó el cuarto. Se mira ese commit y
 // no el árbol: la prueba que el agente escribió en un intento anterior
 // sigue siendo suya al escalar o retomar.
-func pruebasFijas(r room.Room, base, listoCuando string) []string {
-	nombradas := task.ArchivosDePrueba(listoCuando)
+//
+// Salvo las que el contrato nombra en tocar_solo con su ruta exacta (un
+// glob amplio como "src/**" no cuenta: no es una decisión): ahí quien planeó decidió
+// que el cambio las deja obsoletas y que la tarea las actualiza. Antes se
+// congelaban igual, y una tarea que cambia un comportamiento ya probado
+// no podía cerrar: el código nuevo rompe la prueba vieja y la prueba
+// vieja no se podía tocar. El contrapeso es el revisor, que ve el diff de
+// la prueba contra lo que el contrato declaró obsoleto.
+func pruebasFijas(r room.Room, base string, t task.Task) []string {
+	nombradas := task.ArchivosDePrueba(t.ListoCuando)
 	if len(nombradas) == 0 {
 		return nil
 	}
@@ -732,7 +751,7 @@ func pruebasFijas(r room.Room, base, listoCuando string) []string {
 		p = strings.TrimPrefix(p, "./")
 		patrones := []string{p, "**/" + p}
 		for _, f := range strings.Split(out, "\n") {
-			if f != "" && config.MatchesAny(patrones, f) {
+			if f != "" && config.MatchesAny(patrones, f) && !slices.Contains(t.TocarSolo, f) {
 				fijas = append(fijas, f)
 			}
 		}

@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -104,6 +105,7 @@ SI EL REPOSITORIO YA TIENE CÓDIGO
 - Lo que ya funciona NO se convierte en stub. Respeta el stack, las librerías, el sistema de diseño y las convenciones que ya hay; no migres nada que el pedido no pida.
 - Un cambio a código existente es una tarea sin stub: en "como" va qué cambiar, dónde y "Casos:" del comportamiento nuevo (entrada → salida o lo que se ve en pantalla). Si el cambio agrega funciones, métodos o componentes nuevos, esos sí van como stub con su contrato.
 - El "listo_cuando" de un cambio corre una prueba NUEVA del comportamiento nuevo (un archivo que hoy no existe): las pruebas que ya existen pasan hoy y no sirven de oráculo. Esas pruebas tienen que seguir pasando.
+- Una prueba que ya existe está congelada: el agente no puede tocarla. Si el cambio que pides vuelve FALSO algo que una prueba existente verifica (cambia un texto, un flujo, un resultado), eso lo decides tú, no el agente: pon ese archivo de prueba en el "tocar_solo" de la tarea, con su ruta exacta (un glob no lo descongela), y escribe en su "como" una línea "Obsoleto:" con qué casos de esa prueba dejan de valer y qué deben verificar ahora. El agente solo puede cambiar eso. Si ninguna prueba existente queda falsa, no pongas pruebas existentes en "tocar_solo".
 - Si el pedido es visual (rediseño, estilo, experiencia de uso), el resultado tiene que VERSE distinto, no solo cambiar clases. Las pruebas existentes que fijan clases CSS o estilos no protegen nada del usuario: reescríbelas o bórralas tú en este esqueleto para que no frenen el rediseño. No hagas cambios "aditivos" para esquivarlas.
 - Las pruebas de interfaz que pidas verifican lo que el usuario ve y hace (textos, roles, estados, navegación), no clases CSS: cómo se ve lo juzga una revisión con capturas.
 `)
@@ -297,8 +299,11 @@ func Problemas(ctx context.Context, v Verificacion, r Resultado) []string {
 // ningún cambio a código existente pasaba la verificación. La tarea
 // final de integración solo escribe pruebas y no necesita nada.
 func contrato(dir, nombre string, t plan.Borrador, archivos []string, previos map[string]bool) []string {
-	var nuevos, existentes []string
+	var nuevos, existentes, pruebasViejas []string
 	for _, f := range archivos {
+		if previos[f] && task.EsArchivoDePrueba(f) && slices.Contains(t.TocarSolo, f) {
+			pruebasViejas = append(pruebasViejas, f)
+		}
 		if !config.MatchesAny(t.TocarSolo, f) || task.EsArchivoDePrueba(f) {
 			continue
 		}
@@ -331,7 +336,16 @@ func contrato(dir, nombre string, t plan.Borrador, archivos []string, previos ma
 		if !idea {
 			out = append(out, fmt.Sprintf("%s: el contrato de %s no trae \"Idea:\"; escribe en pocas líneas cómo se resuelve (algoritmo, estructuras, trampas) para que el agente solo lo implemente", nombre, strings.Join(nuevos, ", ")))
 		}
-	} else if len(existentes) > 0 && !strings.Contains(t.Como, "Casos:") {
+	}
+	// una prueba existente en tocar_solo deja de estar congelada: sin
+	// decir qué parte quedó obsoleta, el agente podría reescribirla entera
+	if len(pruebasViejas) > 0 && !strings.Contains(t.Como, "Obsoleto:") {
+		out = append(out, fmt.Sprintf("%s: deja modificar %s, una prueba que ya existe, y su \"como\" no trae \"Obsoleto:\" con los casos que dejan de valer; si ninguno queda falso, sácala de tocar_solo", nombre, strings.Join(pruebasViejas, ", ")))
+	}
+	if len(nuevos) > 0 {
+		return out
+	}
+	if len(existentes) > 0 && !strings.Contains(t.Como, "Casos:") {
 		out = append(out, fmt.Sprintf("%s: cambia %s, que ya existe, y su \"como\" no trae \"Casos:\" del comportamiento nuevo", nombre, strings.Join(existentes, ", ")))
 	}
 	return out

@@ -202,6 +202,7 @@ func Prompt(tareas []task.Task, diff string) string {
 	b.WriteString("  · un fallo real: caso límite roto, error sin manejar que pierde datos, condición de carrera\n")
 	b.WriteString("  · un problema de seguridad: entrada sin validar en una frontera de confianza, secreto derivado, permiso de más\n")
 	b.WriteString("  · lo que entrega no encaja con lo que otra tarea consume\n")
+	b.WriteString("  · el diff borra, relaja o reescribe casos de una prueba que ya existía y la tarea no los declara en \"Obsoleto:\": una prueba vieja solo cambia en lo que el contrato dice que dejó de valer\n")
 	b.WriteString("- \"cambios\": si funciona es false, qué hay que corregir, una línea por cosa y con archivo:línea. Obligatorio: decir que algo está mal sin decir qué cambiar no le sirve a nadie.\n\n")
 	b.WriteString("NO marques funciona:false por estilo, nombres, formato, gustos de arquitectura, ni por falta de pruebas o documentación que nadie pidió. Si dudas y no puedes señalar la línea concreta, es que funciona.\n\n")
 	b.WriteString("En \"notas\" pon solo lo que se ve mirando el conjunto y no cabe en ninguna tarea suelta; vacío si no hay nada.\n\n")

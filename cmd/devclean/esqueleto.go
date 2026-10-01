@@ -36,7 +36,7 @@ const timeoutArquitecto = 45 * time.Minute
 
 // notaCambio va en las tareas que cambian código que ya funciona: no hay
 // stub que rellenar y lo que ya existe no se puede romper.
-const notaCambio = "Cambias código que ya funciona. Primero escribe la prueba del comportamiento nuevo en el archivo que corre listo_cuando, con los \"Casos:\" de arriba; después haz el cambio. No cambies firmas, nombres ni exportaciones que otros módulos usan salvo que el contrato lo pida, y las pruebas que ya existen tienen que seguir pasando. Si un comentario del archivo describe lo que cambias, actualízalo o bórralo: no dejes comentarios que contradigan el código. El contexto está en " + esqueleto.Documento + "."
+const notaCambio = "Cambias código que ya funciona. Primero escribe la prueba del comportamiento nuevo en el archivo que corre listo_cuando, con los \"Casos:\" de arriba; después haz el cambio. No cambies firmas, nombres ni exportaciones que otros módulos usan salvo que el contrato lo pida, y las pruebas que ya existen tienen que seguir pasando. De una prueba que ya existía solo puedes cambiar lo que el contrato declara en \"Obsoleto:\"; el resto de sus casos se queda igual. Si un comentario del archivo describe lo que cambias, actualízalo o bórralo: no dejes comentarios que contradigan el código. El contexto está en " + esqueleto.Documento + "."
 
 // notaPara elige la nota según lo que toca la tarea: rellenar un stub o
 // cambiar código existente.

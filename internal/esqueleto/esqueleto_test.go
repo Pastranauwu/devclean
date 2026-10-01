@@ -125,6 +125,28 @@ func TestProblemasAceptaCambiosACodigoExistente(t *testing.T) {
 	}
 }
 
+// una prueba que ya existe solo se descongela diciendo qué quedó obsoleto
+func TestProblemasExigeObsoletoParaTocarUnaPruebaExistente(t *testing.T) {
+	dir := planoPython(t)
+	escribir(t, dir, "tests/test_resta.py", "# casos viejos\n")
+	for _, c := range [][]string{{"add", "calc/resta.py", "tests/test_resta.py"}, {"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, c...)...).CombinedOutput(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+	}
+	cambio := tarea("resta con negativos", "python3 -m unittest tests/test_resta_neg.py", "calc/resta.py", "tests/test_resta_neg.py", "tests/test_resta.py")
+	cambio.Como = "resta acepta y devuelve negativos. Casos: resta(1, 3) -> -2"
+	r := Resultado{Verificar: "python3 -m compileall -q calc", Tareas: []plan.Borrador{cambio}}
+	v := Verificacion{Dir: dir, Base: "HEAD", Timeout: time.Minute}
+	if ps := strings.Join(Problemas(context.Background(), v, r), "\n"); !strings.Contains(ps, "Obsoleto:") || !strings.Contains(ps, "tests/test_resta.py") {
+		t.Errorf("dejó tocar una prueba existente sin decir qué queda obsoleto: %q", ps)
+	}
+	r.Tareas[0].Como += " Obsoleto: test_resta_rechaza_negativos ya no aplica, ahora devuelve el negativo."
+	if ps := Problemas(context.Background(), v, r); len(ps) > 0 {
+		t.Errorf("con Obsoleto: declarado debía pasar: %v", ps)
+	}
+}
+
 func TestProblemasExigeComposeYDockerignore(t *testing.T) {
 	dir := planoPython(t)
 	r := Resultado{Verificar: "true", Tareas: []plan.Borrador{tarea("suma", "true", "calc/suma.py")}}

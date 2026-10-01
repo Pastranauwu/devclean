@@ -1,6 +1,7 @@
 package task
 
 import (
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -65,4 +66,38 @@ func EsArchivoDePrueba(p string) bool {
 		return strings.Contains(b, "_test.rs")
 	}
 	return strings.HasPrefix(b, "test_")
+}
+
+// PruebaSinEscribir devuelve el primer archivo de prueba que cmd nombra
+// tal cual y que no está en el repo de dir, o "". vitest y jest ignoran un
+// archivo que no existe si otro de la lista sí: "run nuevo.test.ts
+// viejo.test.ts" corre el viejo y sale verde, así que ese verde no dice
+// nada de la prueba que falta. La ruta puede ser relativa a un `cd` o a
+// un --prefix: basta con que algún archivo termine en ella. Sin git no
+// opina.
+func PruebaSinEscribir(dir, cmd string) string {
+	c := exec.Command("git", "ls-files", "-co", "--exclude-standard")
+	c.Dir = dir
+	out, err := c.Output()
+	if err != nil {
+		return ""
+	}
+	archivos := strings.Split(string(out), "\n")
+	for _, tkn := range strings.Fields(cmd) {
+		f := strings.TrimPrefix(strings.Trim(tkn, "()\"'"), "./")
+		if !EsArchivoDePrueba(f) || strings.ContainsAny(f, "*?[$") {
+			continue
+		}
+		existe := false
+		for _, a := range archivos {
+			if a == f || strings.HasSuffix(a, "/"+f) {
+				existe = true
+				break
+			}
+		}
+		if !existe {
+			return f
+		}
+	}
+	return ""
 }

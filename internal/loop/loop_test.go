@@ -694,3 +694,60 @@ func TestAlcanceParaListaLosArchivosDelCuarto(t *testing.T) {
 		t.Errorf("falta el archivo en la lista:\n%s", p)
 	}
 }
+
+// Si el contrato nombra la prueba vieja en tocar_solo, quien planeó
+// decidió que el cambio la deja obsoleta: el agente la puede actualizar.
+func TestRunDejaActualizarLaPruebaViejaQueElContratoNombra(t *testing.T) {
+	root := repoConCommit(t)
+	escribir(t, root, "src/suma.test.js", "original\n")
+	gitCmd(t, root, "add", "-A")
+	gitCmd(t, root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "base")
+	ag := &agenteFalso{nombre: "falso", hacer: func(n int, req Request) (string, int, error) {
+		escribir(t, req.RoomPath, "src/suma.test.js", "actualizada\n")
+		return "", 0, nil
+	}}
+	tk := tareaDePrueba()
+	tk.ListoCuando = "grep -q actualizada src/suma.test.js"
+	tk.TocarSolo = []string{"src/suma.js", "src/suma.test.js"}
+	tk.LimiteIntentos = 1
+	opts := optsDePrueba(t, root, ag, tk)
+	opts.PatronesPrueba = []string{}
+	out, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	as, _ := ReadAttempts(root, tk.ID)
+	if !out.Verde || len(as) != 1 || len(as[0].RevertidosFueraDeAlcance) != 0 {
+		t.Fatalf("verde=%v intentos=%+v", out.Verde, as)
+	}
+}
+
+// vitest y jest ignoran el archivo que falta y corren el resto: verde sin
+// la prueba de la tarea no es verde.
+func TestRunNoEsVerdeSinLaPruebaQueListoCuandoNombra(t *testing.T) {
+	root := repoConCommit(t)
+	var prompts []string
+	ag := &agenteFalso{nombre: "falso", hacer: func(n int, req Request) (string, int, error) {
+		prompts = append(prompts, req.Prompt)
+		escribir(t, req.RoomPath, "src/done.txt", "x\n")
+		if n > 1 {
+			escribir(t, req.RoomPath, "src/nuevo.test.js", "prueba\n")
+		}
+		return "", 0, nil
+	}}
+	tk := tareaDePrueba()
+	tk.ListoCuando = "true src/nuevo.test.js"
+	tk.LimiteIntentos = 2
+	opts := optsDePrueba(t, root, ag, tk)
+	opts.PatronesPrueba = []string{}
+	out, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.Verde || out.Intentos != 2 {
+		t.Fatalf("el primer intento no escribió la prueba y no puede ser verde: %+v", out)
+	}
+	if len(prompts) != 2 || !strings.Contains(prompts[1], "src/nuevo.test.js no existe") {
+		t.Errorf("el segundo intento debe saber qué faltó:\n%v", prompts)
+	}
+}
