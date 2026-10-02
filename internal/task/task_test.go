@@ -48,7 +48,6 @@ func TestParseErrores(t *testing.T) {
 	cases := map[string]string{
 		"sin bloque inicial":    "id: T-001\n",
 		"sin bloque de cierre":  "---\nid: T-001\n",
-		"campo desconocido":     "---\nversion: 1\nid: T-001\nextra: nope\n---\n",
 		"entero inválido":       "---\nversion: 1\nlimite_intentos: tres\n---\n",
 		"lista mal formada":     "---\nversion: 1\ntocar_solo: src/**\n---\n",
 		"elemento sin comillas": "---\nversion: 1\ntocar_solo: [src/**]\n---\n",
@@ -146,9 +145,12 @@ func TestParseVersionFuturaTolera(t *testing.T) {
 }
 
 func TestParseCampoDesconocidoEnVersionActual(t *testing.T) {
-	_, err := Parse([]byte("---\nversion: 1\nid: T-001\ncampo_del_futuro: algo\n---\n"))
-	if err == nil || !strings.Contains(err.Error(), "campo desconocido") {
-		t.Errorf("Parse = %v · un campo desconocido en la versión soportada se rechaza", err)
+	task, err := Parse([]byte("---\nversion: 1\nid: T-001\ncampo_del_futuro: algo\n---\n"))
+	if err != nil {
+		t.Fatalf("Parse = %v · un campo desconocido debe tolerarse", err)
+	}
+	if !strings.Contains(task.Aviso, "campo desconocido ignorado") {
+		t.Errorf("Aviso = %q · debió registrar advertencia de campo ignorado", task.Aviso)
 	}
 }
 
@@ -301,8 +303,16 @@ func TestNombreDeFirmaNoConfundeProsaConRuta(t *testing.T) {
 func TestNombreDeFirmaTipoYConstanteTS(t *testing.T) {
 	casos := map[string]string{
 		"type Point = { x: number; y: number }":                     "Point",
+		"export type Point = { x: number; y: number }":              "Point",
 		"type SnakeState = { body: Point[]; direction: Direction }": "SnakeState",
+		"export interface ISynth<T> { play(): void }":               "ISynth",
+		"interface SoundPlayer<T extends Node>":                     "SoundPlayer",
+		"export class AudioManager {":                               "AudioManager",
+		"class SynthVoice implements Voice":                         "SynthVoice",
+		"export function noteToFreq(nota: string): number":          "noteToFreq",
+		"export async function playSound(id: string): Promise<void>": "playSound",
 		"const LEVELS: Level[]":                                     "LEVELS",
+		"export const LEVELS: Level[]":                              "LEVELS",
 		"levels.LEVELS: Level[]":                                    "LEVELS",
 		"sound.SoundManager = { play(): void }":                     "SoundManager",
 		"type Direction = 'up' | 'down' | 'left' | 'right'":         "Direction",
@@ -310,6 +320,30 @@ func TestNombreDeFirmaTipoYConstanteTS(t *testing.T) {
 	for firma, want := range casos {
 		if got := NombreDeFirma(firma); got != want {
 			t.Errorf("NombreDeFirma(%q) = %q, quiero %q", firma, got, want)
+		}
+	}
+}
+
+func TestFirmaVerificableTiposEInterfacesTS(t *testing.T) {
+	verificables := map[string]string{
+		"export interface ISynth<T> { play(): void }": "ISynth",
+		"type Point = { x: number; y: number }":       "Point",
+		"export class AudioManager":                   "AudioManager",
+		"export const LEVELS: Level[]":                "LEVELS",
+		"wol.Send(mac string) error":                  "Send",
+		"POST /wake":                                  "/wake",
+	}
+	for firma, want := range verificables {
+		got, ok := FirmaVerificable(firma)
+		if !ok || got != want {
+			t.Errorf("FirmaVerificable(%q) = (%q, %v), quiero (%q, true)", firma, got, ok, want)
+		}
+	}
+
+	prosa := []string{"cmd/sum main package", "devclean --mac <MAC>", "notas explicativas"}
+	for _, p := range prosa {
+		if got, ok := FirmaVerificable(p); ok {
+			t.Errorf("FirmaVerificable(%q) = (%q, true) · no debió ser verificable", p, got)
 		}
 	}
 }

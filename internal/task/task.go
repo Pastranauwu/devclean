@@ -122,17 +122,36 @@ func DependenciasPorPosicion(deps, ids []string) []string {
 // AST completo sigue pendiente.
 func NombreDeFirma(firma string) string {
 	s := strings.TrimSpace(firma)
+	if s == "" {
+		return ""
+	}
 
-	// declaración de tipo o const de TypeScript: "type Point = { x: number }"
-	// → "Point", "const LEVELS: Level[]" → "LEVELS". Sin esto, los
-	// contratos que genera el planificador para stacks TS dejaban el
-	// nombre pegado al cuerpo (p. ej. "}") y ValidatePlan los marcaba
-	// como interfaces huérfanas que sí existían.
+	// Limpiar modificadores comunes (TypeScript, Go, etc.)
+	// "export default async function foo()" -> "function foo()"
+	// "export interface Bar" -> "interface Bar"
+	modificadores := []string{
+		"export default", "export", "declare", "default",
+		"async", "public", "private", "protected", "readonly",
+	}
+	limpiado := true
+	for limpiado {
+		limpiado = false
+		for _, mod := range modificadores {
+			if strings.HasPrefix(s, mod+" ") {
+				s = strings.TrimSpace(strings.TrimPrefix(s, mod))
+				limpiado = true
+				break
+			}
+		}
+	}
+
+	// declaración de tipo, interfaz, clase o función: "type Point = { x: number }"
+	// → "Point", "const LEVELS: Level[]" → "LEVELS", "interface ISynth<T>" → "ISynth".
 	if i := strings.Index(s, " "); i >= 0 {
 		switch s[:i] {
-		case "type", "interface", "class", "enum", "const", "var", "let", "func":
+		case "type", "interface", "class", "enum", "const", "var", "let", "func", "function":
 			s = strings.TrimSpace(s[i:])
-			if j := strings.IndexAny(s, " \t:=({["); j >= 0 {
+			if j := strings.IndexAny(s, " \t:=({[<"); j >= 0 {
 				s = s[:j]
 			}
 			return strings.TrimSpace(s)
@@ -154,6 +173,10 @@ func NombreDeFirma(firma string) string {
 	}
 	if i := strings.LastIndex(s, "."); i >= 0 {
 		s = s[i+1:]
+	}
+	// genéricos remanentes en el identificador: "Symbol<T>" -> "Symbol"
+	if i := strings.Index(s, "<"); i >= 0 {
+		s = s[:i]
 	}
 	// anotación de tipo o asignación: "LEVELS: Level[]" → "LEVELS",
 	// "SoundManager = { play(...) }" → "SoundManager"
@@ -268,11 +291,12 @@ func Parse(data []byte) (Task, error) {
 		case "limite_subtareas":
 			t.LimiteSubtareas, err = kv.ParseInt(p.Value)
 		default:
-			// campos del futuro: se ignoran solo si el archivo lo es
-			if t.Aviso != "" {
-				continue
+			// campos desconocidos o del futuro: se toleran con aviso para
+			// que contratos con campos nuevos no rompan binarios existentes ni reportes.
+			if t.Aviso == "" {
+				t.Aviso = fmt.Sprintf("campo desconocido ignorado: %s · si es de una versión más nueva, actualiza devclean", p.Key)
 			}
-			return t, fmt.Errorf("campo desconocido: %s · revisa el contrato", p.Key)
+			continue
 		}
 		if err != nil {
 			return t, fmt.Errorf("%s: %s", p.Key, err)
@@ -386,6 +410,36 @@ func (t Task) Marshal() []byte {
 	return []byte(b.String())
 }
 
+// esDeclaracionExplicita indica si la firma arranca con una palabra clave
+// de declaración reconocible (type, interface, class, etc.), incluso con
+// modificadores de exportación delante. Evita que la prosa ("cmd/sum main package")
+// se confunda con una declaración real.
+func esDeclaracionExplicita(firma string) bool {
+	s := strings.TrimSpace(firma)
+	modificadores := []string{
+		"export default", "export", "declare", "default",
+		"async", "public", "private", "protected", "readonly",
+	}
+	limpiado := true
+	for limpiado {
+		limpiado = false
+		for _, mod := range modificadores {
+			if strings.HasPrefix(s, mod+" ") {
+				s = strings.TrimSpace(strings.TrimPrefix(s, mod))
+				limpiado = true
+				break
+			}
+		}
+	}
+	if i := strings.Index(s, " "); i >= 0 {
+		switch s[:i] {
+		case "type", "interface", "class", "enum", "const", "var", "let", "func", "function":
+			return true
+		}
+	}
+	return false
+}
+
 // FirmaVerificable devuelve el nombre a buscar en el diff y si la firma
 // tiene forma de firma.
 //
@@ -408,6 +462,11 @@ func FirmaVerificable(firma string) (string, bool) {
 	// ruta HTTP, con o sin verbo delante
 	if n := NombreDeFirma(s); strings.HasPrefix(n, "/") {
 		return n, true
+	}
+	// declaración explícita de tipo, interfaz, clase o constante (TS/Go):
+	if esDeclaracionExplicita(s) {
+		n := NombreDeFirma(s)
+		return n, esIdentificador(n)
 	}
 	// identificador pelado o cualificado: sin espacios
 	if !strings.ContainsAny(s, " \t") {
