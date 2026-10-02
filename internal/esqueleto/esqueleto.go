@@ -122,6 +122,7 @@ No escribes lógica ni pruebas: cada línea que escribas la paga el modelo caro,
    - a quién llama (módulo y método) y quién lo usa;
    - "Idea:" cómo se resuelve, ya pensado por ti: algoritmo, estructuras de datos, orden de los pasos y las trampas (casos límite, lo que parece obvio y está mal). Telegráfico, de 1 a 8 líneas, sin código ni frases completas: tú ya resolviste el problema al planear y el agente solo lo escribe. No repitas lo que la firma ya dice.
    - "Casos:" de 2 a 5 ejemplos concretos de entrada → salida o error, que el agente convertirá en su prueba.
+   Las etiquetas "Idea:" y "Casos:" son LITERALES: la palabra y los dos puntos pegados, sin nada en medio, también en el "como" de un cambio a código existente. "Casos (con mocks):" o "Ejemplos:" no cuentan: devclean las busca por texto exacto y te devuelve el plano.
    El cuerpo solo lanza un error con el texto exacto "` + Marca + `".
 5. Nada más. No escribas pruebas, implementaciones de referencia, datos de ejemplo ni código fuera del repositorio. No corras nada salvo lo necesario para que "verificar" pase.
 `)

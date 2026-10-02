@@ -604,3 +604,18 @@ func TestPantallasSobrevivenAlGuardar(t *testing.T) {
 		t.Fatalf("%+v", got.Pantallas)
 	}
 }
+
+func TestArquitectoEconomicoVaYVuelve(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Base: "main", ArquitectoEconomico: true}
+	if err := cfg.Save(root); err != nil {
+		t.Fatal(err)
+	}
+	leida, err := Load(root)
+	if err != nil || !leida.ArquitectoEconomico {
+		t.Fatalf("economico=%v err=%v", leida.ArquitectoEconomico, err)
+	}
+}

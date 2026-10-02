@@ -99,7 +99,8 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	antes := tomarCapturas(ctx, r.Path, cfg.Pantallas, r.Puerto, filepath.Join(loop.RunsDir(root), id, "antes"))
 	original := esqueleto.Prompt(esqueleto.Pedido{Texto: pedido, Previo: previo, PrimerID: ids[1], SinDocker: sinDocker, Capturas: antes}, pctx)
 
-	modelo := config.ModeloRol(cfg, "planificador")
+	modelo, respaldo := arquitectos(cfg, previo != "")
+	ex = ejecutorPara(ex, modelo)
 	timeout := timeoutArquitecto
 	if t := time.Duration(cfg.TimeoutAgente) * time.Second; t > timeout {
 		timeout = t
@@ -113,10 +114,13 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	var res esqueleto.Resultado
 	prompt := original
 	guardada := respuestaEsqueleto(root, id, original)
+	// correcciones cuenta las del modelo actual: al subir al planificador
+	// arranca de cero, con lo que el modelo medio dejó en el cuarto
+	correcciones := 0
 	for vuelta := 0; ; vuelta++ {
 		titulo := fmt.Sprintf("el arquitecto escribe el esqueleto · %s · %s", id, modelo)
 		if vuelta > 0 {
-			titulo = fmt.Sprintf("el arquitecto corrige el esqueleto (%d/%d) · %s", vuelta, correccionesEsqueleto, modelo)
+			titulo = fmt.Sprintf("el arquitecto corrige el esqueleto (%d/%d) · %s", correcciones, correccionesEsqueleto, modelo)
 		}
 		var texto string
 		if vuelta == 0 && guardada != "" {
@@ -196,9 +200,15 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 		if len(problemas) == 0 {
 			break
 		}
-		if vuelta == correccionesEsqueleto {
-			return fmt.Errorf("el esqueleto no pasó la verificación · %s · lo escrito sigue en %s", strings.Join(problemas, " · "), r.Path)
+		if correcciones == correccionesEsqueleto {
+			if respaldo == "" {
+				return fmt.Errorf("el esqueleto no pasó la verificación · %s · lo escrito sigue en %s", strings.Join(problemas, " · "), r.Path)
+			}
+			out.Line("· %s no dejó un esqueleto válido · sube a %s, que corrige sobre lo ya escrito", modelo, respaldo)
+			modelo, respaldo, correcciones = respaldo, "", 0
+			ex = ejecutorPara(ex, modelo)
 		}
+		correcciones++
 		for _, p := range problemas {
 			out.Line("  · %s", p)
 		}
@@ -361,6 +371,23 @@ func sinPruebasDeTarea(alcance []string) []string {
 		}
 	}
 	return out
+}
+
+// arquitectos decide con qué modelo arranca el esqueleto y a cuál sube si
+// ese no logra uno válido ("" = no hay a dónde subir). Por defecto es el
+// planificador y nada más. Con arquitecto_economico, un cambio sobre un
+// proyecto que ya tiene arquitectura lo intenta primero el modelo medio:
+// en soundlike el arquitecto fue el 37 % del gasto, y la mayor parte de
+// un plano incremental es seguir lo que ARCHITECTURE.md ya decidió. Quien
+// juzga si alcanzó es la verificación sin modelo, no un clasificador.
+// Un proyecto nuevo siempre va con el planificador: ahí se decide todo.
+func arquitectos(cfg config.Config, hayArquitectura bool) (modelo, respaldo string) {
+	pesado := config.ModeloRol(cfg, "planificador")
+	medio := cfg.ModeloPeso("media")
+	if !cfg.ArquitectoEconomico || !hayArquitectura || medio == "" || medio == pesado {
+		return pesado, ""
+	}
+	return medio, pesado
 }
 
 // conVerificar antepone el build/typecheck del esqueleto al listo_cuando

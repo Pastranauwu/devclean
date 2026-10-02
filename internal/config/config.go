@@ -45,6 +45,12 @@ type Config struct {
 	// AgentesPagados es cuántas tareas con modelo de pago corren a la vez
 	// cuando no se pasa --agentes. 0 = el default de run (3).
 	AgentesPagados int `json:"agentes_pagados,omitempty"`
+	// ArquitectoEconomico hace que el esqueleto de un cambio sobre un
+	// proyecto que ya tiene ARCHITECTURE.md lo intente primero el modelo
+	// medio; si no pasa la verificación, sube al planificador. Apagado
+	// por defecto: la verificación mira la forma del plano, no si el
+	// reparto es bueno, y eso todavía no está medido.
+	ArquitectoEconomico bool `json:"arquitecto_economico,omitempty"`
 	// RecursionMax es la profundidad máxima de recursión (internal/recurse):
 	// 0 (default) = desactivada, una tarea `recursivo: true` corre plana.
 	// Cada nivel abre cuartos anidados dentro del cuarto actual — subirlo
@@ -228,6 +234,9 @@ func (c Config) Save(root string) error {
 	}
 	if c.TimeoutPruebas > 0 {
 		fmt.Fprintf(&b, "timeout_pruebas: %d\n", c.TimeoutPruebas)
+	}
+	if c.ArquitectoEconomico {
+		fmt.Fprintf(&b, "arquitecto_economico: true\n")
 	}
 	if c.AgentesPagados > 0 {
 		fmt.Fprintf(&b, "agentes_pagados: %d\n", c.AgentesPagados)
@@ -497,6 +506,15 @@ func Parse(data []byte) (Config, error) {
 				return cfg, fmt.Errorf("config.yml: línea %d · timeout_esclusa inválido: %s · segundos, mínimo 1", p.Line, p.Value)
 			}
 			cfg.TimeoutEsclusa = seg
+		case "arquitecto_economico":
+			switch kv.Unquote(p.Value) {
+			case "true":
+				cfg.ArquitectoEconomico = true
+			case "false":
+				cfg.ArquitectoEconomico = false
+			default:
+				return cfg, fmt.Errorf("config.yml: línea %d · arquitecto_economico inválido: %s · usa true o false", p.Line, p.Value)
+			}
 		case "agentes_pagados":
 			n, err := kv.ParseInt(p.Value)
 			if err != nil || n < 1 {

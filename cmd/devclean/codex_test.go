@@ -33,3 +33,21 @@ func TestEjecutorParaMandaLosGPTACodex(t *testing.T) {
 		t.Error("sonnet no puede correr en codex")
 	}
 }
+
+func TestArquitectosEconomicoSoloSobreArquitecturaExistente(t *testing.T) {
+	cfg := config.Config{Modelos: map[string]string{"liviana": "haiku", "media": "sonnet", "pesada": "opus"}}
+	if m, r := arquitectos(cfg, true); m != "opus" || r != "" {
+		t.Errorf("apagado: %q respaldo %q, quiero opus sin respaldo", m, r)
+	}
+	cfg.ArquitectoEconomico = true
+	if m, r := arquitectos(cfg, true); m != "sonnet" || r != "opus" {
+		t.Errorf("cambio incremental: %q respaldo %q, quiero sonnet y opus de respaldo", m, r)
+	}
+	if m, r := arquitectos(cfg, false); m != "opus" || r != "" {
+		t.Errorf("proyecto nuevo: %q respaldo %q, quiero opus directo", m, r)
+	}
+	cfg.Modelos["media"] = "opus"
+	if m, r := arquitectos(cfg, true); m != "opus" || r != "" {
+		t.Errorf("mismo modelo en los dos pesos: %q respaldo %q", m, r)
+	}
+}
