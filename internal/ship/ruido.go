@@ -19,7 +19,7 @@ func escanearRuido(diff string, archivos []string) []Hallazgo {
 		if esDocumentacion(ad.nombre) {
 			continue
 		}
-		entrada := esPuntoDeEntrada(ad.nombre)
+		entrada := esPuntoDeEntrada(ad.nombre) || declaraEntrada(ad.lineas)
 		for _, linea := range ad.lineas {
 			if t := tipoDebug(linea, entrada); t != "" {
 				h = append(h, Hallazgo{Tipo: t, Archivo: ad.nombre, Detalle: recortar(linea)})
@@ -116,6 +116,23 @@ func esPuntoDeEntrada(archivo string) bool {
 	switch path.Base(limpio) {
 	case "main.go", "main.py", "__main__.py", "main.rs", "cli.py", "cli.js", "cli.ts", "main.js", "main.ts":
 		return true
+	}
+	return false
+}
+
+// marcaEntrada reconoce la línea con que un archivo se declara ejecutable:
+// el guard de Python, la función main de Go, Rust o Java, o un shebang.
+var marcaEntrada = regexp.MustCompile(`^(?:if __name__ == ['"]__main__['"]|func main\(|fn main\(|#!/)|\bstatic void main\(`)
+
+// declaraEntrada reporta si lo añadido a un archivo lo declara punto de
+// entrada. Cubre el script que no vive en una ruta de esPuntoDeEntrada.
+// Solo ve el diff: si el main ya estaba y la tarea no lo tocó, no lo
+// reconoce y sigue mandando la ruta.
+func declaraEntrada(lineas []string) bool {
+	for _, l := range lineas {
+		if marcaEntrada.MatchString(l) {
+			return true
+		}
 	}
 	return false
 }

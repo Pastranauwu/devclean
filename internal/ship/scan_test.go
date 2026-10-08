@@ -336,6 +336,27 @@ func TestEsPuntoDeEntrada(t *testing.T) {
 	}
 }
 
+// un script que se declara ejecutable imprime su resultado aunque no viva
+// en cmd/ o scripts/; el mismo print en un módulo sigue siendo ruido
+func TestRuidoDejaImprimirAlArchivoQueSeDeclaraEntrada(t *testing.T) {
+	for archivo, lineas := range map[string][]string{
+		"tools/reporte.py": {"def main():", `    print("listo")`, `if __name__ == "__main__":`, "    main()"},
+		"tools/gen.go":     {"func main() {", `	fmt.Println("listo")`, "}"},
+		"tools/correr":     {"#!/usr/bin/env python3", `print("listo")`},
+	} {
+		if h := escanearRuido(diffDe(archivo, lineas...), nil); len(h) != 0 {
+			t.Errorf("%s: %+v", archivo, h)
+		}
+	}
+	if h := escanearRuido(diffDe("app/servicio.py", "def f():", `    print("aquí")`), nil); len(h) != 1 {
+		t.Errorf("un print en un módulo debe frenar: %+v", h)
+	}
+	// depuradores: ruido también en un punto de entrada
+	if h := escanearRuido(diffDe("tools/x.py", `if __name__ == "__main__":`, "    breakpoint()"), nil); len(h) != 1 {
+		t.Errorf("breakpoint() debe frenar: %+v", h)
+	}
+}
+
 func TestPresupuestoSinTope(t *testing.T) {
 	tk := taskTitulo("módulo completo")
 	tk.LimiteLineas = 0
