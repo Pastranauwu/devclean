@@ -514,7 +514,7 @@ func TestRunContinuaConCambiosAunqueFalloSeaIgual(t *testing.T) {
 	}
 }
 
-// closet: el agente reescribía cada vez la prueba que la reversión
+// el agente reescribía cada vez la prueba que la reversión
 // quitaba; el intento no dejaba nada y la escalera pagaba qwen-max.
 func TestRunSinProgresoPorReversionNoEscala(t *testing.T) {
 	root := repoConCommit(t)

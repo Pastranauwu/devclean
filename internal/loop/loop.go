@@ -195,7 +195,7 @@ type Outcome struct {
 	Pregunta    string `json:"pregunta,omitempty"`
 	// NoEscalar marca un rojo que un modelo más caro no arregla: la
 	// prueba ni llegó a correr, el agente solo tocó lo que la reversión
-	// de alcance quita, o la tarea ya gastó su tope. En closet la
+	// de alcance quita, o la tarea ya gastó su tope. En una corrida real, la
 	// escalera a qwen-max pagó el 95% de la corrida contra una prueba
 	// que no existía.
 	NoEscalar bool `json:"no_escalar,omitempty"`
@@ -745,7 +745,7 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration, e
 // todo el código que no es de prueba a como estaba al empezar la tarea,
 // se deja la prueba nueva y se corre listo_cuando. Si sigue verde, la
 // prueba no ejercita el cambio. Es el contrapeso sin modelo a que el
-// mismo agente escriba código y prueba (soundlike: 37 de 38 tareas verdes
+// mismo agente escriba código y prueba (37 de 38 tareas verdes
 // al primer intento, juzgadas por su propia prueba).
 //
 // Solo opina cuando listo_cuando nombra un archivo de prueba y la tarea
@@ -792,7 +792,7 @@ func pruebaComplaciente(ctx context.Context, o Options, inicio string) bool {
 // conPruebasPropias suma a tocar_solo los archivos de prueba que corre
 // listo_cuando. Sin examinador el prompt le pide al agente escribirlos,
 // pero si no están en su alcance la reversión los borra: la tarea era
-// imposible por diseño. En closet, T-003 (`npm --prefix frontend test --
+// imposible por diseño. En una corrida real, T-003 (`npm --prefix frontend test --
 // src/image/compress.test.ts`) quemó 15 intentos y la escalera a otro
 // modelo así. La ruta puede ser relativa a un --prefix o a un `cd`, por
 // eso también entra con cualquier prefijo.

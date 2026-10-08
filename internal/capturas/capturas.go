@@ -112,7 +112,7 @@ func Instalar(ctx context.Context) error {
 // captura cada ruta en outDir. La app se apaga al terminar, falle o no.
 // Si el script de flujos falla, sus capturas se descartan: una página
 // rota a mitad de flujo le haría rechazar al revisor algo que no es de
-// la tarea (closet: el script abría /agregar y caía en un 404).
+// la tarea (el script abría /agregar y caía en un 404).
 func Tomar(ctx context.Context, dir string, p Pantallas, puerto int, env []string, outDir string) ([]string, error) {
 	fotos, _, err := tomar(ctx, dir, p, puerto, env, outDir, true)
 	return fotos, err

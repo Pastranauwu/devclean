@@ -81,7 +81,7 @@ func TestCompletarSumaLoQueFalta(t *testing.T) {
 	}
 }
 
-// closet: el script abría /agregar y caía en un 404. Sus capturas no se
+// el script abría /agregar y caía en un 404. Sus capturas no se
 // le muestran al revisor, y el error sirve para que el arquitecto lo arregle
 func TestScriptQueFallaNoEntregaCapturasYSeReporta(t *testing.T) {
 	if Navegador() == "" {

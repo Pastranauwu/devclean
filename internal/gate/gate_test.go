@@ -362,10 +362,9 @@ func TestGateAgenteValidoEInvalido(t *testing.T) {
 }
 
 // listo_cuando reales. Los dos primeros son de los contratos que el
-// planificador escribió para closet (monorepo backend + frontend, 24 sep
-// 2026): la esclusa los rechazaba con "comando no encontrado: cd" aunque
-// el bucle los corre con sh -c sin problema. El tercero es de T-012 del
-// snake, con varios programas encadenados.
+// planificador escribió para un monorepo backend + frontend: la esclusa los rechazaba con "comando no encontrado: cd" aunque
+// el bucle los corre con sh -c sin problema. El tercero
+// encadena varios programas.
 func TestEjecutableLeeElComandoComoSh(t *testing.T) {
 	for _, c := range []struct {
 		cmd       string

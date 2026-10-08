@@ -199,7 +199,7 @@ func TestRevertCuandoElAgenteCommiteaSolo(t *testing.T) {
 	}
 }
 
-// los dos casos de closet: sin examinador, el archivo de prueba que
+// sin examinador, el archivo de prueba que
 // corre listo_cuando tiene que poder escribirse, también detrás de un
 // --prefix
 func TestConPruebasPropiasAbreElArchivoDelListoCuando(t *testing.T) {

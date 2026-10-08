@@ -215,7 +215,7 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	//    tareas que dependen de ella se construyeron sobre sus commits
 	//    originales, y con otro commit en su lugar `run` ya no puede
 	//    juntarlas ("CONFLICTO (agregar/agregar)" en cada archivo del
-	//    esqueleto). En soundlike una entrega frenada dejó así las 10
+	//    esqueleto). En una corrida real, una entrega frenada dejó así las 10
 	//    ramas y la tarea que faltaba no pudo correr. Al salir, cada rama
 	//    vuelve a su punta.
 	//

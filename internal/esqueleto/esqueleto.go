@@ -8,7 +8,7 @@
 // en expone/usa y había que comparar a mano (firmaCanonica, examinador
 // ciego, nivel semántico) ahora las valida el compilador.
 //
-// En closet el arquitecto escribió además 4.3k líneas de pruebas, 1.2k
+// En una corrida real, el arquitecto escribió además 4.3k líneas de pruebas, 1.2k
 // de cableado real e implementaciones de referencia: 292k tokens y
 // $6.90, el 70% de la corrida. El plano cuesta una fracción de eso.
 package esqueleto
@@ -223,7 +223,7 @@ func contexto(c plan.Contexto) string {
 func Parse(texto string) (Resultado, error) {
 	bs, err := plan.Parse(texto)
 	// sin tareas es una respuesta válida del arquitecto: lo pedido ya
-	// está. Exigirle tareas lo hizo copiar el plan anterior (closet)
+	// está. Exigirle tareas lo hizo copiar el plan anterior
 	if err != nil && !errors.Is(err, plan.ErrSinTareas) {
 		return Resultado{}, err
 	}
@@ -294,7 +294,7 @@ func Problemas(ctx context.Context, v Verificacion, r Resultado) []string {
 	// o una prueba nueva que todavía no existe), una tarea final la hace
 	// pasar. Si ya pasa, es la regresión de un proyecto existente: vale
 	// como aceptación pero ninguna tarea puede usarla como listo_cuando,
-	// porque la esclusa rechaza lo que ya pasa (closet: la tarea final de
+	// porque la esclusa rechaza lo que ya pasa (la tarea final de
 	// la UI renovada murió así). Un cambio solo visual no necesita una
 	// prueba de punta a punta nueva.
 	if len(r.Tareas) > 0 && strings.TrimSpace(r.Integracion) != "" {

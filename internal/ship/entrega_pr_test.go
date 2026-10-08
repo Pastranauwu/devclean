@@ -419,7 +419,7 @@ func TestDryRunNoIntegraAunqueSePida(t *testing.T) {
 	}
 }
 
-// closet: un esqueleto que solo planeó cambios a código existente quedó
+// un esqueleto que solo planeó cambios a código existente quedó
 // verde sin cambios propios y frenaba la entrega con "nada que entregar"
 func TestEntregarTodasOmiteLaTareaSinCambios(t *testing.T) {
 	root := repoConCommit(t)

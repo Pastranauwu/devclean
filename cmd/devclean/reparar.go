@@ -57,7 +57,7 @@ mal el código o la prueba vieja no es trabajo para el modelo liviano.`,
 					id = ids[0]
 				case 0:
 					// no hay tarea que reabrir cuando lo que falta es la
-					// prueba misma: nadie la escribió (soundlike: se borró
+					// prueba misma: nadie la escribió (se borró
 					// la tarea final y la aceptación la seguía pidiendo)
 					if f := task.PruebaSinEscribir(root, a.Fallo.Comando); f != "" {
 						return fmt.Errorf("%s no existe y ninguna tarea la escribe · no hay nada que reabrir · crea la tarea que la escriba (devclean task add) o quita `%s` de la aceptación en .devclean/feature.json", f, a.Fallo.Comando)

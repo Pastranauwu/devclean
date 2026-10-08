@@ -174,7 +174,7 @@ func run(ctx context.Context, req Request, name string, args ...string) (string,
 
 // SinSaldo reporta si un fallo es la cuenta del proveedor sin fondos. No
 // es de la tarea sino de toda la corrida: reintentar o escalar de modelo
-// por la misma cuenta devuelve el mismo 402. En closet, un saldo agotado
+// por la misma cuenta devuelve el mismo 402. En una corrida real, un saldo agotado
 // dejó 5 tareas detenidas tras 36 invocaciones fallidas y el resto
 // colgado de ellas.
 func SinSaldo(msg string) bool {

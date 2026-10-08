@@ -34,7 +34,7 @@ func TestSuiteYaFallabaMiraLaBaseYVuelveALaRama(t *testing.T) {
 	}
 }
 
-// closet: la suite fallaba en la rama de T-048 por un timeout que main ya
+// la suite fallaba en la rama de T-048 por un timeout que main ya
 // había corregido. En la entrega conjunta basta su listo_cuando; suelta,
 // la tarea sigue exigiendo la suite
 func TestBisectableEnEntregaConjuntaSeConformaConListoCuando(t *testing.T) {

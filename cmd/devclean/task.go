@@ -281,7 +281,7 @@ func newTaskRmCmd() *cobra.Command {
 				return err
 			}
 			dir := config.TasksDir(root)
-			// lo que se pierde al borrarla se dice antes: en soundlike se
+			// lo que se pierde al borrarla se dice antes: en una corrida real, se
 			// borraron la tarea de cableado (verde, sin entregar) y la que
 			// escribía la prueba de punta a punta, y la entrega frenó en
 			// una aceptación que ya nadie podía cumplir

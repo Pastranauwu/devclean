@@ -72,7 +72,7 @@ func runApply(root, filePath string, runImmediately, dryRun bool) (spec.Spec, er
 		// planeado antes de que existiera intencion.json: feature.json
 		// tiene lo que el humano declaró, más la aceptación que agregó
 		// el esqueleto, así que la aceptación no se compara. Sin esto,
-		// closet (29 tareas listas) se replaneó entero al actualizar
+		// un feature con 29 tareas listas se replaneó entero al actualizar
 		if f, err := spec.LoadFeatureState(root); err == nil && len(f.Requirements) > 0 {
 			prev, ok = spec.IntencionDe(f), true
 			prev.Acceptance = intencion.Acceptance

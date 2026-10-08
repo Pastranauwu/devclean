@@ -32,8 +32,8 @@ import (
 const correccionesEsqueleto = 2
 
 // timeoutArquitecto: escribir el esqueleto de un proyecto es la
-// invocación más larga de la corrida (el plan en prosa de closet ya
-// tardó 19 minutos sin escribir un archivo).
+// invocación más larga de la corrida (un plan en prosa ya tardó 19
+// minutos sin escribir un archivo).
 const timeoutArquitecto = 45 * time.Minute
 
 // notaCambio va en las tareas que cambian código que ya funciona: no hay
@@ -248,7 +248,7 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 				Dir: r.Path, Base: r.Commit, Docker: !sinDocker, Timeout: pruebaTimeout, Env: room.Entorno(r.Path),
 			}, res)...)
 			// sin script, la revisión visual solo ve cada ruta recién
-			// abierta: en closet el formulario que se cambiaba solo aparece
+			// abierta: en una corrida real, el formulario que se cambiaba solo aparece
 			// después de elegir una foto, y nadie lo vio nunca
 			if p, _ := cfg.Pantallas.Completar(res.Pantallas); !p.Vacia() && p.Script == "" && tocaUI(res.Tareas) {
 				problemas = append(problemas, "hay tareas de interfaz y falta \"pantallas.script\": escribe un script que recorra con un navegador los flujos que cambian (p. ej. elegir una foto y ver el formulario) y guarde un PNG por paso en $CAPTURAS; sin él la revisión visual no ve esas pantallas")
@@ -265,7 +265,7 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 				problemas = append(problemas, "dependencia circular en depende_de: "+strings.Join(c, " → ")+" · quita una de esas dependencias")
 			}
 			// "no hay nada que cambiar" contra un pedido lo confirma quien
-			// solo mira la pantalla. En closet el arquitecto vio los inputs
+			// solo mira la pantalla. En una corrida real, el arquitecto vio los inputs
 			// de archivo sin estilo, dijo que las capturas estaban viejas y
 			// le creyó al código dos veces seguidas
 			if len(problemas) == 0 && len(res.Tareas) == 0 && len(antes) > 0 {
@@ -340,7 +340,7 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	}
 	// un plan de solo cambios a código existente puede no tocar nada en
 	// el esqueleto: sin cambios no hay tarea de esqueleto que entregar ni
-	// de la que depender (closet: T-055 vacío frenó la entrega)
+	// de la que depender (T-055 vacío frenó la entrega)
 	vacio := strings.TrimSpace(creados) == ""
 	if vacio {
 		_ = room.Destroy(ctx, root, id)
@@ -351,7 +351,7 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	bs := res.Tareas
 	// sin patrones de prueba: con el plano, cada tarea escribe su prueba
 	sanearAlcance(bs, zonas, []string{}, pctx.Ocupados)
-	// la interfaz la hace el modelo pesado: en closet 9 tareas de modelos
+	// la interfaz la hace el modelo pesado: en una corrida real, 9 tareas de modelos
 	// baratos dieron parches sin diseño, y el arquitecto sigue marcando
 	// "media" aunque el prompt pida "pesada"
 	for i := range bs {
@@ -459,7 +459,7 @@ func sinPruebasDeTarea(alcance []string) []string {
 // ese no logra uno válido ("" = no hay a dónde subir). Por defecto es el
 // planificador y nada más. Con arquitecto_economico, un cambio sobre un
 // proyecto que ya tiene arquitectura lo intenta primero el modelo medio:
-// en soundlike el arquitecto fue el 37 % del gasto, y la mayor parte de
+// en una corrida real, el arquitecto fue el 37 % del gasto, y la mayor parte de
 // un plano incremental es seguir lo que ARCHITECTURE.md ya decidió. Quien
 // juzga si alcanzó es la verificación sin modelo, no un clasificador.
 // Un proyecto nuevo siempre va con el planificador: ahí se decide todo.
@@ -473,7 +473,7 @@ func arquitectos(cfg config.Config, hayArquitectura bool) (modelo, respaldo stri
 }
 
 // conVerificar antepone el build/typecheck del esqueleto al listo_cuando
-// de una tarea de relleno. La prueba sola no basta: en closet vitest
+// de una tarea de relleno. La prueba sola no basta: en una corrida real, vitest
 // pasaba las 29 tareas y la integración, y `npm run build` (tsc) tenía 7
 // errores de tipos que nadie corrió. Con esto el agente los ve y los
 // arregla en su intento, no el humano al levantar la app.

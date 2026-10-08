@@ -195,7 +195,7 @@ func diffNumstat(roomPath, target string, patronesPrueba []string) (mas, menos, 
 // tipoCommit decide el tipo Conventional Commits por lo que el commit
 // toca: solo pruebas es test, solo documentación es docs. fix es solo
 // cuando el título EMPIEZA por un verbo de arreglo. Antes bastaba una
-// palabra en cualquier parte del título y en soundlike "pantalla de
+// palabra en cualquier parte del título y en una corrida real, "pantalla de
 // arregla el beat" (el nombre del juego), "romper beat determinista" y
 // el esqueleto salieron como fix, y la prueba de integración como feat.
 func tipoCommit(titulo string, archivos, patronesPrueba []string) string {

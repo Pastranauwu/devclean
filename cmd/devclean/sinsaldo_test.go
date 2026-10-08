@@ -15,7 +15,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/ui"
 )
 
-// el caso de closet: opencode sin saldo. La primera tarea choca con el
+// opencode sin saldo. La primera tarea choca con el
 // 402 y queda pendiente, sin escalar de modelo; la que depende de ella
 // no se lanza ni queda bloqueada, y `up` las retoma al recargar.
 func TestSinSaldoDejaTodoPendienteSinEscalar(t *testing.T) {

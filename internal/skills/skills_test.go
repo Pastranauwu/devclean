@@ -88,7 +88,7 @@ func TestCatalogoSinLoQueReemplazaLaBase(t *testing.T) {
 }
 
 func TestTocaUI(t *testing.T) {
-	if !TocaUI([]string{"frontend/src/pages/ClosetPage.tsx", "frontend/src/pages/ClosetPage.test.tsx"}) {
+	if !TocaUI([]string{"frontend/src/pages/HomePage.tsx", "frontend/src/pages/HomePage.test.tsx"}) {
 		t.Error("una página .tsx es interfaz")
 	}
 	if TocaUI([]string{"backend/app/rules/palette.py", "frontend/src/api/httpClient.ts"}) {

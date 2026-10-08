@@ -17,7 +17,7 @@ func (cliFalso) Run(context.Context, executor.Request) (executor.Result, error) 
 }
 func (c cliFalso) Models(context.Context) ([]string, error) { return c.catalogo, nil }
 
-// closet: un modelo desconocido reasignaba los tres y la pesada pasaba
+// un modelo desconocido reasignaba los tres y la pesada pasaba
 // de sonnet a opus. Solo se toca el que no existe.
 func TestRevisarModelosSoloReemplazaElInvalido(t *testing.T) {
 	cat := []string{"claude-opus-5-5", "claude-sonnet-5", "claude-haiku-4-5", "opus", "sonnet", "haiku"}

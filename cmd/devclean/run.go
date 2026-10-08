@@ -673,7 +673,7 @@ func autoAgentes(tareas int) int {
 
 // topePagados es cuántas tareas con modelo de pago corren a la vez sin
 // --agentes: todas gastan la misma ventana de 5 h, y en paralelo solo la
-// vacían antes (el snake perdió 3 de 18 intentos por 429).
+// vacían antes (una corrida perdió 3 de 18 intentos por 429).
 //
 // Se cambia con `agentes_pagados:` en config.yml.
 const topePagados = 3

@@ -499,7 +499,7 @@ func traducirDependencias(bs []plan.Borrador, ids []string, previas map[string]b
 	for i := range bs {
 		deps := dependenciasDelModelo(bs[i].DependeDe, ids, previas)
 		// la tarea final "depende de todas" suele incluirse a sí misma
-		// (closet: T-064 → T-064): nunca es intencional y arma un ciclo
+		// (T-064 → T-064): nunca es intencional y arma un ciclo
 		bs[i].DependeDe = deps[:0]
 		for _, d := range deps {
 			if i >= len(ids) || d != ids[i] {

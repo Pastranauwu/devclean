@@ -279,7 +279,7 @@ func dependenciasDelModelo(deps, ids []string, previas map[string]bool) []string
 	for _, d := range deps {
 		// "2" con un plan que arranca en T-002 es el id, no la segunda
 		// tarea: el prompt dice desde qué id numera. Leído como posición
-		// armaba ciclos (el esqueleto de gastos: 2 → T-003)
+		// armaba ciclos (2 → T-003)
 		if n, err := strconv.Atoi(strings.TrimSpace(d)); err == nil && enLista[fmt.Sprintf("T-%03d", n)] {
 			d = fmt.Sprintf("T-%03d", n)
 		}

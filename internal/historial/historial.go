@@ -166,7 +166,7 @@ func Archivar(root, specPath string) (Entrada, error) {
 var excepciones = []string{".devclean/*", "!.devclean/historial/", "!.devclean/index.md"}
 
 // abrirGitignore deja pasar el historial en un proyecto que ignora
-// `.devclean/` entero (soundlike): con la carpeta ignorada git no mira
+// `.devclean/` entero: con la carpeta ignorada git no mira
 // adentro y ninguna excepción sirve, así que la línea pasa a ignorar su
 // contenido (`.devclean/*`) menos el historial y el índice. Todo lo demás
 // de .devclean sigue ignorado como estaba. Devuelve las líneas que puso.

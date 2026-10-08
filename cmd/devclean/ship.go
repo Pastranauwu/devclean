@@ -177,7 +177,7 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar, local bool) err
 	if feature, err := spec.LoadFeatureState(root); err == nil {
 		opciones.Acceptance = feature.AcceptanceCommands()
 		// sin título, el del feature: el de la primera tarea es el
-		// esqueleto ("esqueleto · Closet virtual…")
+		// esqueleto ("esqueleto · <feature>…")
 		if opciones.Titulo == "" {
 			opciones.Titulo = feature.Feature
 		}
@@ -306,7 +306,7 @@ func runShip(id string, dryRun, local bool) error {
 
 	// una tarea suelta se aplana contra la base: si depende de otra que
 	// todavía no está ahí, su commit se llevaría el trabajo de esa (el
-	// esqueleto entero, en soundlike) bajo su nombre
+	// esqueleto entero) bajo su nombre
 	ctx := context.Background()
 	entregadas := ship.Entregadas(ctx, root, cfg.Base)
 	var faltan []string

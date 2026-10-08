@@ -260,7 +260,7 @@ func TestCreateInstalaPythonEnSubcarpetaYLoExcluye(t *testing.T) {
 	}
 }
 
-// closet: el agente creó backend/.venv con uv, que no trae pip, y la
+// el agente creó backend/.venv con uv, que no trae pip, y la
 // instalación se caía después de pagar el esqueleto
 func TestInstalaEnVenvSinPip(t *testing.T) {
 	if _, err := exec.LookPath("uv"); err != nil {
@@ -524,7 +524,7 @@ func TestEnsureSinEstadoRecuperaElPuntoDePartida(t *testing.T) {
 	}
 }
 
-// closet: el arquitecto declaró un extra con un SDK que no existe en el
+// el arquitecto declaró un extra con un SDK que no existe en el
 // registro. Un extra es opcional: si no instala se salta
 func TestExtraQueNoInstalaNoTumbaLaInstalacion(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {

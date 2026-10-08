@@ -21,7 +21,7 @@ import (
 // revisorVisualEnBucle levanta la interfaz del cuarto, la captura en
 // tamaño celular y le pide a un modelo que ve imágenes que juzgue si se
 // nota lo que la tarea pide. Las pruebas de UI solo saben que una clase
-// existe: en closet, 9 tareas "liquid glass" salieron verdes y en la
+// existe: en una corrida real, 9 tareas "liquid glass" salieron verdes y en la
 // pantalla no había vidrio. Degrada en abierto: sin capturas o sin
 // respuesta, aprueba.
 type revisorVisualEnBucle struct {

@@ -10,7 +10,7 @@ import (
 const topeListaArchivos = 200
 
 // alcancePara pega al final del prompt la lista de archivos del cuarto.
-// Sin ella el agente abría cada intento explorando: en soundlike, una
+// Sin ella el agente abría cada intento explorando: en una corrida real, una
 // mediana de 6 llamadas (ls, find, ARCHITECTURE.md) antes de la primera
 // edición, y cada llamada es un turno que reenvía todo el contexto. El
 // contenido de sus archivos no se pega: Edit exige haberlos leído con

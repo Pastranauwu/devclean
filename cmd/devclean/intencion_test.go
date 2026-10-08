@@ -77,7 +77,7 @@ func TestSpecSinCambiosNoReplanea(t *testing.T) {
 	}
 }
 
-// closet se planeó antes de intencion.json: su feature.json trae los
+// un feature planeado antes de intencion.json: su feature.json trae los
 // mismos requirements y además la aceptación del esqueleto
 func TestSpecSinIntencionUsaFeatureJSON(t *testing.T) {
 	out = ui.New(io.Discard, false)

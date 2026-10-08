@@ -350,7 +350,7 @@ func TestValidatePlanDetectaErroresEstructurales(t *testing.T) {
 	}
 }
 
-// el caso del closet: la base de la clase y "def" no cambian el
+// la base de la clase y "def" no cambian el
 // contrato; el tipo de retorno sí
 func TestValidatePlanComparaFirmasSinBasesNiDef(t *testing.T) {
 	ts := []task.Task{

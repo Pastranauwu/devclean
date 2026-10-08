@@ -120,7 +120,7 @@ func TestTraducirDependencias(t *testing.T) {
 	}
 }
 
-// el caso del closet: T-001 ya existe, el plan recibe T-019.. y el
+// T-001 ya existe, el plan recibe T-019.. y el
 // modelo usa esos ids reales. Leerlos por posición armaba ciclos.
 func TestTraducirDependenciasRespetaIdsRealesYPrevios(t *testing.T) {
 	bs := []plan.Borrador{
@@ -267,7 +267,7 @@ func TestPlanGuardadoReusaMismoPrompt(t *testing.T) {
 	}
 }
 
-// el esqueleto de gastos escribió depende_de: [2, 5] con un plan que
+// un arquitecto escribió depende_de: [2, 5] con un plan que
 // numera desde T-002: son ids, y leídos como posición armaban un ciclo
 func TestDependenciasNumericasSonIdsSiExisten(t *testing.T) {
 	ids := []string{"T-002", "T-003", "T-004", "T-005"}
@@ -283,7 +283,7 @@ func TestDependenciasNumericasSonIdsSiExisten(t *testing.T) {
 	}
 }
 
-// closet: vitest verde y tsc con 7 errores. El relleno tiene que pasar
+// vitest verde y tsc con 7 errores. El relleno tiene que pasar
 // también el build, y el código de salida sigue siendo el de la prueba
 // aunque traiga ";" o "||"
 func TestConVerificarAnteponeElBuild(t *testing.T) {
@@ -295,7 +295,7 @@ func TestConVerificarAnteponeElBuild(t *testing.T) {
 	}
 }
 
-// closet: la tarea final "depende de todas" se incluyó a sí misma y el
+// la tarea final "depende de todas" se incluyó a sí misma y el
 // plan ya pagado murió en ValidatePlan con "dependencia circular"
 func TestTraducirDependenciasQuitaLaAutodependencia(t *testing.T) {
 	ids := []string{"T-056", "T-057", "T-058"}

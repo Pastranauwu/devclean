@@ -135,7 +135,7 @@ func TestComentarioEnProsaConPuntoYComa(t *testing.T) {
 	}
 }
 
-// closet: el esqueleto se frenó por pasar la key de settings a un cliente
+// el esqueleto se frenó por pasar la key de settings a un cliente
 // y por la clave falsa de una prueba
 func TestSecretosNoConfundenVariablesNiFixtures(t *testing.T) {
 	limpias := []struct{ archivo, linea string }{

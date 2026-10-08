@@ -25,7 +25,7 @@ func escanearRuido(diff string, archivos []string) []Hallazgo {
 				h = append(h, Hallazgo{Tipo: t, Archivo: ad.nombre, Detalle: recortar(linea)})
 			} else if !task.EsArchivoDePrueba(ad.nombre) && (strings.Contains(linea, "Idea:") || strings.Contains(linea, "Casos:")) {
 				// el contrato del stub era una instrucción para el agente;
-				// en el código entregado se pudre (soundlike: 100 líneas de
+				// en el código entregado se pudre (100 líneas de
 				// contrato sobre una función de 130, ya contradiciéndola)
 				h = append(h, Hallazgo{Tipo: "contrato del esqueleto", Archivo: ad.nombre, Detalle: recortar(linea)})
 			} else if esCodigoComentado(linea) {

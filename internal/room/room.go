@@ -36,7 +36,7 @@ type Room struct {
 // árbol del proyecto (~/.devclean/rooms/<nombre>-<hash>): un cuarto es
 // una copia entera del repo, y adentro cualquier herramienta que recorra
 // el directorio (vitest, jest, linters, buscadores) la toma por código
-// del proyecto. En soundlike `npx vitest run` en la raíz corría 305
+// del proyecto. En una corrida real, `npx vitest run` en la raíz corría 305
 // archivos de 30 cuartos, tardaba 10 veces más y fallaba con pruebas
 // viejas. DEVCLEAN_ROOMS elige otra carpeta. Un repo que ya tiene
 // cuartos en .devclean/rooms los sigue usando hasta que se vacíen.
@@ -524,7 +524,7 @@ func venv(ctx context.Context, dir string, heredarDe ...string) error {
 	}
 	// primera línea: dependencias, obligatorias. Cada línea siguiente es
 	// un extra: opcional por definición, se intenta y si no instala se
-	// salta. En closet el arquitecto declaró un extra `jev` con un SDK que
+	// salta. En una corrida real, el arquitecto declaró un extra `jev` con un SDK que
 	// no está en PyPI (y lo dejó comentado): exigirlo tiraba el esqueleto.
 	grupos := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if deps := strings.Fields(grupos[0]); len(deps) > 0 {
@@ -542,7 +542,7 @@ func venv(ctx context.Context, dir string, heredarDe ...string) error {
 
 // pipInstall instala en el venv de py. Un .venv creado con uv (lo hacen
 // los agentes) no trae pip: ahí se usa `uv pip`, y sin uv, ensurepip.
-// Asumir pip tiró el esqueleto de closet después de 39 minutos pagados.
+// Asumir pip tiró un esqueleto después de 39 minutos pagados.
 func pipInstall(ctx context.Context, dir, py string, args ...string) error {
 	if _, err := run(ctx, dir, py, "-m", "pip", "--version"); err != nil {
 		if _, errUV := exec.LookPath("uv"); errUV == nil {

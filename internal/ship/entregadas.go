@@ -50,7 +50,7 @@ func RegistrarEntrega(root, rama string, ids []string) error {
 // registrada ya es ancestro de base. Sin esto, el estado `lista` no
 // distingue "verde sin entregar" de "ya integrada", y cada ship --todas
 // volvía a meter las tareas de entregas anteriores, que chocan con lo
-// que vino después (closet: T-001 contra las 28 que la rellenaron).
+// que vino después (T-001 contra las 28 que la rellenaron).
 func Entregadas(ctx context.Context, root, base string) map[string]bool {
 	out := map[string]bool{}
 	if log, err := gitRun(root, "log", base, "--format=%(trailers:key="+TrailerTarea+",valueonly)"); err == nil {

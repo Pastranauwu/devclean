@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// closet: ship --todas volvía a meter las 29 tareas de la entrega
+// ship --todas volvía a meter las 29 tareas de la entrega
 // anterior, ya integrada a main, y chocaban con lo que vino después
 func TestEntregadasPorTrailerYPorRegistro(t *testing.T) {
 	root := repoConCommit(t)

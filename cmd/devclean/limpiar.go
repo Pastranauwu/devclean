@@ -66,7 +66,7 @@ devclean archive lo hace solo con las tareas del feature que archiva.`,
 // con cuarto. Devuelve cuántas carpetas quitó. La rama de entrega se
 // queda: es el PR.
 //
-// En soundlike, 12 cuartos con su node_modules eran 1.6 G de un .devclean
+// En una corrida real, 12 cuartos con su node_modules eran 1.6 G de un .devclean
 // de 1.7 G, y `npx vitest run` en la raíz corría las pruebas de todos.
 func liberarCuartos(ctx context.Context, root string, ids []string) int {
 	dir := room.Dir(root)

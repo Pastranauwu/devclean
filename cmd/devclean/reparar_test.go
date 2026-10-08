@@ -9,7 +9,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
-// El caso de soundlike: T-037 cambió el intro de la pantalla como pedía
+// T-037 cambió el intro de la pantalla como pedía
 // su contrato y una prueba vieja de esa pantalla, que nadie tenía en su
 // alcance, falló al integrar.
 func TestRepararReabreLaTareaQueTocaElCodigoDeLaPruebaFallida(t *testing.T) {

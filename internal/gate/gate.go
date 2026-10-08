@@ -232,7 +232,7 @@ func checkFallaHoy(ctx context.Context, root, listoCuando string, timeout time.D
 		// vitest y jest ignoran un archivo que no existe si otro de la
 		// lista sí: "run nuevo.test.ts viejo.test.ts" corre el viejo y
 		// sale verde. La prueba de la tarea todavía no está escrita, así
-		// que no es cierto que ya pase (soundlike: T-036 y T-039
+		// que no es cierto que ya pase (T-036 y T-039
 		// rechazadas, y con ellas todo lo que dependía)
 		if f := task.PruebaSinEscribir(root, listoCuando); f != "" {
 			return Check{"falla hoy", true, "verde solo porque " + f + " todavía no existe"}

@@ -53,7 +53,7 @@ type Opciones struct {
 	DryRun  bool          // corre todo menos abrir el PR
 	// Conservar deja la rama del cuarto como estaba al terminar: la
 	// esclusa la rebasa y la aplana para revisarla, y un `--dry-run` que
-	// se queda con eso ya no es en seco. En soundlike dejó la rama de
+	// se queda con eso ya no es en seco. En una corrida real, dejó la rama de
 	// T-035 con el esqueleto del que dependía metido en su commit, y la
 	// corrida siguiente no pudo juntarla con él (conflictos agregar/agregar).
 	// La entrega conjunta no lo usa: necesita el commit aplanado.
@@ -62,7 +62,7 @@ type Opciones struct {
 	// SuiteAlIntegrar es la entrega conjunta: la suite completa la corre
 	// el paso integradas sobre todo junto y la base actual. En la rama de
 	// la tarea, que arrancó de una base vieja, un rojo puede ser algo que
-	// la base ya arregló después (closet: un timeout corregido en main
+	// la base ya arregló después (un timeout corregido en main
 	// frenaba a T-048), así que ahí basta su listo_cuando.
 	SuiteAlIntegrar bool
 }
