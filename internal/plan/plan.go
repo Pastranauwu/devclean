@@ -298,20 +298,15 @@ func contextoPrompt(c Contexto) string {
 // vallas markdown y texto alrededor. Un borrador sin titulo ni listo_cuando
 // se rechaza: un plan sin criterio de "listo" no es un plan.
 func Parse(texto string) ([]Borrador, error) {
-	t := strings.TrimSpace(texto)
-	t = strings.TrimPrefix(t, "```json")
-	t = strings.TrimPrefix(t, "```")
-	t = strings.TrimSuffix(t, "```")
-	t = strings.TrimSpace(t)
-
 	// Conserva compatibilidad con el array de contratos de versiones anteriores.
-	ini := strings.IndexAny(t, "[{")
-	if ini == -1 {
+	t := CuerpoJSON(texto)
+	if t == "" {
 		return nil, errors.New("el modelo no devolvió un plan JSON · vuelve a intentarlo")
 	}
+	ini := 0
 	var bs []Borrador
 	var arquitectura string
-	dec := json.NewDecoder(strings.NewReader(EscaparControles(t[ini:])))
+	dec := json.NewDecoder(strings.NewReader(EscaparControles(t)))
 	if t[ini] == '{' {
 		var documento struct {
 			Arquitectura string     `json:"arquitectura"`
@@ -345,6 +340,38 @@ func Parse(texto string) ([]Borrador, error) {
 		}
 	}
 	return bs, nil
+}
+
+// CuerpoJSON devuelve el valor JSON más largo que hay en la respuesta de
+// un modelo, desde su primer carácter. Tomar el primer "{" del texto tiraba
+// la respuesta cuando el modelo narraba antes de responder y la prosa traía
+// llaves ("{campo}" en un párrafo): una ronda de corrección pagada por un
+// plan que estaba bien. Si nada decodifica, devuelve desde el
+// primer "{" o "[" para que el error del decodificador sea el del plan.
+func CuerpoJSON(texto string) string {
+	mejor, primero, largo := "", "", 0
+	for i := 0; i < len(texto); i++ {
+		if texto[i] != '{' && texto[i] != '[' {
+			continue
+		}
+		if primero == "" {
+			primero = texto[i:]
+		}
+		var crudo json.RawMessage
+		dec := json.NewDecoder(strings.NewReader(EscaparControles(texto[i:])))
+		if dec.Decode(&crudo) != nil {
+			continue
+		}
+		if len(crudo) > largo {
+			mejor, largo = texto[i:], len(crudo)
+		}
+		// lo de adentro de un valor que ya decodificó es más corto
+		i += int(dec.InputOffset()) - 1
+	}
+	if mejor == "" {
+		return primero
+	}
+	return mejor
 }
 
 // EscaparControles escapa saltos de línea y tabuladores crudos dentro de
