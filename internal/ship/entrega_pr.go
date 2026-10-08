@@ -215,9 +215,13 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	}
 
 	// 2. una rama de entrega limpia desde la base
+	// pedida local, sale de la base local: es a donde se va a integrar
+	// por fast-forward, y puede ir por delante de origin
 	target := o.Base
-	if _, err := gitRun(o.Root, "rev-parse", "--verify", "--quiet", "origin/"+o.Base); err == nil {
-		target = "origin/" + o.Base
+	if o.Config.Entrega != config.EntregaLocal {
+		if _, err := gitRun(o.Root, "rev-parse", "--verify", "--quiet", "origin/"+o.Base); err == nil {
+			target = "origin/" + o.Base
+		}
 	}
 	path := roomPathDe(o.Root, "_entrega")
 	if err := limpiarEntrega(o.Root, path); err != nil {
@@ -228,7 +232,7 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 		apuntar(Paso{"rama de entrega", false, tail(out)})
 		return e
 	}
-	local := sinRemoto(o.Root)
+	local := prLocal(o.Root, o.Config)
 	defer func() {
 		if !e.Aprobado || o.DryRun {
 			return
@@ -271,18 +275,32 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	// 4. la suite completa sobre el conjunto ya integrado. La rama de
 	// entrega es un worktree nuevo: sin instalar, la suite de un
 	// monorepo falla por .venv o node_modules y no por el código
-	if err := room.InstalarDependencias(ctx, path); err != nil {
+	// y hereda el entorno de los cuartos que integra: llegan por
+	// cherry-pick, así que ninguno es ancestro y de cero pip resuelve
+	// distinto que donde las tareas ya corrieron
+	ids := make([]string, len(ordenadas))
+	for i, t := range ordenadas {
+		ids[i] = t.ID
+	}
+	if err := room.InstalarDependencias(ctx, path, ids...); err != nil {
 		apuntar(Paso{"integradas", false, err.Error()})
 		return e
 	}
 	pruebas := strings.TrimSpace(o.Config.Pruebas)
 	if pruebas == "" {
 		apuntar(Paso{"integradas", true, "sin comando de pruebas en config.yml · no se verificó el conjunto"})
-	} else if salida, ok := correrPruebas(ctx, path, pruebas, o.Timeout); !ok {
-		e.Fallo = falloDe("integradas", pruebas, salida)
-		apuntar(Paso{"integradas", false,
-			"las tareas pasan por separado pero el conjunto falla · " + salida})
-		return e
+	} else if crudo, salida, ok := correrPruebasCrudo(ctx, path, pruebas, o.Timeout); !ok {
+		// una suite que ya estaba roja en la base no dice nada del
+		// conjunto por su código de salida: lo que frena son los fallos
+		// que la base no tenía
+		detalle, mismos := mismosFallosQueLaBase(ctx, path, target, pruebas, o.Timeout, crudo)
+		if !mismos {
+			e.Fallo = falloDe("integradas", pruebas, salida)
+			apuntar(Paso{"integradas", false,
+				"las tareas pasan por separado pero el conjunto falla · " + detalle + salida})
+			return e
+		}
+		apuntar(Paso{"integradas", true, detalle})
 	} else {
 		apuntar(Paso{"integradas", true, pruebas})
 	}
@@ -330,6 +348,16 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 		url, err = abrirPRLocal(o.Root, RamaEntrega, o.Base, titulo, cuerpo)
 	} else {
 		url, err = abrirPREntrega(ctx, o.Root, path, o.Base, titulo, cuerpo)
+		// con remoto pero sin poder abrir el PR (gh sin instalar, con otra
+		// cuenta, sin permiso de push): la entrega ya pasó todas las
+		// compuertas y no se tira; queda como PR local y se dice por qué
+		if err != nil {
+			motivo := err.Error()
+			if url, err = abrirPRLocal(o.Root, RamaEntrega, o.Base, titulo, cuerpo); err == nil {
+				local = true
+				apuntar(Paso{"pr remoto", true, "no se abrió en el remoto · " + motivo + " · queda como PR local"})
+			}
+		}
 	}
 	if err != nil {
 		apuntar(Paso{"pr", false, err.Error()})
@@ -388,7 +416,7 @@ func revisarEntrega(ctx context.Context, o OpcionesEntrega, path, target, url st
 		return false, false
 	}
 	comentar := func() error { return comentarPR(ctx, o.Root, url, informe) }
-	if sinRemoto(o.Root) {
+	if strings.HasPrefix(url, PRLocal) {
 		comentar = func() error { return comentarPRLocal(o.Root, RamaEntrega, informe) }
 	}
 	if err := comentar(); err != nil {
@@ -473,19 +501,81 @@ func limpiarEntrega(root, path string) error {
 
 // correrPruebas corre el comando de pruebas del proyecto en dir.
 func correrPruebas(ctx context.Context, dir, cmdStr string, timeout time.Duration) (string, bool) {
+	_, resumen, ok := correrPruebasCrudo(ctx, dir, cmdStr, timeout)
+	return resumen, ok
+}
+
+// correrPruebasCrudo es correrPruebas con la salida entera además del
+// resumen: comparar fallos contra la base necesita los nombres.
+func correrPruebasCrudo(ctx context.Context, dir, cmdStr string, timeout time.Duration) (crudo, resumen string, ok bool) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	cmd := exec.CommandContext(ctx, "sh", "-c", task.SinTerminal(cmdStr))
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), room.Entorno(dir)...)
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Sprintf("las pruebas tardaron más de %s", timeout), false
+		return string(out), fmt.Sprintf("las pruebas tardaron más de %s", timeout), false
 	}
 	if err != nil {
-		return resumenPruebas(string(out)), false
+		return string(out), resumenPruebas(string(out)), false
 	}
-	return "", true
+	return string(out), "", true
+}
+
+// reFallo caza el nombre de cada prueba fallida en los formatos comunes:
+// unittest/Django ("FAIL: test_x (mod.Clase)", "ERROR: …"), pytest
+// ("FAILED ruta::test - motivo"), go ("--- FAIL: TestX (0.00s)") y
+// jest/vitest ("FAIL src/x.test.ts").
+// ponytail: por texto; un runner con otro formato no da nombres y la
+// compuerta sigue frenando como antes.
+var (
+	reFallo    = regexp.MustCompile(`(?m)^\s*(?:--- )?(?:FAIL|FAILED|ERROR):?[ \t]+(\S.*)$`)
+	reDuracion = regexp.MustCompile(`\s*\(?[0-9.]+m?s\)?$`)
+)
+
+// pruebasFallidas devuelve el conjunto de pruebas que fallaron según la
+// salida de un runner. Vacío si no reconoce ninguna.
+func pruebasFallidas(salida string) map[string]bool {
+	fallos := map[string]bool{}
+	for _, m := range reFallo.FindAllStringSubmatch(salida, -1) {
+		nombre, _, _ := strings.Cut(m[1], " - ")
+		if nombre = strings.TrimSpace(reDuracion.ReplaceAllString(nombre, "")); nombre != "" {
+			fallos[nombre] = true
+		}
+	}
+	return fallos
+}
+
+// mismosFallosQueLaBase corre la suite sobre la base, en el mismo worktree
+// (sus dependencias ya están), y reporta si todo lo que falla en el
+// conjunto ya fallaba ahí. Un proyecto con la suite roja desde antes no
+// podía entregar nunca; lo que el conjunto rompe de nuevo sigue frenando.
+// Sin nombres que comparar no hay veredicto y se frena.
+func mismosFallosQueLaBase(ctx context.Context, path, base, pruebas string, timeout time.Duration, crudo string) (string, bool) {
+	conjunto := pruebasFallidas(crudo)
+	if len(conjunto) == 0 {
+		return "", false
+	}
+	if _, err := gitRun(path, "checkout", "--quiet", "--detach", base); err != nil {
+		return "", false
+	}
+	enBase, _, ok := correrPruebasCrudo(ctx, path, pruebas, timeout)
+	if _, err := gitRun(path, "checkout", "--quiet", RamaEntrega); err != nil || ok {
+		return "", false
+	}
+	previos := pruebasFallidas(enBase)
+	var nuevos []string
+	for nombre := range conjunto {
+		if !previos[nombre] {
+			nuevos = append(nuevos, nombre)
+		}
+	}
+	if len(nuevos) > 0 {
+		sort.Strings(nuevos)
+		return fmt.Sprintf("%d fallos que la base no tenía: %s · ", len(nuevos), unir(nuevos)), false
+	}
+	return fmt.Sprintf("%s · la suite ya fallaba en %s con esos mismos %d fallos y el conjunto no agrega ninguno", pruebas, base, len(conjunto)), true
 }
 
 // ordenTopologico ordena las tareas para que ninguna llegue antes que
@@ -627,7 +717,7 @@ func mergearPR(ctx context.Context, root, path, base, url string) error {
 	}
 
 	// segundo intento: la base pudo avanzar entre abrir el PR y mergear
-	if err := realinearConBase(ctx, root, path, base); err != nil {
+	if err := realinearConBase(ctx, root, path, base, true); err != nil {
 		return fmt.Errorf("%s · %s", tail(salida), err)
 	}
 	if salida, err = merge(); err != nil {
@@ -636,14 +726,17 @@ func mergearPR(ctx context.Context, root, path, base, url string) error {
 	return nil
 }
 
-// realinearConBase rebasea la rama de entrega sobre la base actual y la
-// vuelve a subir. Devuelve un error que nombra los archivos si el
-// conflicto es real.
-func realinearConBase(ctx context.Context, root, path, base string) error {
-	_, _ = gitRun(root, "fetch", "--quiet")
+// realinearConBase rebasea la rama de entrega sobre la base actual y, con
+// subir, la vuelve a subir. Sin subir es un PR local: se rebasea sobre la
+// base local, que es a donde va el fast-forward. Devuelve un error que
+// nombra los archivos si el conflicto es real.
+func realinearConBase(ctx context.Context, root, path, base string, subir bool) error {
 	target := base
-	if _, err := gitRun(root, "rev-parse", "--verify", "--quiet", "origin/"+base); err == nil {
-		target = "origin/" + base
+	if subir {
+		traer(root)
+		if _, err := gitRun(root, "rev-parse", "--verify", "--quiet", "origin/"+base); err == nil {
+			target = "origin/" + base
+		}
 	}
 	if salida, err := gitRun(path, "rebase", target); err != nil {
 		conflictos := unmerged(path)
@@ -653,7 +746,7 @@ func realinearConBase(ctx context.Context, root, path, base string) error {
 		}
 		return fmt.Errorf("no se pudo rebasear sobre %s · %s", target, tail(salida))
 	}
-	if sinRemoto(root) {
+	if !subir || sinRemoto(root) {
 		return nil // PR local: no hay a dónde subirla
 	}
 	if salida, err := gitRun(path, "push", "--force", "origin", RamaEntrega); err != nil {

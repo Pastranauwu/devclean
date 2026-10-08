@@ -22,6 +22,12 @@ func sinRemoto(root string) bool {
 	return err != nil
 }
 
+// prLocal reporta si el PR se queda en el repo: porque no hay origin o
+// porque el humano lo pidió (`entrega: local`, --local).
+func prLocal(root string, cfg config.Config) bool {
+	return cfg.Entrega == config.EntregaLocal || sinRemoto(root)
+}
+
 // archivoPRLocal devuelve dónde vive la descripción del PR local de una rama.
 func archivoPRLocal(root, rama string) string {
 	return filepath.Join(config.Dir(root), "pr", strings.TrimPrefix(rama, "devclean/")+".md")
@@ -77,7 +83,7 @@ func integrarLocal(ctx context.Context, root, path, base string) error {
 	if err == nil {
 		return nil
 	}
-	if err := realinearConBase(ctx, root, path, base); err != nil {
+	if err := realinearConBase(ctx, root, path, base, false); err != nil {
 		return fmt.Errorf("%s · %s", tail(salida), err)
 	}
 	if salida, err = avanzar(); err != nil {

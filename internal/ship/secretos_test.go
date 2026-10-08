@@ -38,6 +38,21 @@ func TestSecretosEnEnvSinComillas(t *testing.T) {
 	}
 }
 
+// el arquitecto escribe .env.example y la esclusa no debe frenar la
+// entrega por sus valores de relleno
+func TestSecretosDejanPasarElRellenoDeUnaPlantilla(t *testing.T) {
+	relleno := []string{"SECRET_KEY=change-me-before-deploying", "DB_PASSWORD=app_local"}
+	if h := escanearSecretos(diffDe(".env.example", relleno...)); len(h) != 0 {
+		t.Fatalf("relleno de plantilla frenado: %+v", h)
+	}
+	if h := escanearSecretos(diffDe(".env", relleno...)); len(h) != 2 {
+		t.Fatalf("en un .env real son 2 credenciales, hubo %d", len(h))
+	}
+	if h := escanearSecretos(diffDe(".env.example", "ANTHROPIC_API_KEY="+claveAnthropic)); len(h) != 1 {
+		t.Fatalf("una clave real en la plantilla se escapó: %+v", h)
+	}
+}
+
 func TestSecretosPorProveedor(t *testing.T) {
 	casos := map[string]string{
 		"clave Anthropic":    "key = " + claveAnthropic,

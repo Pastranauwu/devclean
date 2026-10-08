@@ -97,7 +97,7 @@ func TestRebaseSinRemoto(t *testing.T) {
 	root := repoConCommit(t)
 	r := cuartoConWip(t, root)
 
-	target, conflictos, err := rebase(context.Background(), root, r.Path, "main", r.Rama)
+	target, conflictos, err := rebase(context.Background(), root, r.Path, "main", r.Rama, false)
 	if err != nil {
 		t.Fatalf("rebase: %v", err)
 	}
@@ -106,6 +106,28 @@ func TestRebaseSinRemoto(t *testing.T) {
 	}
 	if len(conflictos) != 0 {
 		t.Errorf("conflictos = %v", conflictos)
+	}
+}
+
+// con --local y un origin que rechaza la credencial, git pedía usuario
+// y contraseña una vez por tarea
+func TestRebaseLocalNoTocaLaRed(t *testing.T) {
+	root := repoConCommit(t)
+	r := cuartoConWip(t, root)
+	// un origin que no existe y una origin/main ya traída: sin local, el
+	// rebase iría sobre ella
+	gitCmd(t, root, "remote", "add", "origin", filepath.Join(t.TempDir(), "no-existe"))
+	gitCmd(t, root, "update-ref", "refs/remotes/origin/main", "main")
+
+	target, _, err := rebase(context.Background(), root, r.Path, "main", r.Rama, true)
+	if err != nil {
+		t.Fatalf("rebase: %v", err)
+	}
+	if target != "main" {
+		t.Errorf("target = %q, quiero la base local", target)
+	}
+	if target, _, _ = rebase(context.Background(), root, r.Path, "main", r.Rama, false); target != "origin/main" {
+		t.Errorf("sin local, target = %q, quiero origin/main", target)
 	}
 }
 
@@ -130,7 +152,7 @@ func TestRebaseConflicto(t *testing.T) {
 	gitCmd(t, r.Path, "add", "-A")
 	gitCmd(t, r.Path, "-c", "user.email=d@d", "-c", "user.name=d", "commit", "-m", "wip")
 
-	_, conflictos, err := rebase(context.Background(), root, r.Path, "main", r.Rama)
+	_, conflictos, err := rebase(context.Background(), root, r.Path, "main", r.Rama, false)
 	if err == nil {
 		t.Fatal("rebase debió conflictuar")
 	}

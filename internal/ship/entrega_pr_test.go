@@ -535,3 +535,29 @@ func TestEntregarTodasDejaLasRamasDeLosCuartosComoEstaban(t *testing.T) {
 		}
 	}
 }
+
+// con origin pero gh en otra cuenta, una entrega que pasó todas las
+// compuertas no se frena en el último paso
+func TestEntregarTodasQuedaLocalSiElRemotoNoAbreElPR(t *testing.T) {
+	root := repoConCommit(t)
+	cuartoDeTarea(t, root, "T-001", "a.go")
+	gitCmd(t, root, "remote", "add", "origin", filepath.Join(t.TempDir(), "no-existe.git"))
+
+	e := EntregarTodas(context.Background(), OpcionesEntrega{
+		Root:   root,
+		Config: config.Config{Base: "main", Pruebas: "true"},
+		Base:   "main",
+		Tareas: []task.Task{tareaEntrega("T-001", "a.go")},
+	})
+	t.Cleanup(func() { _ = limpiarEntrega(root, roomPathDe(root, "_entrega")) })
+
+	if !e.Aprobado || !strings.HasPrefix(e.PR, PRLocal) {
+		t.Fatalf("quiero PR local aprobado · PR=%q · %s · pasos %+v", e.PR, e.PrimerMotivo(), e.Pasos)
+	}
+	if _, err := os.Stat(archivoPRLocal(root, RamaEntrega)); err != nil {
+		t.Fatalf("sin descripción del PR local: %v", err)
+	}
+	if _, err := gitRun(root, "rev-parse", "--verify", "--quiet", RamaEntrega); err != nil {
+		t.Fatal("la rama de entrega no quedó para revisarla")
+	}
+}

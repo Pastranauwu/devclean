@@ -2,6 +2,7 @@ package ship
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -18,15 +19,28 @@ func gitRun(dir string, args ...string) (string, error) {
 	return string(out), err
 }
 
-// rebase trae la base y rebasea la rama del cuarto sobre ella.
-// Devuelve la ref destino y, si hubo conflicto, los archivos implicados.
-func rebase(ctx context.Context, root, roomPath, base, rama string) (target string, conflictos []string, err error) {
-	// sin remoto no hay qué traer: el fetch falla y se ignora
-	_, _ = gitRun(root, "fetch", "--quiet")
+// traer actualiza origin sin preguntar nada: es un paso de cortesía que
+// se ignora si falla, y con una credencial que el remoto rechaza git
+// pedía usuario y contraseña en la terminal, una vez por tarea.
+func traer(root string) {
+	cmd := exec.Command("git", "fetch", "--quiet")
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	_ = cmd.Run()
+}
 
+// rebase trae la base y rebasea la rama del cuarto sobre ella. Con local
+// (prLocal) no toca la red y va sobre la base local, que es de donde sale
+// la rama de entrega. Devuelve la ref destino y, si hubo conflicto, los
+// archivos implicados.
+func rebase(ctx context.Context, root, roomPath, base, rama string, local bool) (target string, conflictos []string, err error) {
 	target = base
-	if _, err := gitRun(root, "rev-parse", "--verify", "--quiet", "origin/"+base); err == nil {
-		target = "origin/" + base
+	if !local {
+		// sin remoto no hay qué traer: el fetch falla y se ignora
+		traer(root)
+		if _, err := gitRun(root, "rev-parse", "--verify", "--quiet", "origin/"+base); err == nil {
+			target = "origin/" + base
+		}
 	}
 
 	if _, err := gitRun(roomPath, "rebase", target); err != nil {

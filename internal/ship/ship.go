@@ -94,7 +94,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 	}
 
 	// 1. base — rebase sobre la rama base
-	target, conflictos, err := rebase(ctx, o.Root, o.Room.Path, o.Base, o.Room.Rama)
+	target, conflictos, err := rebase(ctx, o.Root, o.Room.Path, o.Base, o.Room.Rama, prLocal(o.Root, o.Config))
 	if err != nil {
 		if len(conflictos) > 0 {
 			res.Conflicto = true
@@ -217,7 +217,7 @@ func Run(ctx context.Context, o Opciones) Resultado {
 		return res
 	}
 	var url string
-	if sinRemoto(o.Root) {
+	if prLocal(o.Root, o.Config) {
 		// la rama se queda con su cuarto: es lo que se revisa y se mergea
 		url, err = abrirPRLocal(o.Root, o.Room.Rama, o.Base, o.Task.Titulo, cuerpo)
 	} else {

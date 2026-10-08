@@ -96,7 +96,7 @@ func tipoSecreto(archivo, linea string) string {
 	}
 	// una prueba lleva claves falsas a propósito ("sk-or-secret"); una
 	// real ahí la cazan los patrones de proveedor de arriba
-	if task.EsArchivoDePrueba(archivo) {
+	if task.EsArchivoDePrueba(archivo) || esPlantilla(archivo) {
 		return ""
 	}
 	if m := reAsignacion.FindStringSubmatch(linea); m != nil {
@@ -114,6 +114,18 @@ func tipoSecreto(archivo, linea string) string {
 		}
 	}
 	return ""
+}
+
+// esPlantilla reporta si el archivo es una plantilla de configuración
+// (.env.example, config.sample): existe para llevar valores de relleno, y
+// el arquitecto está obligado a escribir un .env.example. Una clave real
+// ahí la siguen cazando los patrones de proveedor.
+func esPlantilla(archivo string) bool {
+	switch path.Ext(strings.ToLower(archivo)) {
+	case ".example", ".sample", ".template", ".dist":
+		return true
+	}
+	return false
 }
 
 // esConfiguracion reporta si el archivo guarda valores sin comillas:

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Pastranauwu/devclean/internal/room"
+	"github.com/Pastranauwu/devclean/internal/task"
 )
 
 // verificarBisectable corre el comando de pruebas del proyecto sobre el
@@ -50,9 +51,9 @@ func runComando(ctx context.Context, dir, cmdStr string, timeout time.Duration) 
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/c", cmdStr)
+		cmd = exec.CommandContext(ctx, "cmd", "/c", task.SinTerminal(cmdStr))
 	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
+		cmd = exec.CommandContext(ctx, "sh", "-c", task.SinTerminal(cmdStr))
 	}
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), room.Entorno(dir)...)

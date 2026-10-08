@@ -12,7 +12,11 @@ import (
 
 func entregaLocal(t *testing.T, integrar bool) (string, Entrega) {
 	t.Helper()
-	root := repoConCommit(t)
+	return entregaLocalEn(t, repoConCommit(t), config.Config{Base: "main", Pruebas: "true"}, integrar)
+}
+
+func entregaLocalEn(t *testing.T, root string, cfg config.Config, integrar bool) (string, Entrega) {
+	t.Helper()
 	sinIdentidadGit(t, root)
 	cuartoDeTarea(t, root, "T-001", "a.go")
 	cuartoDeTarea(t, root, "T-002", "b.go")
@@ -20,7 +24,7 @@ func entregaLocal(t *testing.T, integrar bool) (string, Entrega) {
 
 	e := EntregarTodas(context.Background(), OpcionesEntrega{
 		Root:     root,
-		Config:   config.Config{Base: "main", Pruebas: "true"},
+		Config:   cfg,
 		Base:     "main",
 		Tareas:   []task.Task{tareaEntrega("T-001", "a.go"), tareaEntrega("T-002", "b.go", "T-001")},
 		Commits:  map[string]string{"T-001": base, "T-002": base},
@@ -69,5 +73,27 @@ func TestEntregarTodasSinRemotoIntegraLocal(t *testing.T) {
 	}
 	if _, err := gitRun(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+RamaEntrega); err == nil {
 		t.Error("tras integrar, la rama de entrega sobra")
+	}
+}
+
+// Con remoto y `entrega: local`, nada sale del repo: el PR queda local y
+// --integrar avanza la base por fast-forward sin subir la rama.
+func TestEntregarTodasLocalConRemotoNoSube(t *testing.T) {
+	root := repoConCommit(t)
+	remoto := t.TempDir()
+	gitCmd(t, remoto, "init", "--bare", "-q")
+	gitCmd(t, root, "remote", "add", "origin", remoto)
+	gitCmd(t, root, "push", "-q", "origin", "main")
+
+	_, e := entregaLocalEn(t, root, config.Config{Base: "main", Pruebas: "true", Entrega: config.EntregaLocal}, true)
+
+	if !strings.HasPrefix(e.PR, PRLocal) || !e.Integrado {
+		t.Fatalf("PR = %q, integrado = %v · debe ser local e integrado · pasos %+v", e.PR, e.Integrado, e.Pasos)
+	}
+	if ramas := gitCmd(t, remoto, "branch", "--list", "devclean/*"); strings.TrimSpace(ramas) != "" {
+		t.Errorf("la rama de entrega llegó al remoto · %q", ramas)
+	}
+	if local, enRemoto := gitCmd(t, root, "rev-parse", "main"), gitCmd(t, remoto, "rev-parse", "main"); local == enRemoto {
+		t.Error("main local debió avanzar y el del remoto quedarse")
 	}
 }
