@@ -22,10 +22,18 @@ func RepoRoot(dir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// DetectBaseBranch finds the base branch of the repository at root:
-// the remote HEAD if set, else main or master if they exist, else the
-// current branch. Empty string if nothing can be determined.
+// DetectBaseBranch finds the base branch of the repository at root: the
+// current branch, else the remote HEAD, else main or master. Empty string
+// if nothing can be determined.
+//
+// La rama actual va primero: es donde el humano está trabajando y donde
+// espera el resultado. Con main por delante, en un repo con ramas de
+// feature los agentes partían de otro código que el que se veía, y un
+// arreglo commiteado en la rama actual nunca les llegaba.
 func DetectBaseBranch(root string) string {
+	if branch, err := gitOut(root, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil && branch != "" && !strings.HasPrefix(branch, "devclean/") {
+		return branch
+	}
 	if ref, err := gitOut(root, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil {
 		return strings.TrimPrefix(ref, "origin/")
 	}
@@ -33,9 +41,6 @@ func DetectBaseBranch(root string) string {
 		if _, err := gitOut(root, "show-ref", "--verify", "--quiet", "refs/heads/"+candidate); err == nil {
 			return candidate
 		}
-	}
-	if branch, err := gitOut(root, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil {
-		return branch
 	}
 	return ""
 }
@@ -52,6 +57,10 @@ func DetectTestCommand(root string) (string, bool) {
 	}
 	if fileExists(filepath.Join(root, "go.mod")) {
 		return "go test ./...", true
+	}
+	// Django antes que pyproject: su runner arma la base de pruebas
+	if fileExists(filepath.Join(root, "manage.py")) {
+		return "python manage.py test", true
 	}
 	if fileExists(filepath.Join(root, "pyproject.toml")) {
 		return "pytest", true

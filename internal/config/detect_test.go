@@ -50,14 +50,24 @@ func TestDetectBaseBranchUnbornHead(t *testing.T) {
 	}
 }
 
-func TestDetectBaseBranchPrefersMain(t *testing.T) {
+// La rama en la que está el humano gana sobre main: ahí espera el
+// resultado. En una rama de devclean o sin rama, cae a main.
+func TestDetectBaseBranchPrefiereLaRamaActual(t *testing.T) {
 	root := t.TempDir()
 	git(t, root, "init", "-b", "dev")
 	git(t, root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init")
 	git(t, root, "branch", "main")
 	git(t, root, "branch", "master")
+	if got := DetectBaseBranch(root); got != "dev" {
+		t.Errorf("DetectBaseBranch = %q, quiero %q", got, "dev")
+	}
+	git(t, root, "checkout", "-q", "-b", "devclean/T-001")
 	if got := DetectBaseBranch(root); got != "main" {
-		t.Errorf("DetectBaseBranch = %q, quiero %q", got, "main")
+		t.Errorf("en una rama de devclean: DetectBaseBranch = %q, quiero %q", got, "main")
+	}
+	git(t, root, "checkout", "-q", "--detach")
+	if got := DetectBaseBranch(root); got != "main" {
+		t.Errorf("sin rama: DetectBaseBranch = %q, quiero %q", got, "main")
 	}
 }
 

@@ -25,6 +25,9 @@ import (
 // DirName is the directory devclean creates at the repository root.
 const DirName = ".devclean"
 
+// EntregaLocal es el valor de `entrega:` que deja el PR en el repo.
+const EntregaLocal = "local"
+
 // Config is the content of .devclean/config.yml.
 type Config struct {
 	Base    string `json:"base"`
@@ -33,7 +36,11 @@ type Config struct {
 	// "cli" y no "ejecutor" a propósito: ese nombre ya lo usa el rol
 	// `ejecutor` dentro de `proveedores`, y kv.Pairs no distingue
 	// indentación — dos claves iguales a distinta profundidad se pisan.
-	Cli             string   `json:"cli,omitempty"`
+	Cli string `json:"cli,omitempty"`
+	// Entrega fija a dónde va el PR: "local" deja la rama y su descripción
+	// en el repo aunque haya origin; "remoto" o vacío sube y abre el PR
+	// cuando hay origin.
+	Entrega         string   `json:"entrega,omitempty"`
 	ZonasProhibidas []string `json:"zonas_prohibidas"`
 	TimeoutEsclusa  int      `json:"timeout_esclusa"` // segundos para el chequeo "falla hoy"
 	// TimeoutAgente y TimeoutPruebas cubren el bucle real y la esclusa de
@@ -45,6 +52,9 @@ type Config struct {
 	// AgentesPagados es cuántas tareas con modelo de pago corren a la vez
 	// cuando no se pasa --agentes. 0 = el default de run (3).
 	AgentesPagados int `json:"agentes_pagados,omitempty"`
+	// TopeArquitectoUSD corta cada invocación del arquitecto al pasar ese
+	// gasto en dólares, a precio de lista. 0 = sin tope. Solo claude.
+	TopeArquitectoUSD int `json:"tope_arquitecto_usd,omitempty"`
 	// ArquitectoEconomico hace que el esqueleto de un cambio sobre un
 	// proyecto que ya tiene ARCHITECTURE.md lo intente primero el modelo
 	// medio; si no pasa la verificación, sube al planificador. Apagado
@@ -222,6 +232,9 @@ func (c Config) Save(root string) error {
 	if c.Cli != "" {
 		fmt.Fprintf(&b, "cli: %s\n", c.Cli)
 	}
+	if c.Entrega != "" {
+		fmt.Fprintf(&b, "entrega: %s\n", c.Entrega)
+	}
 	fmt.Fprintf(&b, "zonas_prohibidas: %s\n", kv.MarshalList(c.ZonasProhibidas))
 	if len(c.PatronesPrueba) > 0 {
 		fmt.Fprintf(&b, "patrones_prueba: %s\n", kv.MarshalList(c.PatronesPrueba))
@@ -240,6 +253,9 @@ func (c Config) Save(root string) error {
 	}
 	if c.AgentesPagados > 0 {
 		fmt.Fprintf(&b, "agentes_pagados: %d\n", c.AgentesPagados)
+	}
+	if c.TopeArquitectoUSD > 0 {
+		fmt.Fprintf(&b, "tope_arquitecto_usd: %d\n", c.TopeArquitectoUSD)
 	}
 	if c.RecursionMax > 0 {
 		fmt.Fprintf(&b, "recursion_max: %d\n", c.RecursionMax)
@@ -474,6 +490,11 @@ func Parse(data []byte) (Config, error) {
 			cfg.Pruebas = kv.Unquote(p.Value)
 		case "cli":
 			cfg.Cli = kv.Unquote(p.Value)
+		case "entrega":
+			cfg.Entrega = kv.Unquote(p.Value)
+			if cfg.Entrega != EntregaLocal && cfg.Entrega != "remoto" {
+				return cfg, fmt.Errorf("config.yml: línea %d · entrega es local o remoto, no %q", p.Line, cfg.Entrega)
+			}
 		case "zonas_prohibidas":
 			list, err := kv.ParseList(p.Value)
 			if err != nil {
@@ -521,6 +542,12 @@ func Parse(data []byte) (Config, error) {
 				return cfg, fmt.Errorf("config.yml: línea %d · agentes_pagados inválido: %s · mínimo 1", p.Line, p.Value)
 			}
 			cfg.AgentesPagados = n
+		case "tope_arquitecto_usd":
+			n, err := kv.ParseInt(p.Value)
+			if err != nil || n < 1 {
+				return cfg, fmt.Errorf("config.yml: línea %d · tope_arquitecto_usd inválido: %s · dólares enteros, mínimo 1", p.Line, p.Value)
+			}
+			cfg.TopeArquitectoUSD = n
 		case "timeout_agente":
 			seg, err := kv.ParseInt(p.Value)
 			if err != nil || seg < 1 {
@@ -731,8 +758,8 @@ var pistasPeso = map[string][]string{
 // está, se cae a las pistas por nombre.
 var preferidos = map[string][]string{
 	"pesada":  {"claude-opus-5-5", "gpt-6-astra", "kimi-k3", "grok-4.7", "grok-4.6"},
-	"media":   {"claude-sonnet-5", "gpt-6-sol", "gpt-5.6-terra", "deepseek-v4-flash", "deepseek-v4.1-flash"},
-	"liviana": {"claude-haiku-4-5", "gpt-6-luna", "gpt-5.6-luna", "muse-spark-1.3-contributor", "muse-spark-1.3-contributor-free", "muse-spark-1.2-contributor"},
+	"media":   {"claude-sonnet-5-5", "claude-sonnet-5", "gpt-6-sol", "gpt-5.6-terra", "deepseek-v4-flash", "deepseek-v4.1-flash"},
+	"liviana": {"claude-haiku-5-5", "claude-haiku-4-5", "gpt-6-luna", "gpt-5.6-luna", "muse-spark-1.3-contributor", "muse-spark-1.3-contributor-free", "muse-spark-1.2-contributor"},
 }
 
 // ElegirModelos reparte un catálogo real de ids de modelo entre los tres
