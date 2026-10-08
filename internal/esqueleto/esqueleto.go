@@ -73,6 +73,9 @@ type Pedido struct {
 	// celular. Un plan visual hecho sin verlas planea contra el código,
 	// no contra lo que ve el usuario.
 	Capturas []string
+	// SuiteRota es la cola de la suite del proyecto cuando ya falla en la
+	// base, antes de cualquier cambio; "" si pasa o no se pudo saber.
+	SuiteRota string
 }
 
 // Prompt arma la instrucción del arquitecto. Lo fijo va primero para que
@@ -163,6 +166,9 @@ RESPONDE AL FINAL SOLO CON ESTE JSON
   ]
 }
 `)
+	if p.SuiteRota != "" {
+		b.WriteString("\nESTADO DE LA BASE\nLa suite del proyecto ya falla hoy, antes de tu cambio. Así termina su salida:\n" + p.SuiteRota + "\nSi ese fallo impide que corran las pruebas de tus tareas (la base de datos de pruebas no se construye, un import roto, una dependencia que falta), arréglalo tú en el esqueleto: es estado de la base, no lógica nueva, y sin eso ninguna tarea puede salir verde. Si no las afecta, no lo toques y no lo uses en ningún \"listo_cuando\".\n")
+	}
 	if p.PrimerID != "" {
 		fmt.Fprintf(&b, "Tus tareas reciben ids correlativos desde %s en el orden del array: en \"depende_de\" escribe esos ids completos (\"%s\"), no números sueltos.\n", p.PrimerID, p.PrimerID)
 	}
@@ -180,6 +186,19 @@ func PromptCorregir(original string, problemas []string) string {
 		b.WriteString("- " + p + "\n")
 	}
 	b.WriteString("Corrígelo en el repositorio y responde otra vez con el JSON completo.\n")
+	return b.String()
+}
+
+// PromptCorregirSesion es la corrección para un arquitecto que continúa
+// su propia conversación: ya tiene el pedido y lo que leyó del repo, así
+// que solo recibe lo que la verificación encontró.
+func PromptCorregirSesion(problemas []string) string {
+	var b strings.Builder
+	b.WriteString("La verificación de devclean encontró esto en lo que dejaste:\n")
+	for _, p := range problemas {
+		b.WriteString("- " + p + "\n")
+	}
+	b.WriteString("Corrígelo en el repositorio sin volver a explorar lo que ya conoces y responde otra vez con el JSON completo.\n")
 	return b.String()
 }
 
@@ -208,13 +227,12 @@ func Parse(texto string) (Resultado, error) {
 	if err != nil && !errors.Is(err, plan.ErrSinTareas) {
 		return Resultado{}, err
 	}
-	t := strings.TrimSpace(texto)
-	ini := strings.Index(t, "{")
+	t := plan.CuerpoJSON(texto)
 	var r Resultado
-	if ini == -1 {
+	if !strings.HasPrefix(t, "{") {
 		return Resultado{}, errors.New("el arquitecto no devolvió un objeto JSON")
 	}
-	if err := json.NewDecoder(strings.NewReader(plan.EscaparControles(t[ini:]))).Decode(&r); err != nil {
+	if err := json.NewDecoder(strings.NewReader(plan.EscaparControles(t))).Decode(&r); err != nil {
 		return Resultado{}, fmt.Errorf("el arquitecto devolvió JSON inválido · %s", err)
 	}
 	r.Tareas = bs
@@ -412,14 +430,30 @@ func ConStub(ctx context.Context, dir string, tocar []string) bool {
 	return false
 }
 
+// SuiteBase corre la suite del proyecto tal como está y devuelve la cola
+// de su salida si falla; "" si pasa, si no hay comando o si se pasó del
+// tiempo (no concluyente). Es para saberlo antes de pagar un plan: con
+// la suite rota en la base, las tareas que la necesitan no salen verdes
+// hagan lo que hagan.
+func SuiteBase(ctx context.Context, dir, comando string, timeout time.Duration, env []string) string {
+	if strings.TrimSpace(comando) == "" {
+		return ""
+	}
+	salida, code := correr(ctx, dir, comando, timeout, env)
+	if code == nil || *code == 0 || *code == 124 {
+		return ""
+	}
+	return cola(salida)
+}
+
 func correr(ctx context.Context, dir, cmdStr string, timeout time.Duration, env []string) (string, *int) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/c", cmdStr)
+		cmd = exec.CommandContext(ctx, "cmd", "/c", task.SinTerminal(cmdStr))
 	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
+		cmd = exec.CommandContext(ctx, "sh", "-c", task.SinTerminal(cmdStr))
 	}
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
