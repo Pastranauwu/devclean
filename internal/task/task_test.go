@@ -302,20 +302,20 @@ func TestNombreDeFirmaNoConfundeProsaConRuta(t *testing.T) {
 // ValidatePlan marca la pieza como huérfana cuando la consumidora la usa.
 func TestNombreDeFirmaTipoYConstanteTS(t *testing.T) {
 	casos := map[string]string{
-		"type Point = { x: number; y: number }":                     "Point",
-		"export type Point = { x: number; y: number }":              "Point",
-		"type SnakeState = { body: Point[]; direction: Direction }": "SnakeState",
-		"export interface ISynth<T> { play(): void }":               "ISynth",
-		"interface SoundPlayer<T extends Node>":                     "SoundPlayer",
-		"export class AudioManager {":                               "AudioManager",
-		"class SynthVoice implements Voice":                         "SynthVoice",
-		"export function noteToFreq(nota: string): number":          "noteToFreq",
+		"type Point = { x: number; y: number }":                      "Point",
+		"export type Point = { x: number; y: number }":               "Point",
+		"type SnakeState = { body: Point[]; direction: Direction }":  "SnakeState",
+		"export interface ISynth<T> { play(): void }":                "ISynth",
+		"interface SoundPlayer<T extends Node>":                      "SoundPlayer",
+		"export class AudioManager {":                                "AudioManager",
+		"class SynthVoice implements Voice":                          "SynthVoice",
+		"export function noteToFreq(nota: string): number":           "noteToFreq",
 		"export async function playSound(id: string): Promise<void>": "playSound",
-		"const LEVELS: Level[]":                                     "LEVELS",
-		"export const LEVELS: Level[]":                              "LEVELS",
-		"levels.LEVELS: Level[]":                                    "LEVELS",
-		"sound.SoundManager = { play(): void }":                     "SoundManager",
-		"type Direction = 'up' | 'down' | 'left' | 'right'":         "Direction",
+		"const LEVELS: Level[]":                                      "LEVELS",
+		"export const LEVELS: Level[]":                               "LEVELS",
+		"levels.LEVELS: Level[]":                                     "LEVELS",
+		"sound.SoundManager = { play(): void }":                      "SoundManager",
+		"type Direction = 'up' | 'down' | 'left' | 'right'":          "Direction",
 	}
 	for firma, want := range casos {
 		if got := NombreDeFirma(firma); got != want {
@@ -379,5 +379,23 @@ func TestCubreSobreviveAlGuardar(t *testing.T) {
 	got, err := Parse([]byte(tk.Marshal()))
 	if err != nil || len(got.Cubre) != 2 || got.Cubre[1] != "fondo" {
 		t.Fatalf("%+v %v", got.Cubre, err)
+	}
+}
+
+// una herramienta que pregunta (Django ante una base de pruebas que
+// quedó de una corrida cortada) muere con EOFError si hay terminal
+func TestSinTerminal(t *testing.T) {
+	casos := map[string]string{
+		"python manage.py test documentos.tests.test_x":               "python manage.py test --noinput documentos.tests.test_x",
+		"compila && (python manage.py test a) && ./manage.py  test b": "compila && (python manage.py test --noinput a) && ./manage.py  test --noinput b",
+		"python manage.py test --noinput a":                           "python manage.py test --noinput a",
+		"python manage.py test a --no-input":                          "python manage.py test a --no-input",
+		"go test ./...":                                               "go test ./...",
+		"python manage.py testserver":                                 "python manage.py testserver",
+	}
+	for cmd, quiero := range casos {
+		if got := SinTerminal(cmd); got != quiero {
+			t.Errorf("SinTerminal(%q) = %q, quiero %q", cmd, got, quiero)
+		}
 	}
 }

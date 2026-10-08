@@ -3,6 +3,7 @@ package task
 import (
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -100,4 +101,18 @@ func PruebaSinEscribir(dir, cmd string) string {
 		}
 	}
 	return ""
+}
+
+var reDjangoTest = regexp.MustCompile(`manage\.py\s+test\b`)
+
+// SinTerminal ajusta un comando de verificación para correr sin nadie que
+// conteste: devclean lo ejecuta sin stdin. `manage.py test` pregunta si
+// borra la base de pruebas que dejó una corrida cortada (un agente con
+// timeout, una migración que falla) y muere con EOFError; con --noinput
+// la borra y sigue. Lo usa todo lo que ejecuta listo_cuando o `pruebas`.
+func SinTerminal(cmd string) string {
+	if strings.Contains(cmd, "--noinput") || strings.Contains(cmd, "--no-input") {
+		return cmd
+	}
+	return reDjangoTest.ReplaceAllString(cmd, "$0 --noinput")
 }
