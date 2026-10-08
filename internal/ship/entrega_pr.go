@@ -17,6 +17,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/capturas"
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/room"
+	"github.com/Pastranauwu/devclean/internal/spec"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
@@ -380,6 +381,9 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 			// motivo real es que la prueba no existe en lo entregado
 			if f := task.PruebaSinEscribir(path, command); f != "" {
 				salida = "la prueba " + f + " no existe · ninguna tarea entregada la escribe (¿se borró o no corrió la tarea final?)"
+			} else if avisos := spec.AceptacionSinPrueba(path, spec.Spec{Acceptance: []spec.Acceptance{{Command: command}}}, nil); len(avisos) > 0 {
+				// un id de módulo que no existe se ve como "errors=1"
+				salida = avisos[0].Message
 			}
 			e.Fallo = falloDe(path, "aceptación", command, salida, crudo)
 			if len(e.Fallo.Nombres) > 0 {

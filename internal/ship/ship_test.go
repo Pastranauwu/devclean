@@ -162,6 +162,21 @@ func TestGitDeLaEntregaNoPregunta(t *testing.T) {
 	}
 }
 
+func TestRepoDeOrigin(t *testing.T) {
+	for url, quiero := range map[string]string{
+		"https://github.com/acme/app.git":   "acme/app",
+		"https://github.com/acme/app":       "acme/app",
+		"git@github.com:acme/app.git\n":     "acme/app",
+		"ssh://git@github.com/acme/app.git": "acme/app",
+		"https://gitlab.com/acme/app.git":   "",
+		"/srv/git/app.git":                  "",
+	} {
+		if got := repoDeOrigin(url); got != quiero {
+			t.Errorf("repoDeOrigin(%q) = %q, quiero %q", url, got, quiero)
+		}
+	}
+}
+
 func TestRebaseConflicto(t *testing.T) {
 	root := repoConCommit(t)
 	escribir(t, root, "f.txt", "base\n")
