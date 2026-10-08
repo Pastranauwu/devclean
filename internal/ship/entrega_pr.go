@@ -87,18 +87,76 @@ type Fallo struct {
 	Salida  string `json:"salida"`
 	// Pruebas son los archivos de prueba que fallaron, según la salida.
 	Pruebas []string `json:"pruebas,omitempty"`
+	// Nombres son las pruebas que fallaron tal como las nombró el runner.
+	Nombres []string `json:"nombres,omitempty"`
+	// Selectores es lo que se le agrega al comando para correr solo lo
+	// que falló, en la forma que su runner entiende.
+	Selectores []string `json:"selectores,omitempty"`
 }
 
-var pruebaFallida = regexp.MustCompile(`FAIL\s+(\S+)`)
+var (
+	pruebaFallida = regexp.MustCompile(`FAIL\s+(\S+)`)
+	// "test_x (paquete.modulo.Clase.test_x)" de unittest y Django; antes
+	// de Python 3.11 el paréntesis no trae el método
+	nombreUnittest = regexp.MustCompile(`^(\w+) \(([\w.]+)\)$`)
+)
 
-func falloDe(paso, comando, salida string) *Fallo {
+// falloDe arma el Fallo de un comando: salida es el resumen que ve el
+// humano y crudo la salida entera, de donde salen los nombres. dir es el
+// worktree donde corrió, para resolver un módulo de Python a su archivo.
+//
+// ponytail: go test da el nombre de la función, no un archivo ni algo que
+// pegar al comando; queda en Nombres y la tarea se elige a mano. Buscar
+// `func TestX(` en el árbol si hace falta.
+func falloDe(dir, paso, comando, salida, crudo string) *Fallo {
 	f := &Fallo{Paso: paso, Comando: comando, Salida: salida}
+	agregar := func(lista *[]string, v string) {
+		if v != "" && !slices.Contains(*lista, v) {
+			*lista = append(*lista, v)
+		}
+	}
 	for _, m := range pruebaFallida.FindAllStringSubmatch(salida, -1) {
-		if task.EsArchivoDePrueba(m[1]) && !slices.Contains(f.Pruebas, m[1]) {
-			f.Pruebas = append(f.Pruebas, m[1])
+		if task.EsArchivoDePrueba(m[1]) {
+			agregar(&f.Pruebas, m[1])
+			agregar(&f.Selectores, m[1])
+		}
+	}
+	nombres := make([]string, 0)
+	for n := range pruebasFallidas(crudo) {
+		nombres = append(nombres, n)
+	}
+	sort.Strings(nombres)
+	for _, n := range nombres {
+		agregar(&f.Nombres, n)
+		if archivo, _, ok := strings.Cut(n, "::"); ok && task.EsArchivoDePrueba(archivo) { // pytest
+			agregar(&f.Pruebas, archivo)
+			agregar(&f.Selectores, n)
+		} else if m := nombreUnittest.FindStringSubmatch(n); m != nil {
+			id := m[2]
+			if !strings.HasSuffix(id, "."+m[1]) {
+				id += "." + m[1]
+			}
+			agregar(&f.Pruebas, archivoDeModulo(dir, id))
+			agregar(&f.Selectores, id)
+		} else if archivo := strings.Fields(n)[0]; task.EsArchivoDePrueba(archivo) { // jest, vitest
+			agregar(&f.Pruebas, archivo)
+			agregar(&f.Selectores, archivo)
 		}
 	}
 	return f
+}
+
+// archivoDeModulo devuelve el .py que existe en dir para el prefijo más
+// largo de un id con puntos ("a.b.Clase.test_x" → "a/b.py"), o "".
+func archivoDeModulo(dir, id string) string {
+	partes := strings.Split(id, ".")
+	for n := len(partes); n > 0; n-- {
+		rel := filepath.Join(partes[:n]...) + ".py"
+		if info, err := os.Stat(filepath.Join(dir, rel)); err == nil && !info.IsDir() {
+			return filepath.ToSlash(rel)
+		}
+	}
+	return ""
 }
 
 // PrimerMotivo devuelve el motivo del primer paso o tarea que frenó.
@@ -160,18 +218,26 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 	//    esqueleto). En soundlike una entrega frenada dejó así las 10
 	//    ramas y la tarea que faltaba no pudo correr. Al salir, cada rama
 	//    vuelve a su punta.
+	//
+	//    Las puntas van además a disco: un Ctrl+C no corre el defer, y
+	//    la entrega siguiente (o `run`) las restaura con RestaurarPuntas.
+	if hechas, dudosas := RestaurarPuntas(o.Root); len(hechas)+len(dudosas) > 0 {
+		apuntar(avisoPuntas(hechas, dudosas))
+	}
 	puntas := map[string]string{}
 	defer func() {
 		for path, punta := range puntas {
 			_, _ = gitRun(path, "rebase", "--abort")
 			_, _ = gitRun(path, "reset", "--hard", punta)
 		}
+		_ = os.Remove(archivoPuntas(o.Root))
 	}()
 	var conCambios []task.Task
 	for _, t := range ordenadas {
 		roomPath := roomPathDe(o.Root, t.ID)
 		if punta, err := gitRun(roomPath, "rev-parse", "HEAD"); err == nil {
 			puntas[roomPath] = strings.TrimSpace(punta)
+			guardarPuntas(o.Root, puntas)
 		}
 		// cada tarea se aplana contra su propio punto de partida, no
 		// contra la rama base: así su commit lleva solo lo suyo
@@ -295,7 +361,11 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 		// que la base no tenía
 		detalle, mismos := mismosFallosQueLaBase(ctx, path, target, pruebas, o.Timeout, crudo)
 		if !mismos {
-			e.Fallo = falloDe("integradas", pruebas, salida)
+			e.Fallo = falloDe(path, "integradas", pruebas, salida, crudo)
+			// sin el nombre de la prueba, la aserción sola no dice dónde mirar
+			if detalle == "" && len(e.Fallo.Nombres) > 0 {
+				detalle = unir(e.Fallo.Nombres) + " · "
+			}
 			apuntar(Paso{"integradas", false,
 				"las tareas pasan por separado pero el conjunto falla · " + detalle + salida})
 			return e
@@ -305,13 +375,16 @@ func EntregarTodas(ctx context.Context, o OpcionesEntrega) Entrega {
 		apuntar(Paso{"integradas", true, pruebas})
 	}
 	for _, command := range o.Acceptance {
-		if salida, ok := correrPruebas(ctx, path, command, o.Timeout); !ok {
+		if crudo, salida, ok := correrPruebasCrudo(ctx, path, command, o.Timeout); !ok {
 			// vitest sin archivos cierra con su lista de exclusiones: el
 			// motivo real es que la prueba no existe en lo entregado
 			if f := task.PruebaSinEscribir(path, command); f != "" {
 				salida = "la prueba " + f + " no existe · ninguna tarea entregada la escribe (¿se borró o no corrió la tarea final?)"
 			}
-			e.Fallo = falloDe("aceptación", command, salida)
+			e.Fallo = falloDe(path, "aceptación", command, salida, crudo)
+			if len(e.Fallo.Nombres) > 0 {
+				salida = unir(e.Fallo.Nombres) + " · " + salida
+			}
 			apuntar(Paso{"aceptación", false, command + " · " + salida})
 			return e
 		}
@@ -540,7 +613,8 @@ func pruebasFallidas(salida string) map[string]bool {
 	fallos := map[string]bool{}
 	for _, m := range reFallo.FindAllStringSubmatch(salida, -1) {
 		nombre, _, _ := strings.Cut(m[1], " - ")
-		if nombre = strings.TrimSpace(reDuracion.ReplaceAllString(nombre, "")); nombre != "" {
+		// "FAILED (failures=2)" es el cierre de unittest, no una prueba
+		if nombre = strings.TrimSpace(reDuracion.ReplaceAllString(nombre, "")); nombre != "" && !strings.HasPrefix(nombre, "(") {
 			fallos[nombre] = true
 		}
 	}

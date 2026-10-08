@@ -476,8 +476,41 @@ func TestAceptacionDeDistinguePasoFalloYNoCorrio(t *testing.T) {
 	}
 }
 
+// cada runner nombra sus fallos a su modo: de ahí salen el archivo (para
+// saber qué tarea reabrir) y el selector (para correr solo lo que falló)
+func TestFalloDeReconoceUnittestYPytest(t *testing.T) {
+	dir := t.TempDir()
+	escribir(t, dir, "apps/docs/tests/test_flujo.py", "")
+	crudo := "======\nFAIL: test_pantalla (apps.docs.tests.test_flujo.PantallaTest.test_pantalla)\n------\nAssertionError: 404 != 200\n"
+	f := falloDe(dir, "integradas", "python manage.py test", "AssertionError: 404 != 200", crudo)
+	if len(f.Pruebas) != 1 || f.Pruebas[0] != "apps/docs/tests/test_flujo.py" {
+		t.Errorf("pruebas = %v", f.Pruebas)
+	}
+	if len(f.Selectores) != 1 || f.Selectores[0] != "apps.docs.tests.test_flujo.PantallaTest.test_pantalla" {
+		t.Errorf("selectores = %v", f.Selectores)
+	}
+	if len(f.Nombres) != 1 || !strings.HasPrefix(f.Nombres[0], "test_pantalla (") {
+		t.Errorf("nombres = %v", f.Nombres)
+	}
+	// unittest de antes de 3.11: el paréntesis no trae el método
+	f = falloDe(dir, "integradas", "python -m unittest", "", "ERROR: test_pantalla (apps.docs.tests.test_flujo.PantallaTest)\n")
+	if len(f.Selectores) != 1 || f.Selectores[0] != "apps.docs.tests.test_flujo.PantallaTest.test_pantalla" {
+		t.Errorf("selectores 3.10 = %v", f.Selectores)
+	}
+
+	f = falloDe(dir, "integradas", "pytest", "", "FAILED tests/test_api.py::test_alta - assert 404 == 200\n")
+	if len(f.Pruebas) != 1 || f.Pruebas[0] != "tests/test_api.py" || f.Selectores[0] != "tests/test_api.py::test_alta" {
+		t.Errorf("pytest: pruebas = %v selectores = %v", f.Pruebas, f.Selectores)
+	}
+	// go test da solo el nombre: queda dicho, sin archivo ni selector
+	f = falloDe(dir, "integradas", "go test ./...", "", "--- FAIL: TestSuma (0.00s)\n")
+	if len(f.Nombres) != 1 || f.Nombres[0] != "TestSuma" || len(f.Pruebas)+len(f.Selectores) != 0 {
+		t.Errorf("go: %+v", f)
+	}
+}
+
 func TestFalloDeSacaLasPruebasQueFallaron(t *testing.T) {
-	f := falloDe("integradas", "npx vitest run", "FAIL  tests/screens/tutoriales.test.ts > muestra intro · AssertionError: x · FAIL  tests/screens/tutoriales.test.ts > otra · FAIL  tests/ui/a.test.ts > b")
+	f := falloDe(t.TempDir(), "integradas", "npx vitest run", "FAIL  tests/screens/tutoriales.test.ts > muestra intro · AssertionError: x · FAIL  tests/screens/tutoriales.test.ts > otra · FAIL  tests/ui/a.test.ts > b", "")
 	if len(f.Pruebas) != 2 || f.Pruebas[0] != "tests/screens/tutoriales.test.ts" || f.Pruebas[1] != "tests/ui/a.test.ts" {
 		t.Errorf("pruebas = %v", f.Pruebas)
 	}
