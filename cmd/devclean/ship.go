@@ -27,7 +27,7 @@ func newShipCmd() *cobra.Command {
 	var dryRun bool
 	var todas bool
 	var titulo string
-	var integrar, revisar bool
+	var integrar, revisar, local bool
 	cmd := &cobra.Command{
 		Use:   "ship [id]",
 		Short: "esclusa de salida y PR",
@@ -46,12 +46,12 @@ requests que se pisan entre sí.`,
 				if len(args) > 0 {
 					return errors.New("--todas entrega todas las tareas listas · no lleva id")
 				}
-				return runShipTodas(dryRun, titulo, integrar, revisar)
+				return runShipTodas(dryRun, titulo, integrar, revisar, local)
 			}
 			if len(args) == 0 {
 				return errors.New("falta el id · usa devclean ship T-001 o devclean ship --todas")
 			}
-			return runShip(args[0], dryRun)
+			return runShip(args[0], dryRun, local)
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "corre la esclusa sin abrir el PR")
@@ -59,6 +59,7 @@ requests que se pisan entre sí.`,
 	cmd.Flags().StringVar(&titulo, "titulo", "", "título del PR conjunto (por defecto, el de la primera tarea)")
 	cmd.Flags().BoolVar(&revisar, "revisar", false, "un modelo revisa el diff y deja el informe en el PR; apruebas tú")
 	cmd.Flags().BoolVar(&integrar, "integrar", false, "revisa y, si no pide cambios, mergea el PR por rebase sin esperarte")
+	cmd.Flags().BoolVar(&local, "local", false, "deja el PR en el repo (rama y descripción) aunque haya remoto; igual que entrega: local en config.yml")
 	return cmd
 }
 
@@ -80,7 +81,7 @@ func hashDelSpec(root string) string {
 // listas. Cada una pasa su propia esclusa de salida antes de integrarse:
 // el PR conjunto no baja el listón, solo evita repartirlo en N PRs que
 // después hay que mergear en el orden correcto a mano.
-func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
+func runShipTodas(dryRun bool, titulo string, integrar, revisar, local bool) error {
 	root, err := projectRoot()
 	if err != nil {
 		return err
@@ -93,6 +94,9 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar bool) error {
 	cfg, err := config.Load(root)
 	if err != nil {
 		return err
+	}
+	if local {
+		cfg.Entrega = config.EntregaLocal
 	}
 	tareas, err := task.List(config.TasksDir(root))
 	if err != nil {
@@ -267,7 +271,7 @@ func revisorDelProyecto(root string, cfg config.Config) (ship.Revisor, error) {
 	return revisorAgente{gen: generadorPlan{ex: ex, modelo: modelo, root: root}}, nil
 }
 
-func runShip(id string, dryRun bool) error {
+func runShip(id string, dryRun, local bool) error {
 	if err := validTaskID(id); err != nil {
 		return err
 	}
@@ -283,6 +287,9 @@ func runShip(id string, dryRun bool) error {
 	cfg, err := config.Load(root)
 	if err != nil {
 		return err
+	}
+	if local {
+		cfg.Entrega = config.EntregaLocal
 	}
 	t, err := task.Load(config.TasksDir(root), id)
 	if err != nil {

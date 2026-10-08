@@ -51,11 +51,11 @@ func runBoard() error {
 		// que la salida sea la misma que si se hubiera tecleado
 		switch accion.Tipo {
 		case tui.AccionEntregar:
-			return runShip(accion.ID, true)
+			return runShip(accion.ID, true, false)
 		case tui.AccionReintentar:
 			return reintentarTarea(root, accion.ID)
 		case tui.AccionEntregarTodas:
-			return runShipTodas(false, "", false, false)
+			return runShipTodas(false, "", false, false, false)
 		}
 		return nil
 	}

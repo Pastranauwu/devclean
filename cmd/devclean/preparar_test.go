@@ -126,7 +126,7 @@ func TestCommitInicialPreguntaSiHayArchivosAjenos(t *testing.T) {
 func TestPrepararEntregaSinRemoto(t *testing.T) {
 	root := repoTemporal(t)
 	out = ui.New(io.Discard, false)
-	if err := prepararEntrega(root); err != nil {
+	if err := prepararEntrega(root, config.Config{}); err != nil {
 		t.Errorf("sin remoto la entrega es local, no un error: %v", err)
 	}
 }

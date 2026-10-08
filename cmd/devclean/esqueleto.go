@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -55,6 +56,41 @@ const notaRelleno = "Primero escribe la prueba del archivo que corre listo_cuand
 
 const notaRellenoExamen = "Un examinador independiente escribe la prueba visible desde las firmas y Casos: del esqueleto antes de que empieces. No edites pruebas: implementa los stubs que lanzan \"" + esqueleto.Marca + "\" siguiendo la Idea: del contrato y haz pasar listo_cuando. Mantén firmas y exportaciones. Al terminar, reduce los comentarios de contrato a documentación útil y borra Idea: y Casos:."
 
+// soltarSinRastro descarta el cuarto y la rama de una tarea que no dejó
+// nada en .devclean/runs: son de otra corrida, no de esta. Los cuartos
+// viven fuera del repo y las ramas sobreviven a un reset; con .devclean
+// borrado, los ids se repiten y Ensure reusaba el trabajo de la corrida
+// anterior como si fuera el de la tarea nueva, que al integrar chocaba
+// con su propia versión vieja. Toda tarea que corrió, y el
+// esqueleto cortado que se retoma, tiene su carpeta en runs.
+func soltarSinRastro(ctx context.Context, root, id string) {
+	if _, err := os.Stat(filepath.Join(loop.RunsDir(root), id)); err == nil {
+		return
+	}
+	if !room.RamaExiste(ctx, root, id) {
+		return
+	}
+	if err := room.Destroy(ctx, root, id); err != nil {
+		out.Line("· %s tiene una rama de otra corrida que no se pudo descartar · %s", id, err)
+		return
+	}
+	out.Line("· %s tenía cuarto y rama de otra corrida · descartados", id)
+}
+
+// exigeDocker decide si el arquitecto escribe y verifica el despliegue con
+// docker. Por defecto solo en un proyecto que se genera desde cero: un repo
+// que ya tiene código decidió cómo se despliega, y exigirle compose.yaml
+// hizo que el arquitecto borrara el docker-compose.yml de un Django en uso
+// y reescribiera su Dockerfile y su README. "sin docker" lo apaga y "con
+// docker" lo pide sobre código existente.
+func exigeDocker(pedido string, vacio bool) bool {
+	p := strings.ToLower(pedido)
+	if strings.Contains(p, "sin docker") {
+		return false
+	}
+	return vacio || strings.Contains(p, "con docker")
+}
+
 // planearEsqueleto es el camino de requirements: el modelo grande
 // escribe el esqueleto en el cuarto de la primera tarea, devclean lo
 // verifica sin modelo y lo deja como tarea `lista`; cada módulo stub
@@ -81,6 +117,9 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	ctx := context.Background()
 	// Ensure y no Create: si una corrida anterior del arquitecto se cortó
 	// o no pasó la verificación, lo que escribió sigue ahí y se corrige
+	room.Aviso = func(m string) { out.Line("· %s …", m) }
+	defer func() { room.Aviso = nil }()
+	soltarSinRastro(ctx, root, id)
 	r, err := room.Ensure(ctx, root, id, cfg.Base)
 	if err != nil {
 		return err
@@ -93,11 +132,17 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	}
 	// docker por defecto: el humano lo apaga en sus reglas ("sin docker")
 	// cuando lo que se construye no se despliega (una librería, un CLI)
-	sinDocker := strings.Contains(strings.ToLower(pedido), "sin docker")
+	sinDocker := !exigeDocker(pedido, pctx.EsVacio)
+	if !pctx.EsVacio && sinDocker && !strings.Contains(strings.ToLower(pedido), "sin docker") {
+		out.Line("· el repo ya tiene código · no se exige docker · pídelo con \"con docker\" en el spec")
+	}
 	// cómo se ve hoy, si ya se sabe levantar: el arquitecto planea un
 	// cambio visual contra la pantalla, no contra el código
 	antes := tomarCapturas(ctx, r.Path, cfg.Pantallas, r.Puerto, filepath.Join(loop.RunsDir(root), id, "antes"))
-	original := esqueleto.Prompt(esqueleto.Pedido{Texto: pedido, Previo: previo, PrimerID: ids[1], SinDocker: sinDocker, Capturas: antes}, pctx)
+	pd := esqueleto.Pedido{Texto: pedido, Previo: previo, PrimerID: ids[1], SinDocker: sinDocker, Capturas: antes}
+	// la respuesta guardada se busca por el pedido sin el estado de la
+	// suite: su salida cambia por tiempos y tiraría un plan ya pagado
+	clave := esqueleto.Prompt(pd, pctx)
 
 	modelo, respaldo := arquitectos(cfg, previo != "")
 	ex = ejecutorPara(ex, modelo)
@@ -112,8 +157,26 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 	reg := ventanas.Nuevo(ventanas.LedgerPath(), cfg.PresupuestoVentanas)
 
 	var res esqueleto.Resultado
+	// sesion es la conversación del arquitecto: una corrección la continúa
+	// en vez de releer el repo desde cero, que cuesta decenas de turnos
+	// para un cambio de pocas líneas. Solo claude la da; con otro CLI queda vacía.
+	guardada, sesion := respuestaEsqueleto(root, id, clave)
+	// con código y sin plan pagado: ¿la suite ya falla en la base? Se
+	// mira en el cuarto recién creado; uno retomado ya trae cambios
+	if sucio, _ := gitEn(r.Path, "status", "--porcelain"); guardada == "" && !pctx.EsVacio && strings.TrimSpace(cfg.Pruebas) != "" && strings.TrimSpace(sucio) == "" {
+		out.Line("· corriendo la suite en la base antes de planear · %s …", cfg.Pruebas)
+		if pd.SuiteRota = esqueleto.SuiteBase(ctx, r.Path, cfg.Pruebas, pruebaTimeout, room.Entorno(r.Path)); pd.SuiteRota != "" {
+			ultima := pd.SuiteRota[strings.LastIndex(pd.SuiteRota, "⏎")+1:]
+			out.Line("· la suite ya falla en %s antes de cualquier cambio · %s", cfg.Base, strings.TrimSpace(strings.TrimPrefix(ultima, "⏎")))
+			out.Line("· el arquitecto lo recibe como dato · si es algo de la base, arreglarlo ahí primero (ctrl+c) sale más barato")
+		}
+	}
+	original := esqueleto.Prompt(pd, pctx)
 	prompt := original
-	guardada := respuestaEsqueleto(root, id, original)
+	if ex.Name() != "claude" {
+		sesion = ""
+	}
+	var problemas []string
 	// correcciones cuenta las del modelo actual: al subir al planificador
 	// arranca de cero, con lo que el modelo medio dejó en el cuarto
 	correcciones := 0
@@ -130,7 +193,7 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 			texto, err = guardada, nil
 		} else {
 			err = esperarPlan(titulo, func(avance func(string)) error {
-				out, err := ex.Run(ctx, executor.Request{
+				req := executor.Request{
 					RoomPath: r.Path,
 					Prompt:   prompt,
 					Model:    modelo,
@@ -138,15 +201,33 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 					Env:      room.Entorno(r.Path),
 					Effort:   "medium",
 					Avance:   avance,
-				})
-				guardarLogEsqueleto(root, id, vuelta, prompt, out)
+					TopeUSD:  cfg.TopeArquitectoUSD,
+				}
+				if vuelta > 0 && sesion != "" {
+					req.Sesion, req.Prompt = sesion, esqueleto.PromptCorregirSesion(problemas)
+				}
+				out, err := ex.Run(ctx, req)
+				guardarLogEsqueleto(root, id, vuelta, req.Prompt, out)
 				reg.Registrar(ex.Name(), tokensDe(out.Tokens).Gasto())
+				// la sesión ya no existe (se borró ~/.claude, cambió el
+				// cuarto): cero turnos. Se corrige como antes, de cero
+				if req.Sesion != "" && out.Tokens.Turns == 0 && !errors.Is(err, executor.ErrTope) {
+					avance("la sesión del arquitecto ya no existe · corrige desde cero")
+					req.Sesion, req.Prompt = "", prompt
+					out, err = ex.Run(ctx, req)
+					guardarLogEsqueleto(root, id, vuelta, req.Prompt, out)
+					reg.Registrar(ex.Name(), tokensDe(out.Tokens).Gasto())
+				}
+				sesion = out.Sesion
 				if out.Text != "" {
-					guardarRespuestaEsqueleto(root, id, original, out.Text)
+					guardarRespuestaEsqueleto(root, id, clave, out.Text, sesion)
 				}
 				texto = out.Text
 				return err
 			})
+		}
+		if errors.Is(err, executor.ErrTope) {
+			return fmt.Errorf("el arquitecto no terminó · %w · sube tope_arquitecto_usd en .devclean/config.yml o acota el spec · lo escrito sigue en %s", err, r.Path)
 		}
 		if err != nil {
 			return fmt.Errorf("el arquitecto no terminó · %w · lo escrito sigue en %s, vuelve a correr para que lo corrija", err, r.Path)
@@ -155,7 +236,7 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 		// (package.json nuevo, pyproject) también tiene que estar. Si no
 		// instala es un error del arquitecto (un paquete que no existe):
 		// se le devuelve para que lo corrija, no se tira lo pagado
-		var problemas []string
+		problemas = nil
 		if err := room.InstalarDependencias(ctx, r.Path); err != nil {
 			problemas = append(problemas, "las dependencias no instalan (corrige el manifiesto: quita o reemplaza lo que no existe en el registro): "+err.Error())
 		}
@@ -207,6 +288,7 @@ func planearEsqueleto(root string, s *spec.Spec, pedido string) error {
 			out.Line("· %s no dejó un esqueleto válido · sube a %s, que corrige sobre lo ya escrito", modelo, respaldo)
 			modelo, respaldo, correcciones = respaldo, "", 0
 			ex = ejecutorPara(ex, modelo)
+			sesion = "" // otro modelo: conversación nueva sobre lo ya escrito
 		}
 		correcciones++
 		for _, p := range problemas {
@@ -414,21 +496,22 @@ func rutaRespuestaEsqueleto(root, id string) string {
 }
 
 // respuestaEsqueleto es la última respuesta del arquitecto para este
-// mismo pedido, "" si no hay o si el spec cambió desde entonces.
-func respuestaEsqueleto(root, id, pedido string) string {
+// mismo pedido y la sesión del CLI que la dio; "" si no hay o si el spec
+// cambió desde entonces.
+func respuestaEsqueleto(root, id, pedido string) (texto, sesion string) {
 	b, err := os.ReadFile(rutaRespuestaEsqueleto(root, id))
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	var g struct{ Prompt, Texto string }
+	var g struct{ Prompt, Texto, Sesion string }
 	if json.Unmarshal(b, &g) != nil || g.Prompt != fmt.Sprintf("%x", sha256.Sum256([]byte(pedido))) {
-		return ""
+		return "", ""
 	}
-	return g.Texto
+	return g.Texto, g.Sesion
 }
 
-func guardarRespuestaEsqueleto(root, id, pedido, texto string) {
-	b, _ := json.Marshal(struct{ Prompt, Texto string }{fmt.Sprintf("%x", sha256.Sum256([]byte(pedido))), texto})
+func guardarRespuestaEsqueleto(root, id, pedido, texto, sesion string) {
+	b, _ := json.Marshal(struct{ Prompt, Texto, Sesion string }{fmt.Sprintf("%x", sha256.Sum256([]byte(pedido))), texto, sesion})
 	_ = os.WriteFile(rutaRespuestaEsqueleto(root, id), b, 0o644)
 }
 

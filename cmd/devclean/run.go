@@ -23,6 +23,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/recurse"
 	"github.com/Pastranauwu/devclean/internal/revisor"
 	"github.com/Pastranauwu/devclean/internal/room"
+	"github.com/Pastranauwu/devclean/internal/ship"
 	"github.com/Pastranauwu/devclean/internal/skills"
 	"github.com/Pastranauwu/devclean/internal/standup"
 	"github.com/Pastranauwu/devclean/internal/state"
@@ -88,6 +89,9 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 	tareas, err := task.List(config.TasksDir(root))
 	if err != nil {
 		return err
+	}
+	for _, t := range tareas {
+		soltarSinRastro(context.Background(), root, t.ID)
 	}
 
 	var pendientes, existentes []task.Task
@@ -157,6 +161,9 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 		}
 		out.Line("sin tareas pendientes · empieza con devclean task add \"lo que necesitas\"")
 		return nil
+	}
+	if perdidas := verdesPerdidas(context.Background(), root, cfg.Base, pendientes); len(perdidas) > 0 {
+		return fmt.Errorf("%s figuran listas pero su rama ya no existe y su trabajo no está en %s · las tareas que dependen de ellas arrancarían sin ese código · borra .devclean y replanea con devclean up, o quítalas con devclean task rm si ya están entregadas", strings.Join(perdidas, ", "), cfg.Base)
 	}
 	if len(detenidas) > 0 {
 		out.Line("· reintentando %s · se reusa el cuarto y el trabajo parcial de cada una", strings.Join(detenidas, ", "))
@@ -481,6 +488,36 @@ func sembrarVerdesPrevias(ctx context.Context, root string, aprobadas []task.Tas
 		integrada[id] = true
 	}
 	return results
+}
+
+// verdesPerdidas devuelve las dependencias de las tareas por correr que
+// están `lista` sin rama y sin su trabajo en la base. sembrarVerdesPrevias
+// lee "lista y sin rama" como "ya entregada"; con las ramas borradas a
+// mano eso mandó a los agentes a escribir encima de un esqueleto que no
+// estaba: verdes contra módulos inexistentes y tareas sin salida.
+func verdesPerdidas(ctx context.Context, root, base string, porCorrer []task.Task) []string {
+	var entregadas map[string]bool
+	vistas := map[string]bool{}
+	var perdidas []string
+	for _, t := range porCorrer {
+		for _, d := range t.DependeDe {
+			if vistas[d] {
+				continue
+			}
+			vistas[d] = true
+			if s, err := state.Get(root, d); err != nil || s.Estado != state.Lista || room.RamaExiste(ctx, root, d) {
+				continue
+			}
+			if entregadas == nil {
+				entregadas = ship.Entregadas(ctx, root, base)
+			}
+			if !entregadas[d] {
+				perdidas = append(perdidas, d)
+			}
+		}
+	}
+	sort.Strings(perdidas)
+	return perdidas
 }
 
 // depsVerdes reporta si todas las dependencias de una tarea ya salieron

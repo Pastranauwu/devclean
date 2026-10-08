@@ -122,6 +122,13 @@ func prepararEntornoConCLI(cwd string, in io.Reader, entregar bool, cliPreferido
 		}
 		guardar = true
 	}
+	// los cuartos salen de la base y la entrega va a ella: en otra rama,
+	// lo que hay aquí no lo ven los agentes
+	if actual, err := gitEn(root, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil {
+		if actual = strings.TrimSpace(actual); actual != "" && actual != cfg.Base && !strings.HasPrefix(actual, "devclean/") {
+			out.Line("· estás en %s pero la base es %s · los agentes parten de %s y ahí se entrega · cambia `base:` en .devclean/config.yml si no es lo que quieres", actual, cfg.Base, cfg.Base)
+		}
+	}
 
 	// 4. commit inicial: los cuartos son worktrees y sin commit no nacen
 	if _, err := gitEn(root, "rev-parse", "--verify", "--quiet", "HEAD"); err != nil {
@@ -186,7 +193,7 @@ func prepararEntornoConCLI(cwd string, in io.Reader, entregar bool, cliPreferido
 
 	// 8. entrega: fallar acá, antes de gastar un token, no al final
 	if entregar {
-		if err := prepararEntrega(root); err != nil {
+		if err := prepararEntrega(root, cfg); err != nil {
 			return "", config.Config{}, err
 		}
 	}
@@ -260,7 +267,10 @@ func instalarEjecutor(lector *bufio.Reader) (executor.Executor, error) {
 // prepararEntrega verifica lo que `ship` necesita. Sin remoto origin el PR
 // es local (rama + descripción en .devclean/pr/) y no hace falta nada más;
 // con remoto, gh abre el PR y tiene que estar instalado.
-func prepararEntrega(root string) error {
+func prepararEntrega(root string, cfg config.Config) error {
+	if cfg.Entrega == config.EntregaLocal {
+		return nil
+	}
 	if _, err := gitEn(root, "remote", "get-url", "origin"); err != nil {
 		out.Line("· sin remoto origin · el PR queda local: la rama y su descripción en .devclean/pr/")
 		return nil

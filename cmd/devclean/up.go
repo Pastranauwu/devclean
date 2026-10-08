@@ -12,7 +12,7 @@ func newUpCmd() *cobra.Command {
 	var file string
 	var agentes int
 	var modelo, ejecutor, titulo string
-	var reintentar, entregar, integrar, revisar, fondo bool
+	var reintentar, entregar, integrar, revisar, fondo, local bool
 
 	cmd := &cobra.Command{
 		Use:   `up ["<petición>"]`,
@@ -35,7 +35,7 @@ pregunta solo cuando no puede resolverlo solo.`,
   devclean up -f specs/auth.yml`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, _, err := entornoListoConCLI(entregar || integrar || revisar, ejecutor)
+			root, _, err := entornoListoConCLI((entregar || integrar || revisar) && !local, ejecutor)
 			if err != nil {
 				return err
 			}
@@ -98,7 +98,7 @@ pregunta solo cuando no puede resolverlo solo.`,
 				return nil
 			}
 			out.Line("")
-			return runShipTodas(false, titulo, integrar, revisar)
+			return runShipTodas(false, titulo, integrar, revisar, local)
 		},
 	}
 
@@ -110,6 +110,7 @@ pregunta solo cuando no puede resolverlo solo.`,
 	cmd.Flags().BoolVar(&entregar, "ship", false, "al terminar, entrega todas las tareas listas en un solo PR")
 	cmd.Flags().BoolVar(&revisar, "revisar", false, "además de entregar, un modelo revisa el diff y deja el informe en el PR")
 	cmd.Flags().BoolVar(&integrar, "integrar", false, "además de revisar, mergea el PR si el revisor no pide cambios")
+	cmd.Flags().BoolVar(&local, "local", false, "la entrega queda como PR local (rama y descripción en el repo) aunque haya remoto")
 	cmd.Flags().StringVar(&titulo, "titulo", "", "título del PR (por defecto, la petición)")
 	cmd.Flags().BoolVar(&fondo, "fondo", false, "desprende todo el encadenado de la terminal y devuelve el control; sigue corriendo si la cierras")
 
