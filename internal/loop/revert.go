@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/Pastranauwu/devclean/internal/config"
 )
@@ -23,28 +24,51 @@ import (
 // las pruebas que el propio agente se escribió —o cualquier archivo
 // fuera de alcance— viajaban al PR. Vacío cae de vuelta a HEAD.
 func revertFueraDeAlcance(roomPath, antes string, tocarSolo, patrones []string) ([]string, error) {
+	revertidos, _, err := revertirConParche(roomPath, antes, tocarSolo, patrones)
+	return revertidos, err
+}
+
+// revertirConParche es revertFueraDeAlcance y además devuelve, como
+// parche de git, lo que el agente cambió fuera de su alcance en archivos
+// que no son prueba. Es lo que la tarea necesitó y no era suyo: casi
+// siempre algo roto en la base, que el agente arregla y la reversión
+// deshace en cada intento. Se guarda para que el humano lo aplique donde va.
+func revertirConParche(roomPath, antes string, tocarSolo, patrones []string) ([]string, string, error) {
 	files, err := statusFiles(roomPath)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if antes != "" {
 		commiteados, err := filesSince(roomPath, antes)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		files = unir(files, commiteados)
 	}
+	fuente := antes
+	if fuente == "" {
+		fuente = "HEAD"
+	}
 	var revertidos []string
+	var parche strings.Builder
 	for _, f := range files {
 		if enAlcance(f, tocarSolo) && !esPrueba(f, patrones) {
 			continue
 		}
+		if !esPrueba(f, patrones) {
+			d, _ := gitRun(roomPath, "diff", fuente, "--", f)
+			if d == "" {
+				// sin seguimiento: diff no lo ve; --no-index sale con 1 y el parche
+				d, _ = gitRun(roomPath, "diff", "--no-index", "--", os.DevNull, f)
+			}
+			parche.WriteString(d)
+		}
 		if err := revertir(roomPath, antes, f); err != nil {
-			return revertidos, err
+			return revertidos, parche.String(), err
 		}
 		revertidos = append(revertidos, f)
 	}
-	return revertidos, nil
+	return revertidos, parche.String(), nil
 }
 
 // enAlcance reporta si un archivo cae dentro de tocar_solo. Vacío

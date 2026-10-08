@@ -3,6 +3,7 @@ package loop
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Pastranauwu/devclean/internal/config"
@@ -216,5 +217,54 @@ func TestConPruebasPropiasAbreElArchivoDelListoCuando(t *testing.T) {
 		if config.MatchesAny(alcance, "frontend/src/otra.test.ts") {
 			t.Errorf("%q: abrió pruebas ajenas: %v", c.listo, alcance)
 		}
+	}
+}
+
+// Lo que el agente cambia fuera de su alcance se revierte, pero queda
+// como parche: suele ser el arreglo de algo roto en la base.
+func TestRevertirConParcheGuardaLoQueNoEraSuyo(t *testing.T) {
+	root := t.TempDir()
+	for _, args := range [][]string{{"init", "-q"}, {"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"}} {
+		if out, err := gitRun(root, args...); err != nil {
+			t.Fatal(out)
+		}
+	}
+	escribir := func(rel, texto string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(texto), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	escribir("base/roto.py", "x = 1\n")
+	gitRun(root, "add", "-A")
+	gitRun(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "base")
+
+	escribir("base/roto.py", "x = 2\n")  // arreglo fuera de alcance
+	escribir("base/nuevo.py", "y = 1\n") // archivo nuevo fuera de alcance
+	escribir("src/mio.py", "z = 1\n")    // dentro
+	revertidos, parche, err := revertirConParche(root, "HEAD", []string{"src/**"}, []string{"test_*.py"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revertidos) != 2 {
+		t.Fatalf("revertidos = %v", revertidos)
+	}
+	for _, quiere := range []string{"+x = 2", "+y = 1"} {
+		if !strings.Contains(parche, quiere) {
+			t.Errorf("el parche no trae %q:\n%s", quiere, parche)
+		}
+	}
+	if strings.Contains(parche, "mio.py") {
+		t.Error("lo que está dentro del alcance no va al parche")
+	}
+	// el parche aplica sobre la base tal como quedó tras revertir
+	if err := os.WriteFile(filepath.Join(root, "p.patch"), []byte(parche), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := gitRun(root, "apply", "--check", "p.patch"); err != nil {
+		t.Errorf("el parche no aplica · %s", out)
 	}
 }

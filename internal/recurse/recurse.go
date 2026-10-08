@@ -674,9 +674,9 @@ func listoPadreVerde(ctx context.Context, dir, cmd string, timeoutSeg int) bool 
 
 	var c *exec.Cmd
 	if runtime.GOOS == "windows" {
-		c = exec.CommandContext(ctx, "cmd", "/c", cmd)
+		c = exec.CommandContext(ctx, "cmd", "/c", task.SinTerminal(cmd))
 	} else {
-		c = exec.CommandContext(ctx, "sh", "-c", cmd)
+		c = exec.CommandContext(ctx, "sh", "-c", task.SinTerminal(cmd))
 	}
 	c.Dir = dir
 	var salida strings.Builder

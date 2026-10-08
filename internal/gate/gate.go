@@ -218,9 +218,9 @@ func checkFallaHoy(ctx context.Context, root, listoCuando string, timeout time.D
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/c", listoCuando)
+		cmd = exec.CommandContext(ctx, "cmd", "/c", task.SinTerminal(listoCuando))
 	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-c", listoCuando)
+		cmd = exec.CommandContext(ctx, "sh", "-c", task.SinTerminal(listoCuando))
 	}
 	cmd.Dir = root
 

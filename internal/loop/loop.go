@@ -391,9 +391,16 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		var detener *ErrDetener
 		errors.As(agentErr, &detener)
 
-		revertidos, err := revertFueraDeAlcance(o.Room.Path, antes, o.Task.TocarSolo, o.PatronesPrueba)
+		revertidos, parche, err := revertirConParche(o.Room.Path, antes, o.Task.TocarSolo, o.PatronesPrueba)
 		if err != nil {
 			return Outcome{}, err
+		}
+		parcheRel := ""
+		if parche != "" {
+			parcheRel = filepath.Join(".devclean", "runs", o.Task.ID, "fuera-de-alcance.patch")
+			if os.WriteFile(filepath.Join(o.Root, parcheRel), []byte(parche), 0o644) != nil {
+				parcheRel = ""
+			}
 		}
 		// indexar lo que queda (todo dentro de alcance) para que los
 		// archivos nuevos del intento cuenten en el diff
@@ -612,6 +619,9 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 			motivo := "sin progreso: el intento no dejó cambios dentro del alcance · revisa el contrato"
 			if len(revertidos) > 0 {
 				motivo = fmt.Sprintf("sin progreso: el agente solo tocó archivos fuera de tocar_solo (%s) y se revirtieron · agrégalos a tocar_solo si la tarea los necesita", strings.Join(revertidos, ", "))
+				if parcheRel != "" {
+					motivo += fmt.Sprintf(" · si arregla algo que ya estaba roto en la base, su cambio quedó en %s: aplícalo en la base con git apply, haz commit y reintenta", parcheRel)
+				}
 			}
 			return Outcome{Intentos: intento, UltimoError: resumenFallo(o.Task.ListoCuando, code, salida), Pregunta: motivo, NoEscalar: len(revertidos) > 0 || PruebaNoCorrio(o.Task.ListoCuando, code, salida)}, nil
 		}
@@ -706,9 +716,9 @@ func runPrueba(ctx context.Context, dir, cmdStr string, timeout time.Duration, e
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/c", cmdStr)
+		cmd = exec.CommandContext(ctx, "cmd", "/c", task.SinTerminal(cmdStr))
 	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
+		cmd = exec.CommandContext(ctx, "sh", "-c", task.SinTerminal(cmdStr))
 	}
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
