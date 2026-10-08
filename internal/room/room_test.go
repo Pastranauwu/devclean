@@ -278,6 +278,230 @@ func TestInstalaEnVenvSinPip(t *testing.T) {
 	}
 }
 
+// el cuarto se creaba con el python del sistema y no con el del .venv
+// del repo: versiones fijadas para uno no tienen wheels en el otro
+func TestPythonDeUsaElVenvDelRepoPrincipal(t *testing.T) {
+	root, err := filepath.EvalSymlinks(repoConCommit(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pythonDe(context.Background(), root); got != pythonSistema() {
+		t.Fatalf("sin .venv = %q, quiero el del sistema", got)
+	}
+	py := filepath.Join(root, "backend", ".venv", binVenv(), "python")
+	if err := os.MkdirAll(filepath.Dir(py), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(py, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cuarto := filepath.Join(t.TempDir(), "c")
+	gitCmd(t, root, "worktree", "add", "-q", cuarto)
+	sub := filepath.Join(cuarto, "backend")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := pythonDe(context.Background(), sub); got != py {
+		t.Fatalf("pythonDe = %q, quiero %q", got, py)
+	}
+	if got := pythonDe(context.Background(), cuarto); got != pythonSistema() {
+		t.Fatalf("raíz sin .venv = %q, quiero el del sistema", got)
+	}
+}
+
+// un arreglo hecho en la base tiene que llegar al cuarto reusado, o
+// reintenta contra lo mismo
+func TestEnsureTraeLosCambiosDeLaBase(t *testing.T) {
+	root := repoConCommit(t)
+	ctx := context.Background()
+	r, err := Create(ctx, root, "T-001", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := func(dir, archivo string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, archivo), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitCmd(t, dir, "add", "-A")
+		gitCmd(t, dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", archivo)
+	}
+	commit(r.Path, "propio.txt")
+	commit(root, "arreglo.txt")
+
+	otra, err := Ensure(ctx, root, "T-001", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists(filepath.Join(r.Path, "arreglo.txt")) || !exists(filepath.Join(r.Path, "propio.txt")) {
+		t.Fatal("el cuarto no tiene el arreglo de la base junto a su trabajo")
+	}
+	// el arreglo no cuenta como trabajo de la tarea: no se revierte por alcance
+	if out, _ := gitOut(t, r.Path, "diff", "--name-only", otra.Commit, "HEAD"); out != "propio.txt" {
+		t.Fatalf("diff propio = %q, quiero solo propio.txt", out)
+	}
+}
+
+// el agente arregla un archivo fuera de alcance, la reversión lo deshace,
+// y el mismo arreglo hecho en la base choca con esos commits intermedios:
+// el rebase abortaba en silencio y el cuarto nunca lo veía
+func TestEnsureAplanaSiElRebaseChocaEnCommitsIntermedios(t *testing.T) {
+	root := repoConCommit(t)
+	ctx := context.Background()
+	commit := func(dir, archivo, texto string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, archivo), []byte(texto), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitCmd(t, dir, "add", "-A")
+		gitCmd(t, dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", archivo)
+	}
+	commit(root, "ajeno.txt", "roto\n")
+	r, err := Create(ctx, root, "T-001", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit(r.Path, "ajeno.txt", "arreglo del agente\n")
+	commit(r.Path, "ajeno.txt", "roto\n") // la reversión de alcance
+	commit(r.Path, "propio.txt", "x\n")
+	commit(root, "ajeno.txt", "arreglo de la base\n")
+
+	otra, err := Ensure(ctx, root, "T-001", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(r.Path, "ajeno.txt")); string(b) != "arreglo de la base\n" {
+		t.Fatalf("el cuarto no ve el arreglo de la base: %q", b)
+	}
+	if out, _ := gitOut(t, r.Path, "diff", "--name-only", otra.Commit, "HEAD"); out != "propio.txt" {
+		t.Fatalf("diff propio = %q, quiero solo propio.txt", out)
+	}
+}
+
+// si el trabajo neto del cuarto choca de verdad, se queda como estaba y avisa
+func TestEnsureAvisaSiNoPuedeSubirALaBaseNueva(t *testing.T) {
+	root := repoConCommit(t)
+	ctx := context.Background()
+	commit := func(dir, texto string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte(texto), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitCmd(t, dir, "add", "-A")
+		gitCmd(t, dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "a")
+	}
+	r, err := Create(ctx, root, "T-001", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit(r.Path, "cuarto\n")
+	commit(root, "base\n")
+	var avisos []string
+	Aviso = func(s string) { avisos = append(avisos, s) }
+	defer func() { Aviso = nil }()
+
+	otra, err := Ensure(ctx, root, "T-001", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(r.Path, "a.txt")); string(b) != "cuarto\n" || otra.Commit != r.Commit {
+		t.Fatalf("el cuarto cambió: a.txt=%q commit %s → %s", b, r.Commit, otra.Commit)
+	}
+	if len(avisos) == 0 || !strings.Contains(strings.Join(avisos, "|"), "choca con la base nueva") {
+		t.Fatalf("no avisó: %q", avisos)
+	}
+}
+
+// el .env ignorado no viajaba al cuarto y una suite que lee su
+// configuración del entorno moría antes de probar nada
+func TestCreateTraeLosEnvIgnorados(t *testing.T) {
+	root := repoConCommit(t)
+	escribir := func(rel, texto string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(texto), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	escribir(".gitignore", ".env\n.env.production\n.env.delivery\n")
+	escribir(".env.example", "NAME=\n")
+	escribir("backend/app.py", "")
+	escribir("requirements.txt", "")
+	gitCmd(t, root, "add", "-A")
+	gitCmd(t, root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "base")
+	escribir(".env", "NAME=raiz\n")
+	escribir("backend/.env", "NAME=backend\n")
+	escribir(".env.local", "sin ignorar\n")
+	escribir(".env.production", "NAME=real\n")
+	escribir(".env.delivery", "NAME=reparto\n")
+
+	r, err := Create(context.Background(), root, "T-001", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rel, quiero := range map[string]string{".env": "NAME=raiz\n", "backend/.env": "NAME=backend\n", ".env.example": "NAME=\n", ".env.delivery": "NAME=reparto\n"} {
+		if b, _ := os.ReadFile(filepath.Join(r.Path, rel)); string(b) != quiero {
+			t.Errorf("%s = %q, quiero %q", rel, b, quiero)
+		}
+	}
+	if exists(filepath.Join(r.Path, ".env.local")) {
+		t.Error(".env.local no está ignorado y se copió: git add -A lo subiría")
+	}
+	if exists(filepath.Join(r.Path, ".env.production")) {
+		t.Error(".env.production se copió: el agente leería secretos de producción")
+	}
+	if out, _ := gitOut(t, r.Path, "status", "--porcelain"); out != "" {
+		t.Errorf("el cuarto quedó sucio:\n%s", out)
+	}
+	// lo que el agente cambió en el cuarto no se pisa al reusarlo
+	if err := os.WriteFile(filepath.Join(r.Path, ".env"), []byte("NAME=cuarto\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Ensure(context.Background(), root, "T-001", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(r.Path, ".env")); string(b) != "NAME=cuarto\n" {
+		t.Errorf("Ensure pisó el .env del cuarto: %q", b)
+	}
+}
+
+// un cuarto reusado con un .venv de otro python se rehace, o la
+// instalación sigue fallando aunque el repo tenga el suyo
+func TestVenvDeOtraVersionSeRehace(t *testing.T) {
+	if _, err := exec.LookPath("uv"); err != nil {
+		t.Skip("sin uv")
+	}
+	root, err := filepath.EvalSymlinks(repoConCommit(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// la versión del repo tiene que ser distinta a la del sistema
+	otra := "3.12"
+	if versionPython(ctx, root, pythonSistema()) == otra {
+		otra = "3.13"
+	}
+	if out, err := exec.Command("uv", "venv", "-q", "--python", otra, filepath.Join(root, ".venv")).CombinedOutput(); err != nil {
+		t.Skipf("uv no consigue python %s: %s", otra, out)
+	}
+	cuarto := filepath.Join(t.TempDir(), "c")
+	gitCmd(t, root, "worktree", "add", "-q", cuarto)
+	if out, err := exec.Command(pythonSistema(), "-m", "venv", filepath.Join(cuarto, ".venv")).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(cuarto, "requirements.txt"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstalarDependencias(ctx, cuarto); err != nil {
+		t.Fatal(err)
+	}
+	if got := versionPython(ctx, cuarto, filepath.Join(cuarto, ".venv", binVenv(), "python")); got != otra {
+		t.Fatalf("venv del cuarto = python %s, quiero %s", got, otra)
+	}
+}
+
 // un cuarto que sobrevive sin archivo de estado (el esqueleto lo guarda
 // al terminar) tiene que seguir sabiendo desde dónde arrancó
 func TestEnsureSinEstadoRecuperaElPuntoDePartida(t *testing.T) {

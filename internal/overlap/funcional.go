@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Pastranauwu/devclean/internal/room"
+	"github.com/Pastranauwu/devclean/internal/task"
 )
 
 // TimeoutSuitePorDefecto es lo que se le da a cada suite sobre la fusión
@@ -162,7 +163,7 @@ func commitDeArbol(ctx context.Context, root, arbol, ramaA, ramaB string) (strin
 func correrSuite(ctx context.Context, dir, listoCuando string, timeout time.Duration) (bool, string) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", listoCuando)
+	cmd := exec.CommandContext(ctx, "sh", "-c", task.SinTerminal(listoCuando))
 	cmd.Env = append(os.Environ(), room.Entorno(dir)...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()

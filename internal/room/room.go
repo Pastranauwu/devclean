@@ -14,7 +14,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/Pastranauwu/devclean/internal/state"
 )
@@ -169,7 +171,19 @@ func Create(ctx context.Context, root, id, base string) (Room, error) {
 	}
 
 	if err := InstalarDependencias(ctx, r.Path); err != nil {
-		return fail(err)
+		// el cuarto hereda un entorno que ya se verificó en el cuarto del
+		// que parte: que pip no resuelva el manifiesto desde cero no
+		// quiere decir que falte algo. Decide listo_cuando; queda rastro
+		if !heredaDeCuarto(ctx, r.Path) {
+			return fail(err)
+		}
+		rastro := filepath.Join(root, ".devclean", "runs", id)
+		if os.MkdirAll(rastro, 0o755) == nil {
+			_ = os.WriteFile(filepath.Join(rastro, "entorno.log"), []byte(err.Error()+"\n"), 0o644)
+		}
+		if Aviso != nil {
+			Aviso("las dependencias no instalan de cero en " + id + " · sigue con el entorno heredado · " + tail(err.Error()))
+		}
 	}
 	puerto, err := freePort()
 	if err != nil {
@@ -195,6 +209,8 @@ func Ensure(ctx context.Context, root, id, base string) (Room, error) {
 		}
 		return Create(ctx, root, id, base)
 	}
+	// un cuarto de antes de que se copiaran los .env tampoco los tiene
+	traerEntorno(ctx, r.Path)
 	// el cuarto se reusa, así que su punto de partida es el que ya
 	// tenía: recalcularlo desde `base` contaría como propio el trabajo
 	// que hereda de una oleada anterior
@@ -211,12 +227,57 @@ func Ensure(ctx context.Context, root, id, base string) (Room, error) {
 			r.Commit = strings.TrimSpace(h)
 		}
 	}
+	// la base cambió desde que el cuarto arrancó (un arreglo fuera del
+	// alcance de la tarea, verdes nuevos): el trabajo propio se reaplica
+	// encima y el punto de partida pasa a ser la base nueva. Sin esto un
+	// cuarto reusado nunca ve el arreglo y reintenta contra lo mismo. Si
+	// no aplica limpio ni aplanado, el cuarto sigue como estaba y se avisa.
+	if r.Commit != "" && base != "" {
+		if _, err := git(ctx, r.Path, "diff", "--quiet", r.Commit, base); err != nil {
+			_, err := git(ctx, r.Path, "-c", "user.name=devclean", "-c", "user.email=devclean@local", "rebase", "--onto", base, r.Commit)
+			if err != nil {
+				_, _ = git(ctx, r.Path, "rebase", "--abort")
+				err = aplanarSobre(ctx, r.Path, id, base, r.Commit)
+			}
+			if err != nil {
+				if Aviso != nil {
+					Aviso("cuarto " + id + " choca con la base nueva y sigue sobre la anterior · no ve lo que cambió en " + base)
+				}
+			} else if h, err := git(ctx, r.Path, "rev-parse", base+"^{commit}"); err == nil {
+				r.Commit = strings.TrimSpace(h)
+			}
+		}
+	}
 	puerto, err := freePort()
 	if err != nil {
 		return Room{}, err
 	}
 	r.Puerto = puerto
 	return r, nil
+}
+
+// aplanarSobre pone sobre base el trabajo neto del cuarto (desde..HEAD)
+// en un solo commit. Es la salida cuando el rebase choca en commits
+// intermedios que el neto ya no trae: el agente toca un archivo fuera de
+// alcance, la reversión lo deshace, y el arreglo de ese mismo archivo en
+// la base choca con los dos. El árbol se calcula sin tocar el cuarto;
+// solo se mueve si el neto aplica limpio y no hay cambios sin commitear.
+func aplanarSobre(ctx context.Context, path, id, base, desde string) error {
+	if _, err := git(ctx, path, "diff", "--quiet", "HEAD"); err != nil {
+		return err
+	}
+	arbol, err := git(ctx, path, "merge-tree", "--write-tree", "--merge-base="+desde, base, "HEAD")
+	if err != nil {
+		return err
+	}
+	arbol, _, _ = strings.Cut(strings.TrimSpace(arbol), "\n")
+	commit, err := git(ctx, path, "-c", "user.name=devclean", "-c", "user.email=devclean@local",
+		"commit-tree", arbol, "-p", base, "-m", "wip: "+id+" sobre la base nueva")
+	if err != nil {
+		return err
+	}
+	_, err = git(ctx, path, "reset", "--hard", strings.TrimSpace(commit))
+	return err
 }
 
 // Destroy removes the worktree and its branch. Missing pieces are
@@ -269,7 +330,11 @@ func freePort() (int, error) {
 // backend/): las suites fallaban por dependencias o pasaban porque un
 // agente había commiteado node_modules. Un package.json instalado no
 // se vuelve a buscar debajo: los workspaces de npm los resuelve la raíz.
-func InstalarDependencias(ctx context.Context, path string) error {
+//
+// heredarDe son ids de cuartos cuyo .venv se hereda aunque su rama no sea
+// ancestro de path: la rama de entrega trae su trabajo por cherry-pick.
+func InstalarDependencias(ctx context.Context, path string, heredarDe ...string) error {
+	traerEntorno(ctx, path)
 	for _, dir := range dirsManifiesto(path) {
 		rel, _ := filepath.Rel(path, dir)
 		if exists(filepath.Join(dir, "package.json")) && !bajoNode(path, dir) {
@@ -285,13 +350,76 @@ func InstalarDependencias(ctx context.Context, path string) error {
 			}
 		}
 		if exists(filepath.Join(dir, "pyproject.toml")) || exists(filepath.Join(dir, "requirements.txt")) {
-			if err := venv(ctx, dir); err != nil {
+			avisar("python", rel)
+			// en fila: pip desempaca en /tmp (3 GB con torch) y seis cuartos
+			// a la vez llenan un tmpfs. Lo que el cuarto hereda no se
+			// reinstala (heredar); sin .venv en el repo sí va entero
+			pipEnFila.Lock()
+			err := venv(ctx, dir, heredarDe...)
+			pipEnFila.Unlock()
+			if err != nil {
 				return fmt.Errorf("dependencias de python fallaron en %s · %s", rel, err)
 			}
 		}
 	}
 	return nil
 }
+
+// traerEntorno copia al worktree path los .env* que el repo principal
+// tiene ignorados, hasta dos niveles: un worktree no los hereda y sin
+// ellos la suite muere en la configuración (settings que lee os.environ,
+// la base de datos) sin llegar a probar el código. Copia y no enlace: lo
+// que el agente cambie se queda en el cuarto. Solo los ignorados, para
+// que `git add -A` no los suba; lo que ya está en el cuarto no se pisa.
+// Los de producción (deProduccion) se quedan fuera: el agente lee todo lo
+// que hay en el cuarto y eso viaja al proveedor del modelo.
+func traerEntorno(ctx context.Context, path string) {
+	comun, err := git(ctx, path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return
+	}
+	principal := filepath.Dir(strings.TrimSpace(comun))
+	for _, dir := range dirsManifiesto(principal) {
+		archivos, _ := filepath.Glob(filepath.Join(dir, ".env*"))
+		for _, origen := range archivos {
+			rel, _ := filepath.Rel(principal, origen)
+			destino := filepath.Join(path, rel)
+			if exists(destino) {
+				continue
+			}
+			if _, err := git(ctx, principal, "check-ignore", "-q", rel); err != nil {
+				continue
+			}
+			if deProduccion(filepath.Base(rel)) {
+				if Aviso != nil {
+					Aviso("no copiado al cuarto · " + rel + " parece de producción · el agente lo podría leer")
+				}
+				continue
+			}
+			b, err := os.ReadFile(origen) // una carpeta .env falla aquí y se salta
+			if err != nil || os.WriteFile(destino, b, 0o600) != nil {
+				continue
+			}
+			if Aviso != nil {
+				Aviso("variables de entorno copiadas al cuarto · " + rel)
+			}
+		}
+	}
+}
+
+// deProduccion dice si un .env* nombra un ambiente real. Compara
+// segmentos enteros: por subcadena, ".env.delivery" casaría con "live".
+func deProduccion(nombre string) bool {
+	for _, parte := range strings.Split(strings.ToLower(nombre), ".") {
+		switch parte {
+		case "prod", "production", "staging", "stage", "live":
+			return true
+		}
+	}
+	return false
+}
+
+var pipEnFila sync.Mutex
 
 // manifiestos son los stacks que se instalan con un solo comando del
 // toolchain. Python va aparte (venv) y node también (gestor por lockfile).
@@ -323,10 +451,22 @@ func instalar(ctx context.Context, dir, rel, prog string, args ...string) error 
 	if _, err := exec.LookPath(prog); err != nil {
 		return fmt.Errorf("%s no está instalado y %s lo necesita · instálalo o borra el manifiesto", prog, valorRel(rel))
 	}
+	avisar(prog, rel)
 	if out, err := run(ctx, dir, prog, args...); err != nil {
 		return fmt.Errorf("%s %s falló en %s · %s", prog, strings.Join(args, " "), valorRel(rel), tail(out))
 	}
 	return nil
+}
+
+// Aviso recibe una línea antes de cada instalación: pip puede tardar
+// minutos sin escribir nada y la corrida parece colgada. Nil por defecto;
+// lo fija quien imprime en serie (el esqueleto), no la corrida en paralelo.
+var Aviso func(string)
+
+func avisar(prog, rel string) {
+	if Aviso != nil {
+		Aviso(fmt.Sprintf("instalando dependencias de %s en %s", prog, valorRel(rel)))
+	}
 }
 
 func valorRel(rel string) string {
@@ -358,13 +498,18 @@ func Entorno(path string) []string {
 // dependencias declaradas. Del pyproject se instalan solo las
 // dependencias, no el proyecto: un layout plano con app/ y tests/ hace
 // fallar `pip install -e .` por "multiple top-level packages".
-func venv(ctx context.Context, dir string) error {
+func venv(ctx context.Context, dir string, heredarDe ...string) error {
 	py := filepath.Join(dir, ".venv", binVenv(), "python")
-	if !exists(py) && !exists(py+".exe") {
-		if out, err := run(ctx, dir, pythonSistema(), "-m", "venv", "--system-site-packages", ".venv"); err != nil {
+	base := pythonDe(ctx, dir)
+	// un cuarto reusado puede traer un .venv hecho con otro python que el
+	// del repo: se rehace, o sus dependencias siguen sin instalar
+	rehacer := exists(py) && base != pythonSistema() && versionPython(ctx, dir, py) != versionPython(ctx, dir, base)
+	if rehacer || (!exists(py) && !exists(py+".exe")) {
+		if out, err := run(ctx, dir, base, "-m", "venv", "--clear", "--system-site-packages", ".venv"); err != nil {
 			return errors.New(tail(out))
 		}
 	}
+	heredar(ctx, dir, py, heredarDe...)
 	if exists(filepath.Join(dir, "requirements.txt")) {
 		if err := pipInstall(ctx, dir, py, "-r", "requirements.txt"); err != nil {
 			return err
@@ -410,7 +555,7 @@ func pipInstall(ctx context.Context, dir, py string, args ...string) error {
 			return errors.New(tail(out))
 		}
 	}
-	if out, err := run(ctx, dir, py, append([]string{"-m", "pip", "install", "-q"}, args...)...); err != nil {
+	if out, err := run(ctx, dir, py, append([]string{"-m", "pip", "install", "-q", "--disable-pip-version-check"}, args...)...); err != nil {
 		return errors.New(tail(out))
 	}
 	return nil
@@ -429,6 +574,128 @@ func binVenv() string {
 		return "Scripts"
 	}
 	return "bin"
+}
+
+// pythonDe elige el intérprete con que se crea el .venv de dir: el del
+// .venv que el repo principal ya tiene en esa misma carpeta, y si no hay,
+// el del sistema. El cuarto es un worktree y no hereda el .venv (está
+// ignorado); con el python del sistema, un requirements.txt con versiones
+// fijadas para 3.12 no encuentra wheels en 3.14, compila y falla antes de
+// llamar a ningún agente.
+func pythonDe(ctx context.Context, dir string) string {
+	comun, err := git(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	rel, err2 := git(ctx, dir, "rev-parse", "--show-prefix")
+	if err == nil && err2 == nil {
+		py := filepath.Join(filepath.Dir(strings.TrimSpace(comun)), strings.TrimSpace(rel), ".venv", binVenv(), "python")
+		if exists(py) {
+			return py
+		}
+	}
+	return pythonSistema()
+}
+
+// pthHeredado es el archivo del .venv de un cuarto que suma los paquetes
+// de otros entornos. site lo lee al arrancar el intérprete.
+const pthHeredado = "_devclean_heredado.pth"
+
+// entornosBase lista los .venv de los que hereda el cuarto dir, del más
+// cercano al más lejano: los de los cuartos cuyo trabajo ya está en este
+// (el esqueleto, los verdes de oleadas anteriores) y el del repo principal.
+// Son entornos donde ese código ya corrió. Los cuartos de heredarDe (ids)
+// cuentan sin mirar la ascendencia.
+func entornosBase(ctx context.Context, dir string, heredarDe ...string) (cuartos []string, principal string) {
+	lista, err := git(ctx, dir, "worktree", "list", "--porcelain")
+	propio, err2 := git(ctx, dir, "rev-parse", "--show-toplevel")
+	rel, err3 := git(ctx, dir, "rev-parse", "--show-prefix")
+	if err != nil || err2 != nil || err3 != nil {
+		return nil, ""
+	}
+	propio, rel = strings.TrimSpace(propio), strings.TrimSpace(rel)
+	primero := true
+	for _, l := range strings.Split(lista, "\n") {
+		wt, ok := strings.CutPrefix(l, "worktree ")
+		if !ok {
+			continue
+		}
+		py := filepath.Join(wt, rel, ".venv", binVenv(), "python")
+		// el primero de la lista es siempre el repo principal
+		if primero {
+			primero = false
+			if wt != propio && exists(py) {
+				principal = py
+			}
+			continue
+		}
+		if wt == propio || !exists(py) {
+			continue
+		}
+		if slices.Contains(heredarDe, filepath.Base(wt)) {
+			cuartos = append(cuartos, py)
+		} else if cabeza, err := git(ctx, wt, "rev-parse", "HEAD"); err == nil {
+			if _, err := git(ctx, dir, "merge-base", "--is-ancestor", strings.TrimSpace(cabeza), "HEAD"); err == nil {
+				cuartos = append(cuartos, py)
+			}
+		}
+	}
+	return cuartos, principal
+}
+
+// heredar deja en el .venv de dir un .pth con los paquetes de sus
+// entornos base. Instalar de cero en cada cuarto repite minutos y gigas en
+// un repo grande, y resuelve distinto que el entorno donde el código ya
+// corre: un requirements.txt sin versiones fijas que instala bien encima
+// del entorno del esqueleto puede retroceder, de cero, a una versión que
+// no compila, y las tareas se detienen sin llamar a un agente. pip da por instalado
+// lo heredado y solo trae lo que falta; lo que tenga que cambiar de versión
+// lo instala en el cuarto, que va antes en sys.path, y no toca el entorno
+// ajeno (lo trata como paquetes del sistema).
+//
+// ponytail: si se libera el cuarto del que se hereda antes que este, sus
+// paquetes desaparecen; hoy los cuartos de un feature se liberan juntos.
+func heredar(ctx context.Context, dir, py string, heredarDe ...string) {
+	cuartos, principal := entornosBase(ctx, dir, heredarDe...)
+	if principal != "" {
+		cuartos = append(cuartos, principal)
+	}
+	const purelib = "import sysconfig; print(sysconfig.get_path('purelib'))"
+	destino, err := run(ctx, dir, py, "-c", purelib)
+	if err != nil {
+		return
+	}
+	version := versionPython(ctx, dir, py)
+	var rutas []string
+	for _, base := range cuartos {
+		// otra versión de python: sus extensiones compiladas no cargan
+		if versionPython(ctx, dir, base) != version {
+			continue
+		}
+		if sp, err := run(ctx, dir, base, "-c", purelib); err == nil {
+			rutas = append(rutas, strings.TrimSpace(sp))
+		}
+	}
+	pth := filepath.Join(strings.TrimSpace(destino), pthHeredado)
+	if len(rutas) == 0 {
+		_ = os.Remove(pth)
+		return
+	}
+	_ = os.WriteFile(pth, []byte(strings.Join(rutas, "\n")+"\n"), 0o644)
+}
+
+// heredaDeCuarto reporta si algún .venv del cuarto hereda de otro cuarto,
+// es decir, de un entorno que devclean ya verificó.
+func heredaDeCuarto(ctx context.Context, path string) bool {
+	for _, dir := range dirsManifiesto(path) {
+		if cuartos, _ := entornosBase(ctx, dir); len(cuartos) > 0 && exists(filepath.Join(dir, ".venv", binVenv(), "python")) {
+			return true
+		}
+	}
+	return false
+}
+
+// versionPython devuelve "3.12" para el intérprete py; vacío si no corre.
+func versionPython(ctx context.Context, dir, py string) string {
+	out, _ := run(ctx, dir, py, "-c", "import sys; print('%d.%d' % sys.version_info[:2])")
+	return strings.TrimSpace(out)
 }
 
 func pythonSistema() string {
