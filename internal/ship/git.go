@@ -6,26 +6,37 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/task"
 )
 
+// sinPreguntas es el entorno con que corre todo git de la entrega: una
+// credencial que el remoto rechaza tiene que fallar, no esperar a alguien.
+// GIT_TERMINAL_PROMPT solo no alcanza: el askpass de un IDE abre su
+// diálogo en otra ventana y el proceso queda colgado sin decir nada.
+func sinPreguntas() []string {
+	return append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "SSH_ASKPASS=")
+}
+
 // gitRun ejecuta git en dir y devuelve la salida combinada.
 func gitRun(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", append([]string{"-c", "core.askPass="}, args...)...)
 	cmd.Dir = dir
+	cmd.Env = sinPreguntas()
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
-// traer actualiza origin sin preguntar nada: es un paso de cortesía que
-// se ignora si falla, y con una credencial que el remoto rechaza git
-// pedía usuario y contraseña en la terminal, una vez por tarea.
+// traer actualiza origin. Es un paso de cortesía que se ignora si falla,
+// así que tampoco espera a una red que no contesta.
 func traer(root string) {
-	cmd := exec.Command("git", "fetch", "--quiet")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-c", "core.askPass=", "fetch", "--quiet")
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = sinPreguntas()
 	_ = cmd.Run()
 }
 

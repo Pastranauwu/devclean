@@ -131,6 +131,37 @@ func TestRebaseLocalNoTocaLaRed(t *testing.T) {
 	}
 }
 
+// GIT_TERMINAL_PROMPT=0 no apaga el askpass: el de un IDE abre su diálogo
+// en otra ventana y el fetch quedaba colgado
+func TestGitDeLaEntregaNoPregunta(t *testing.T) {
+	root := repoConCommit(t)
+	marca := filepath.Join(t.TempDir(), "preguntó")
+	askpass := filepath.Join(t.TempDir(), "askpass.sh")
+	if err := os.WriteFile(askpass, []byte("#!/bin/sh\ntouch "+marca+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_ASKPASS", askpass)
+	t.Setenv("SSH_ASKPASS", askpass)
+	pedir := func(env []string) error {
+		cmd := exec.Command("git", "-c", "core.askPass=", "-c", "credential.helper=", "credential", "fill")
+		cmd.Dir = root
+		cmd.Env = env
+		cmd.Stdin = strings.NewReader("protocol=https\nhost=ejemplo.invalid\n\n")
+		return cmd.Run()
+	}
+	if err := pedir(sinPreguntas()); err == nil {
+		t.Error("sin credencial ni a quién preguntar, git debía fallar")
+	}
+	if _, err := os.Stat(marca); err == nil {
+		t.Fatal("git llamó al askpass")
+	}
+	// con el entorno tal cual sí lo llama: la prueba mide algo
+	_ = pedir(os.Environ())
+	if _, err := os.Stat(marca); err != nil {
+		t.Error("el askpass de control no se llamó: la prueba no distingue nada")
+	}
+}
+
 func TestRebaseConflicto(t *testing.T) {
 	root := repoConCommit(t)
 	escribir(t, root, "f.txt", "base\n")
