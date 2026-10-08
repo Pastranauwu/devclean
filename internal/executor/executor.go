@@ -53,6 +53,13 @@ type Request struct {
 	// Rol decide qué herramientas recibe el agente; vacío es el
 	// implementador.
 	Rol Rol
+	// Sesion continúa una conversación anterior del mismo CLI en este
+	// cuarto (Result.Sesion): el agente conserva lo que ya leyó. Solo
+	// claude; los demás la ignoran y quien llama manda el prompt completo.
+	Sesion string
+	// TopeUSD corta la invocación al pasar ese gasto, a precio de lista.
+	// 0 = sin tope. Solo claude.
+	TopeUSD int
 	// Avance recibe, mientras el CLI corre, lo importante que va
 	// haciendo (un comando, un archivo leído, un turno terminado). Nil
 	// no reporta nada.
@@ -85,7 +92,14 @@ type Result struct {
 	Stderr       string   `json:"stderr"` // diagnóstico del CLI: sin esto un fallo de infra es invisible
 	Text         string   `json:"text"`   // la respuesta textual del agente, si el adaptador la saca
 	ExitCode     int      `json:"exit_code"`
+	// Sesion identifica la conversación para continuarla con
+	// Request.Sesion; "" si el CLI no la da.
+	Sesion string `json:"sesion,omitempty"`
 }
+
+// ErrTope es una invocación cortada por Request.TopeUSD: no se arregla
+// reintentando con el mismo tope.
+var ErrTope = errors.New("tope de gasto alcanzado")
 
 // Usage is the token spend of one invocation, best-effort per adapter.
 //

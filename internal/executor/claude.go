@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -32,7 +33,7 @@ func (Claude) Available() error {
 // de versión —el alias "opus" apunta a Opus 5, no a 5.5— y después los
 // alias, que siguen valiendo para los config.yml que ya los tienen.
 func (Claude) Models(context.Context) ([]string, error) {
-	return []string{"claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5", "claude-haiku-4-5", "opus", "sonnet", "haiku"}, nil
+	return []string{"claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5", "claude-sonnet-5", "claude-haiku-5-5", "claude-haiku-4-5", "opus", "sonnet", "haiku"}, nil
 }
 
 // contextoLimpio deja fuera del agente lo que el usuario configuró para
@@ -83,15 +84,25 @@ func (e Claude) Run(ctx context.Context, req Request) (Result, error) {
 	if req.Effort != "" {
 		args = append(args, "--effort", req.Effort)
 	}
+	if req.Sesion != "" {
+		args = append(args, "--resume", req.Sesion)
+	}
+	if req.TopeUSD > 0 {
+		args = append(args, "--max-budget-usd", strconv.Itoa(req.TopeUSD))
+	}
 	var res Result
 	espera := esperaSinReset
 	req.avanceDe = avanceClaude(req.RoomPath)
 	for {
 		stdout, stderr, code, err := run(ctx, req, "claude", args...)
 		text, uso := parseClaudeStream(stdout)
-		res = Result{Stdout: res.Stdout + stdout, Stderr: res.Stderr + stderr, ExitCode: code, Text: text, Tokens: sumarUso(res.Tokens, uso)}
+		fin := finClaude(stdout)
+		res = Result{Stdout: res.Stdout + stdout, Stderr: res.Stderr + stderr, ExitCode: code, Text: text, Tokens: sumarUso(res.Tokens, uso), Sesion: fin.SessionID}
 		reset, agotada := cuotaAgotada(stdout)
 		if !agotada {
+			if fin.Subtype == "error_max_budget_usd" {
+				return res, fmt.Errorf("%w · $%d", ErrTope, req.TopeUSD)
+			}
 			return res, err
 		}
 		hasta := reset.Add(margenReset)
@@ -203,6 +214,27 @@ type claudeEvento struct {
 		CacheRead  int `json:"cacheReadInputTokens"`
 		CacheWrite int `json:"cacheCreationInputTokens"`
 	} `json:"modelUsage"`
+}
+
+// finClaude es el evento `result` del stream: la sesión, para continuarla,
+// y el subtipo, que distingue un corte por tope de un fallo.
+func finClaude(stdout string) (fin struct {
+	Type      string `json:"type"`
+	Subtype   string `json:"subtype"`
+	SessionID string `json:"session_id"`
+}) {
+	// el orden de las claves no es fijo: "type" llega al final del objeto
+	lineas := strings.Split(strings.TrimSpace(stdout), "\n")
+	for i := len(lineas) - 1; i >= 0; i-- {
+		if !strings.Contains(lineas[i], `"type":"result"`) {
+			continue
+		}
+		if json.Unmarshal([]byte(lineas[i]), &fin) == nil && fin.Type == "result" {
+			return fin
+		}
+	}
+	fin.Type, fin.Subtype, fin.SessionID = "", "", ""
+	return fin
 }
 
 // ParseClaudeUsage lee el gasto de una salida de claude ya guardada
