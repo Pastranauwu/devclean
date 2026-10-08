@@ -99,7 +99,7 @@ Casi todos los paquetes y `cmd/devclean` tienen su propio `CLAUDE.md` con sus ad
 
 ## 5. Estado
 
-Versión actual: **v1.11.4**. Historial por versión en `CHANGELOG.md`.
+Versión actual: **v1.11.5**. Historial por versión en `CHANGELOG.md`.
 
 `go test ./...` y `go vet ./...` pasan. Eso cubre pruebas unitarias; no significa que cada flujo esté probado con agentes reales.
 

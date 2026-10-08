@@ -2,6 +2,9 @@
 
 Qué trajo cada versión, en una línea. Lo anterior a v1.2.0 está contado en `docs/HISTORIA.md`.
 
+## v1.11.5 (8 oct 2026)
+El tope de intentos no cuenta los que se gastaron contra otra base: arreglarla y reintentar ya no pide tocar el contrato; aviso, al aplicar el plan y al fallar la aceptación, del comando que nombra una prueba que no existe (y dónde está si solo cambia el prefijo); `doctor` y `ship --todas` avisan antes de empezar si la cuenta activa de gh no puede subir a origin; comentarios y datos de prueba sin nombres de proyectos.
+
 ## v1.11.4 (8 oct 2026)
 Una entrega conjunta cortada (Ctrl+C, kill) ya no deja las ramas de los cuartos aplanadas: sus puntas se guardan en `.devclean/puntas.json` y el `ship --todas` o `run` siguiente las devuelve (`RestaurarPuntas`); el fallo del conjunto nombra la prueba que falló y `reparar` encuentra sola a la tarea que la escribió, con unittest/Django, pytest y jest/vitest; ningún git de la entrega pregunta credenciales, tampoco por el askpass de un IDE, y el `fetch` tiene tope de tiempo; el paso `ruido` deja imprimir al archivo que declara un `main` aunque no viva en `cmd/` o `scripts/`.
 
