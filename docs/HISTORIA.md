@@ -243,7 +243,7 @@ lugar donde un spec exportado mentía sobre su frontera.
 
 ## 5. Lo que sigue abierto
 
-Vive en la sección 7 de `CLAUDE.md`, que es lo que se mantiene al día. En
+Vive en `docs/ROADMAP.md`, que es lo que se mantiene al día. En
 resumen: mutation score para verificar que las suites generadas —y la prueba de
 costura derivada— no sean triviales; validación de firmas por AST en vez de por
 nombre; modo API directa sin depender de los CLI; más forjas; y la costura sin
