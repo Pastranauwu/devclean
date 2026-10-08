@@ -13,6 +13,7 @@ import (
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/executor"
 	"github.com/Pastranauwu/devclean/internal/overlap"
+	"github.com/Pastranauwu/devclean/internal/ship"
 )
 
 type chequeoDoctor struct {
@@ -117,6 +118,14 @@ func runDoctor() error {
 		checks = append(checks, chequeoDoctor{"keys", false, "ninguna key de proveedor en el entorno"})
 	}
 
+	// remoto: con varias cuentas de gh, la activa puede no entrar al
+	// origin; sin este chequeo se descubre al final de la entrega
+	if repoErr == nil && cfg.Entrega != config.EntregaLocal {
+		if motivo := ship.AccesoRemoto(root); motivo != "" {
+			checks = append(checks, chequeoDoctor{"remoto", false, motivo})
+		}
+	}
+
 	// npx: opcional, solo hace falta para devclean skills sync
 	if _, err := exec.LookPath("npx"); err != nil {
 		checks = append(checks, chequeoDoctor{"npx", false, "no instalado · devclean skills sync no va a poder traer skills"})
@@ -133,7 +142,7 @@ func runDoctor() error {
 			out.Line("✓ %s%s", c.Nombre, detalleDoctor(c))
 		} else {
 			out.Line("✗ %s  · %s", c.Nombre, c.Detalle)
-			if c.Nombre != "keys" && c.Nombre != "npx" {
+			if c.Nombre != "keys" && c.Nombre != "npx" && c.Nombre != "remoto" {
 				critico = true
 			}
 		}

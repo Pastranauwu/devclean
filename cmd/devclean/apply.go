@@ -9,6 +9,7 @@ import (
 
 	"github.com/Pastranauwu/devclean/internal/config"
 	"github.com/Pastranauwu/devclean/internal/spec"
+	"github.com/Pastranauwu/devclean/internal/task"
 	"github.com/Pastranauwu/devclean/internal/tui"
 )
 
@@ -124,6 +125,12 @@ func aplicarSpec(root string, s spec.Spec, origen string, runImmediately, dryRun
 		if issue.Level == "warning" && len(applied) > 0 {
 			out.Line("· plan: %s", issue.Message)
 		}
+	}
+	// la aceptación que nombra una prueba inexistente frena la entrega al
+	// final, con todo pagado: se dice ahora
+	enRepo, _ := task.List(tasksDir)
+	for _, issue := range spec.AceptacionSinPrueba(root, s, append(enRepo, applied...)) {
+		out.Line("· plan: %s", issue.Message)
 	}
 
 	if dryRun {

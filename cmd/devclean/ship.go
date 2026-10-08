@@ -196,6 +196,13 @@ func runShipTodas(dryRun bool, titulo string, integrar, revisar, local bool) err
 		opciones.Revisor, opciones.Integrar = rev, integrar
 	}
 
+	// se dice antes de las esclusas, no al abrir el PR: la entrega sigue
+	// y queda como PR local
+	if cfg.Entrega != config.EntregaLocal && !dryRun {
+		if motivo := ship.AccesoRemoto(root); motivo != "" {
+			out.Line("· %s · si no, el PR queda local", motivo)
+		}
+	}
 	e := ship.EntregarTodas(context.Background(), opciones)
 	if err := out.Data(e); err != nil {
 		return err
