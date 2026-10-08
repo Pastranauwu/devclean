@@ -555,14 +555,23 @@ func TestRunTopePorTareaSumaLlamadas(t *testing.T) {
 	if len(as) != 6 {
 		t.Fatalf("intentos=%d", len(as))
 	}
-	if n := intentosPagados(as, time.Time{}); n != 0 {
+	if n := intentosPagados(as, time.Time{}, ""); n != 0 {
 		t.Fatalf("pagados=%d", n)
 	}
 	for i := range as {
 		as[i].Tokens.Entrada = 1
 	}
-	if n := intentosPagados(as, as[3].Inicio); n != 3 {
+	if n := intentosPagados(as, as[3].Inicio, ""); n != 3 {
 		t.Fatalf("desde el cuarto: pagados=%d", n)
+	}
+	// los intentos contra otra base no gastan el tope de esta; los que
+	// no anotaron base (anteriores a que se guardara) siguen contando
+	if as[0].Base == "" {
+		t.Fatal("el intento no anotó el árbol de su base")
+	}
+	as[0].Base, as[1].Base, as[2].Base = "otra", "otra", ""
+	if n := intentosPagados(as, time.Time{}, as[3].Base); n != 4 {
+		t.Fatalf("contra la base actual: pagados=%d, quiero 4", n)
 	}
 }
 

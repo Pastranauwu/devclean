@@ -32,6 +32,10 @@ type Attempt struct {
 	RevertidosFueraDeAlcance []string  `json:"revertidos_fuera_de_alcance"`
 	Tokens                   Tokens    `json:"tokens"`
 	Modelo                   string    `json:"modelo"`
+	// Base es el árbol del commit del que partía el cuarto en este
+	// intento. El árbol y no el commit: la rama de integración se rehace
+	// en cada corrida y su hash cambia aunque el contenido sea el mismo.
+	Base string `json:"base,omitempty"`
 
 	// AgenteSalidaCodigo y ErrorAgente separan "el agente reventó" de
 	// "el agente trabajó y las pruebas fallaron". Sin esta distinción un

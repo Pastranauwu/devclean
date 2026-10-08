@@ -265,8 +265,16 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	// tope por tarea, no por llamada: escalar, retomar y --reintentar
 	// vuelven a llamar a Run, y un límite de 3 terminó en 15 intentos.
 	// Editar el contrato lo reinicia: cuenta desde la última edición.
+	// Tampoco cuentan los intentos contra otra base: cuando lo roto
+	// estaba ahí, arreglarla y reintentar es lo que se le pidió al humano.
+	partida := o.Room.Commit
+	if partida == "" {
+		partida = base
+	}
+	arbolBase, _ := gitRun(o.Room.Path, "rev-parse", "--verify", "--quiet", partida+"^{tree}")
+	arbolBase = strings.TrimSpace(arbolBase)
 	tope := TopeIntentos * limite
-	if usados := intentosPagados(previos, contratoEditado(o.Root, o.Task.ID)); usados >= tope {
+	if usados := intentosPagados(previos, contratoEditado(o.Root, o.Task.ID), arbolBase); usados >= tope {
 		motivo := fmt.Sprintf("tope de %d intentos agotado · edita %s (listo_cuando, tocar_solo o notas) y reintenta", tope, o.Task.ID)
 		return Outcome{Intentos: 0, UltimoError: motivo, Pregunta: motivo, NoEscalar: true}, nil
 	} else if tope-usados < limite {
@@ -471,6 +479,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		codigoAgente := res.ExitCode
 		a := Attempt{
 			Intento:                  numero,
+			Base:                     arbolBase,
 			Inicio:                   inicio,
 			Fin:                      fin,
 			SalidaCodigo:             code,
@@ -647,12 +656,16 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 const TopeIntentos = 2
 
 // intentosPagados cuenta los intentos que gastaron tokens desde que se
-// editó el contrato. Los que no llegaron al modelo (sin saldo, CLI caído)
-// no cuentan: no costaron nada.
-func intentosPagados(as []Attempt, desde time.Time) int {
+// editó el contrato y contra la base actual (arbolBase). Los que no
+// llegaron al modelo (sin saldo, CLI caído) no cuentan: no costaron nada.
+// Un intento sin base anotada es de antes de que se guardara y cuenta.
+func intentosPagados(as []Attempt, desde time.Time, arbolBase string) int {
 	n := 0
 	for _, a := range as {
 		if a.Inicio.Before(desde) || a.Tokens.Entrada+a.Tokens.Salida == 0 {
+			continue
+		}
+		if a.Base != "" && arbolBase != "" && a.Base != arbolBase {
 			continue
 		}
 		n++
