@@ -111,6 +111,18 @@ func responsables(tareas []task.Task, pruebas []string) []string {
 			}
 		}
 	}
+	if len(ids) > 0 {
+		return ids
+	}
+	// ningún módulo se llama como la prueba (una de integración, de punta
+	// a punta): responde la tarea que la escribió
+	for _, t := range tareas {
+		for _, p := range pruebas {
+			if slices.Contains(t.TocarSolo, p) && !slices.Contains(ids, t.ID) {
+				ids = append(ids, t.ID)
+			}
+		}
+	}
 	return ids
 }
 
@@ -131,8 +143,14 @@ func reabierta(t task.Task, f ship.Fallo) task.Task {
 	comando := f.Comando
 	// la suite completa en el cuarto de una tarea puede fallar por lo que
 	// todavía no tiene de sus hermanas: se corre solo lo que falló
-	if len(f.Pruebas) > 0 && len(task.ArchivosDePrueba(comando)) == 0 {
-		comando += " " + strings.Join(f.Pruebas, " ")
+	// en la forma que entiende su runner (Selectores); un fallo guardado
+	// antes de que existieran solo trae los archivos
+	solo := f.Selectores
+	if len(solo) == 0 {
+		solo = f.Pruebas
+	}
+	if len(solo) > 0 && len(task.ArchivosDePrueba(comando)) == 0 {
+		comando += " " + strings.Join(solo, " ")
 	}
 	if !strings.Contains(t.ListoCuando, comando) {
 		t.ListoCuando += " && (" + comando + ")"
@@ -147,7 +165,15 @@ func reabierta(t task.Task, f ship.Fallo) task.Task {
 	if t.Peso == "" || t.Peso == "liviana" {
 		t.Peso = "media"
 	}
-	t.Notas = strings.TrimSpace(t.Notas) + "\n\nREPARACIÓN. Tu trabajo salió verde solo, pero al integrarlo con las demás tareas falló `" + f.Comando + "`:\n" + f.Salida +
+	t.Notas = strings.TrimSpace(t.Notas) + "\n\nREPARACIÓN. Tu trabajo salió verde solo, pero al integrarlo con las demás tareas falló `" + f.Comando + "`:\n" + fallaron(f) + f.Salida +
 		"\nObsoleto: de las pruebas que ya existían (" + strings.Join(f.Pruebas, ", ") + ") solo lo que este contrato pidió cambiar de forma explícita. Si el contrato pidió ese cambio, actualiza únicamente esa aserción; si no lo pidió, la prueba tiene razón y lo que corriges es tu código. No borres ni relajes ningún otro caso."
 	return t
+}
+
+// fallaron es la línea de las notas que nombra las pruebas que fallaron.
+func fallaron(f ship.Fallo) string {
+	if len(f.Nombres) == 0 {
+		return ""
+	}
+	return "Pruebas que fallaron: " + strings.Join(f.Nombres, ", ") + "\n"
 }

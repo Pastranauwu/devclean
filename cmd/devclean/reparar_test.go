@@ -53,3 +53,28 @@ func TestRepararReabreLaTareaQueTocaElCodigoDeLaPruebaFallida(t *testing.T) {
 		t.Errorf("listo_cuando = %q", r.ListoCuando)
 	}
 }
+
+// Una prueba de integración no se llama como ningún módulo: responde la
+// tarea que la escribió, y lo que se vuelve a correr es el id que entiende
+// su runner, no una ruta de archivo.
+func TestRepararReabreALaAutoraDeUnaPruebaDeIntegracion(t *testing.T) {
+	tareas := []task.Task{
+		{ID: "T-001", TocarSolo: []string{"apps/docs/views.py"}},
+		{ID: "T-002", ListoCuando: "python manage.py test apps.docs.tests.test_flujo", TocarSolo: []string{"apps/docs/tests/test_flujo.py"}},
+	}
+	f := ship.Fallo{Paso: "integradas", Comando: "python manage.py test", Salida: "AssertionError: 404 != 200",
+		Pruebas:    []string{"apps/docs/tests/test_flujo.py"},
+		Nombres:    []string{"test_pantalla (apps.docs.tests.test_flujo.PantallaTest.test_pantalla)"},
+		Selectores: []string{"apps.docs.tests.test_flujo.PantallaTest.test_pantalla"}}
+
+	if ids := responsables(tareas, f.Pruebas); !slices.Equal(ids, []string{"T-002"}) {
+		t.Fatalf("responsables = %v, quiero [T-002]", ids)
+	}
+	r := reabierta(tareas[1], f)
+	if !strings.HasSuffix(r.ListoCuando, "&& (python manage.py test apps.docs.tests.test_flujo.PantallaTest.test_pantalla)") {
+		t.Errorf("listo_cuando = %q", r.ListoCuando)
+	}
+	if !strings.Contains(r.Notas, "Pruebas que fallaron: test_pantalla (") {
+		t.Errorf("las notas no nombran la prueba: %q", r.Notas)
+	}
+}

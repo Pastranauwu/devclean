@@ -93,6 +93,11 @@ func runCmd(agentes int, ejecutor, modelo string, reintentar, fondo bool) error 
 	for _, t := range tareas {
 		soltarSinRastro(context.Background(), root, t.ID)
 	}
+	// una entrega cortada deja las ramas aplanadas y las dependientes
+	// ya no se pueden juntar ("CONFLICTO (agregar/agregar)")
+	if hechas, dudosas := ship.RestaurarPuntas(root); len(hechas)+len(dudosas) > 0 {
+		out.Line("· %s", ship.AvisoPuntas(hechas, dudosas))
+	}
 
 	var pendientes, existentes []task.Task
 	var detenidas, interrumpidas, huerfanas, enOtraCorrida []string
